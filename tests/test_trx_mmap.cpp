@@ -294,6 +294,12 @@ TEST(TrxFileMemmap, TrxFile)
 	EXPECT_EQ(trx_init->streamlines->_lengths.size(), 1000);
 }
 
+TEST(TrxFileMemmap, deepcopy)
+{
+	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>("data/small.trx");
+	// trx->deepcopy();
+}
+
 int main(int argc, char **argv)
 {
 	::testing::InitGoogleTest(&argc, argv);

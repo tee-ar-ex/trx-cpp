@@ -10,35 +10,34 @@
 using namespace Eigen;
 using namespace std;
 
-std::string get_base(const std::string &delimiter, const std::string &str)
-{
-	std::string token;
-
-	if (str.rfind(delimiter) + 1 < str.length())
-	{
-		token = str.substr(str.rfind(delimiter) + 1);
-	}
-	else
-	{
-		token = str;
-	}
-	return token;
-}
-
-std::string get_ext(const std::string &str)
-{
-	std::string ext = "";
-	std::string delimeter = ".";
-
-	if (str.rfind(delimeter) + 1 < str.length())
-	{
-		ext = str.substr(str.rfind(delimeter) + 1);
-	}
-	return ext;
-}
-
 namespace trxmmap
 {
+	std::string get_base(const std::string &delimiter, const std::string &str)
+	{
+		std::string token;
+
+		if (str.rfind(delimiter) + 1 < str.length())
+		{
+			token = str.substr(str.rfind(delimiter) + 1);
+		}
+		else
+		{
+			token = str;
+		}
+		return token;
+	}
+
+	std::string get_ext(const std::string &str)
+	{
+		std::string ext = "";
+		std::string delimeter = ".";
+
+		if (str.rfind(delimeter) + 1 < str.length())
+		{
+			ext = str.substr(str.rfind(delimeter) + 1);
+		}
+		return ext;
+	}
 	// TODO: check if there's a better way
 	int _sizeof_dtype(std::string dtype)
 	{
@@ -213,15 +212,17 @@ namespace trxmmap
 			filename.pop_back();
 		}
 
+		long filesize = std::get<0>(shape) * std::get<1>(shape) * _sizeof_dtype(dtype);
 		// if file does not exist, create and allocate it
 		struct stat buffer;
 		if (stat(filename.c_str(), &buffer) != 0)
 		{
-			allocate_file(filename, std::get<0>(shape) * std::get<1>(shape) * _sizeof_dtype(dtype));
+			allocate_file(filename, filesize);
 		}
 
 		// std::error_code error;
-		mio::shared_mmap_sink rw_mmap(filename, offset, mio::map_entire_file);
+
+		mio::shared_mmap_sink rw_mmap(filename, offset, filesize);
 
 		return rw_mmap;
 	}

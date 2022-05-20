@@ -27,7 +27,7 @@ namespace trxmmap
 	template <typename DT>
 	struct ArraySequence
 	{
-		Map<Matrix<DT, Dynamic, Dynamic>> _data;
+		Map<Matrix<DT, Dynamic, Dynamic, RowMajor>> _data;
 		Map<Matrix<uint64_t, Dynamic, Dynamic, RowMajor>> _offsets;
 		Matrix<uint32_t, Dynamic, 1> _lengths;
 		mio::shared_mmap_sink mmap_pos;
@@ -77,6 +77,13 @@ namespace trxmmap
 		 * @return TrxFile*
 		 */
 		static TrxFile<DT> *_create_trx_from_pointer(json header, std::map<std::string, std::tuple<long long, long long>> dict_pointer_size, std::string root_zip = "", std::string root = "");
+
+		/**
+		 * @brief Create a deepcopy of the TrxFile
+		 *
+		 * @return TrxFile<DT>* A deepcopied TrxFile of the current object
+		 */
+		TrxFile<DT> *deepcopy();
 
 	private:
 		int len();
@@ -158,7 +165,7 @@ namespace trxmmap
 	void get_reference_info(std::string reference, const MatrixXf &affine, const RowVectorXf &dimensions);
 
 	template <typename DT>
-	std::ostream &operator<<(std::ostream &out, const TrxFile<DT> &TrxFile);
+	std::ostream &operator<<(std::ostream &out, const TrxFile<DT> &trx);
 	// private:
 
 	void allocate_file(const std::string &path, const int size);
@@ -218,6 +225,20 @@ namespace trxmmap
 
 	template <typename DT>
 	void ediff1d(Matrix<DT, Dynamic, 1> &lengths, const Matrix<DT, Dynamic, Dynamic> &tmp, uint32_t to_end);
+
+	/**
+	 * @brief Save a TrxFile
+	 *
+	 * @tparam DT
+	 * @param trx The TrxFile to save
+	 * @param filename  The path to save the TrxFile to
+	 * @param compression_standard The compression standard to use, as defined by libzip (default: no compression)
+	 */
+	template <typename DT>
+	void save(MatrixBase<DT> &trx, std::string filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+
+	std::string get_base(const std::string &delimiter, const std::string &str);
+	std::string get_ext(const std::string &str);
 #include "trx.tpp"
 
 }

@@ -295,7 +295,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 		{
 			int rows, cols;
 			std::string dpv_dtype = _get_dtype(typeid(init_as->data_per_vertex.find(x.first)->second->_data).name());
-			Map<Matrix<DT, Dynamic, Dynamic>> tmp_as = init_as->data_per_vertex.find(x.first)->second->_data;
+			Map<Matrix<DT, Dynamic, Dynamic, RowMajor>> tmp_as = init_as->data_per_vertex.find(x.first)->second->_data;
 
 			std::string dpv_filename;
 			if (tmp_as.rows() == 1)
@@ -450,11 +450,11 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 
 			// TODO: find a better way to get the dtype than using all these switch cases. Also refactor into function
 			// as per specifications, positions can only be floats
-			if (ext.compare(".float16") == 0)
+			if (ext.compare("float16") == 0)
 			{
 				new (&(trx->streamlines->_data)) Map<Matrix<half, Dynamic, Dynamic>>(reinterpret_cast<half *>(trx->streamlines->mmap_pos.data()), std::get<0>(shape), std::get<1>(shape));
 			}
-			else if (ext.compare(".float32") == 0)
+			else if (ext.compare("float32") == 0)
 			{
 				new (&(trx->streamlines->_data)) Map<Matrix<float, Dynamic, Dynamic>>(reinterpret_cast<float *>(trx->streamlines->mmap_pos.data()), std::get<0>(shape), std::get<1>(shape));
 			}
@@ -473,7 +473,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			}
 
 			std::tuple<int, int> shape = std::make_tuple(trx->header["NB_STREAMLINES"], 1);
-			trx->streamlines->mmap_off = trxmmap::_create_memmap(filename, shape, "r+", ext.substr(1, ext.size() - 1), mem_adress);
+			trx->streamlines->mmap_off = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
 			new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape), std::get<1>(shape));
 
@@ -614,6 +614,25 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 }
 
 template <typename DT>
+TrxFile<DT> *TrxFile<DT>::deepcopy()
+{
+	char *dirname;
+	char t[] = "/tmp/trx_XXXXXX";
+	dirname = mkdtemp(t);
+
+	std::string tmp_dir(dirname);
+
+	std::string header = tmp_dir + "/header.json";
+
+	// TODO: Definitely a better way to deepcopy
+	json tmp_header = json::parse(this->header.dump());
+
+	std::cout << "header " << tmp_header << std::endl;
+
+	return NULL;
+}
+
+template <typename DT>
 TrxFile<DT> *load_from_zip(std::string filename)
 {
 	// TODO: check error values
@@ -631,20 +650,35 @@ TrxFile<DT> *load_from_zip(std::string filename)
 	{
 		std::string elem_filename = zip_get_name(zf, i, ZIP_FL_UNCHANGED);
 
+		zip_stat_t sb;
+		zip_file_t *zft;
+
+		if (zip_stat(zf, elem_filename.c_str(), ZIP_FL_UNCHANGED, &sb) != 0)
+		{
+			return NULL;
+		}
+
+		global_pos += 30 + elem_filename.size();
+
 		size_t lastdot = elem_filename.find_last_of(".");
 
 		if (lastdot == std::string::npos)
+		{
+			global_pos += sb.comp_size;
 			continue;
+		}
 		std::string ext = elem_filename.substr(lastdot + 1, std::string::npos);
 
 		// apparently all zip directory names end with a slash. may be a better way
 		if (ext.compare("json") == 0 || elem_filename.rfind("/") == elem_filename.size() - 1)
 		{
+			global_pos += sb.comp_size;
 			continue;
 		}
 
 		if (!_is_dtype_valid(ext))
 		{
+			global_pos += sb.comp_size;
 			continue;
 			// maybe throw error here instead?
 			// throw std::invalid_argument("The dtype is not supported");
@@ -656,29 +690,24 @@ TrxFile<DT> *load_from_zip(std::string filename)
 		}
 
 		// get file stats
-		zip_stat_t sb;
 
-		if (zip_stat(zf, elem_filename.c_str(), ZIP_FL_UNCHANGED, &sb) != 0)
-		{
-			return NULL;
-		}
+		// std::ifstream file(filename, std::ios::binary);
+		// file.seekg(global_pos);
 
-		std::ifstream file(filename, std::ios::binary);
-		file.seekg(global_pos);
-		mem_address = global_pos;
+		// unsigned char signature[4] = {0};
+		// const unsigned char local_sig[4] = {0x50, 0x4b, 0x03, 0x04};
+		// file.read((char *)signature, sizeof(signature));
 
-		unsigned char signature[4] = {0};
-		const unsigned char local_sig[4] = {0x50, 0x4b, 0x03, 0x04};
-		file.read((char *)signature, sizeof(signature));
-
-		if (memcmp(signature, local_sig, sizeof(signature)) == 0)
-		{
-			global_pos += 30;
-			global_pos += sb.comp_size + elem_filename.size();
-		}
+		// if (memcmp(signature, local_sig, sizeof(signature)) == 0)
+		// {
+		// 	global_pos += 30;
+		// 	// global_pos += sb.comp_size + elem_filename.size();
+		// }
 
 		long long size = sb.size / _sizeof_dtype(ext);
+		mem_address = global_pos;
 		file_pointer_size[elem_filename] = {mem_address, size};
+		global_pos += sb.comp_size;
 	}
 	return TrxFile<DT>::_create_trx_from_pointer(header, file_pointer_size, filename);
 }
@@ -688,3 +717,23 @@ TrxFile<DT> *load_from_zip(std::string filename)
 // 	std::string directory = string(canonicalize_file_name(path->c_str()));
 // 	std::string header = directory
 // }
+
+template <typename DT>
+void save(MatrixBase<DT> &trx, std::string filename, zip_uint32_t compression_standard)
+{
+	std::string ext = get_ext(filename);
+
+	if ((strcmp(ext.c_str(), ".zip") == 0) || strcmp(ext.c_str(), ".trx"))
+	{
+		throw std::invalid_argument("Unsupported extension.");
+	}
+}
+
+template <typename DT>
+std::ostream &operator<<(std::ostream &out, const TrxFile<DT> &trx)
+{
+
+	out << "Header (header.json):\n";
+	out << trx.header.dump(4);
+	return out;
+}
