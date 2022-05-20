@@ -138,6 +138,16 @@ namespace trxmmap
 	TrxFile<DT> *load_from_zip(std::string *path);
 
 	/**
+	 * @brief Load a TrxFile from a folder containing memmaps
+	 *
+	 * @tparam DT
+	 * @param path path of the zipped TrxFile
+	 * @return TrxFile<DT>* TrxFile representing the read data
+	 */
+	template <typename DT>
+	TrxFile<DT> *load_from_directory(std::string *path);
+
+	/**
 	 * Get affine and dimensions from a Nifti or Trk file (Adapted from dipy)
 	 *
 	 * @param[in] reference a string pointing to a NIfTI or trk file to be used as reference

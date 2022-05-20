@@ -268,14 +268,13 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 
 	std::string offsets_filename(tmp_dir);
 	offsets_filename += "/offsets." + offsets_dtype;
-	std::cout << "filesystem path " << offsets_filename << std::endl;
 
 	std::tuple<int, int> shape_off = std::make_tuple(nb_streamlines, 1);
 
 	trx->streamlines->mmap_off = trxmmap::_create_memmap(offsets_filename, shape_off, "w+", offsets_dtype);
-	new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, 1, Dynamic, RowMajor>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape_off), std::get<1>(shape_off));
+	new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape_off), std::get<1>(shape_off));
 
-	trx->streamlines->_lengths.resize(nb_streamlines, 0);
+	trx->streamlines->_lengths.resize(nb_streamlines, 1);
 
 	if (init_as != NULL)
 	{
@@ -678,8 +677,14 @@ TrxFile<DT> *load_from_zip(std::string filename)
 			global_pos += sb.comp_size + elem_filename.size();
 		}
 
-		long long size = sb.comp_size / _sizeof_dtype(ext);
+		long long size = sb.size / _sizeof_dtype(ext);
 		file_pointer_size[elem_filename] = {mem_address, size};
 	}
 	return TrxFile<DT>::_create_trx_from_pointer(header, file_pointer_size, filename);
 }
+
+// TrxFile<DT> *load_from_directory(std::string *path)
+// {
+// 	std::string directory = string(canonicalize_file_name(path->c_str()));
+// 	std::string header = directory
+// }
