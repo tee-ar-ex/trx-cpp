@@ -14,6 +14,7 @@ set(CMAKE_BUILD_TYPE Debug)
 find_package(libzip REQUIRED)
 find_package (Eigen3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 find_package(GTest CONFIG REQUIRED)
 
 enable_testing()
@@ -28,6 +29,8 @@ TARGET_LINK_LIBRARIES(test_mmap
 	libzip::zip
 	GTest::gtest
 	GTest::gtest_main
+	spdlog::spdlog
+	spdlog::spdlog_header_only
 )
 
 

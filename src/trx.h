@@ -16,6 +16,8 @@
 #include <mio/mmap.hpp>
 #include <mio/shared_mmap.hpp>
 
+#include "spdlog/spdlog.h"
+
 using namespace Eigen;
 using json = nlohmann::json;
 

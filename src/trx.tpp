@@ -28,7 +28,7 @@ std::string _generate_filename_from_data(const ArrayBase<DT> &arr, std::string f
 
 	if (ext.size() != 0)
 	{
-		std::cout << "WARNING: Will overwrite provided extension if needed." << std::endl;
+		spdlog::warn("Will overwrite provided extension if needed.");
 	}
 
 	std::string eigen_dt = typeid(arr.matrix().data()).name();
@@ -141,8 +141,7 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 	// TODO: add else if for get_reference_info
 	else
 	{
-		// TODO: logger
-		std::cout << "No reference provided, using blank space attributes, please update them later." << std::endl;
+		spdlog::debug("No reference provided, using blank space attributes, please update them later.");
 
 		// identity matrix
 		for (int i = 0; i < 4; i++)
@@ -161,8 +160,7 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 			throw std::invalid_argument("Can't us init_as without declaring nb_vertices and nb_streamlines");
 		}
 
-		// TODO: logger
-		std::cout << "Initializing empty TrxFile." << std::endl;
+		spdlog::debug("Initializing empty TrxFile.");
 		// will remove as completely unecessary. using as placeholders
 		this->header = {};
 
@@ -177,8 +175,7 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 	}
 	else if (nb_vertices > 0 && nb_streamlines > 0)
 	{
-		// TODO: logger
-		std::cout << "Preallocating TrxFile with size " << nb_streamlines << " streamlines and " << nb_vertices << " vertices." << std::endl;
+		spdlog::debug("Preallocating TrxFile with size {} streamlines and {} vertices.", nb_streamlines, nb_vertices);
 		TrxFile<DT> *trx = _initialize_empty_trx<DT>(nb_streamlines, nb_vertices, init_as);
 		this->streamlines = trx->streamlines;
 		this->groups = trx->groups;
@@ -212,7 +209,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 
 	std::string tmp_dir(dirname);
 
-	std::cout << "Temporary folder for memmaps: " << tmp_dir << std::endl;
+	spdlog::info("Temporary folder for memmaps: {}", tmp_dir);
 
 	trx->header["NB_VERTICES"] = nb_vertices;
 	trx->header["NB_STREAMLINES"] = nb_streamlines;
@@ -235,13 +232,9 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 		offsets_dtype = _get_dtype(typeid(uint64_t).name());
 		lengths_dtype = _get_dtype(typeid(uint32_t).name());
 	}
-
-	std::cout << "Initializing positions with dtype: "
-		  << positions_dtype << std::endl;
-	std::cout << "Initializing offsets with dtype: "
-		  << offsets_dtype << std::endl;
-	std::cout << "Initializing lengths with dtype: "
-		  << lengths_dtype << std::endl;
+	spdlog::debug("Initializing positions with dtype: {}", positions_dtype);
+	spdlog::debug("Initializing offsets with dtype: {}", offsets_dtype);
+	spdlog::debug("Initializing lengths with dtype: {}", lengths_dtype);
 
 	std::string positions_filename(tmp_dir);
 	positions_filename += "/positions.3." + positions_dtype;
@@ -312,9 +305,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 				dpv_filename = dpv_dirname + x.first + "." + std::to_string(cols) + "." + dpv_dtype;
 			}
 
-			// TODO: logger
-			std::cout << "Initializing " << x.first << " (dpv) with dtype: "
-				  << dpv_dtype << std::endl;
+			spdlog::debug("Initializing {} (dpv) with dtype: {}", x.first, dpv_dtype);
 
 			std::tuple<int, int> dpv_shape = std::make_tuple(rows, cols);
 			trx->data_per_vertex[x.first] = new ArraySequence<DT>();
@@ -357,8 +348,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 				dps_filename = dps_dirname + x.first + "." + std::to_string(cols) + "." + dps_dtype;
 			}
 
-			// TODO: logger
-			std::cout << "Initializing " << x.first << " (dps) with and dtype: " << dps_dtype << std::endl;
+			spdlog::debug("Initializing {} (dps) with dtype: {}", x.first, dps_dtype);
 
 			std::tuple<int, int> dps_shape = std::make_tuple(rows, cols);
 			trx->data_per_streamline[x.first] = new trxmmap::MMappedMatrix<DT>();
@@ -548,7 +538,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			trx->data_per_vertex[base]->_lengths = trx->streamlines->_lengths;
 		}
 
-		else if (folder.compare("dpg") == 0)
+		else if (folder.rfind("dpg", 0) == 0)
 		{
 			std::tuple<int, int> shape;
 			trx->data_per_streamline[base] = new MMappedMatrix<DT>();
@@ -600,8 +590,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 		}
 		else
 		{
-			// TODO: logger
-			std::cout << elem_filename << " is not part of a valid structure." << std::endl;
+			spdlog::error("{} is not part of a valid structure.", elem_filename);
 		}
 	}
 	if (trx->streamlines->_data.size() == 0 || trx->streamlines->_offsets.size() == 0)
