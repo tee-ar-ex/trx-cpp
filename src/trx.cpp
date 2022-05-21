@@ -276,28 +276,3 @@ namespace trxmmap
 		}
 	}
 };
-// int main(int argc, char *argv[])
-//{
-//  Array<int16_t, 5, 4> arr;
-//  trxmmap::_generate_filename_from_data(arr, "mean_fa.int16");
-
-// // "Test cases" until i create more formal ones
-// int *errorp;
-// char *path = strdup(argv[1]);
-// zip_t *zf = zip_open(path, 0, errorp);
-// Json::Value header = load_header(zf);
-
-// std::cout << "**Reading header**" << std::endl;
-// std::cout << "Dimensions: " << header["DIMENSIONS"] << std::endl;
-// std::cout << "Number of streamlines: " << header["NB_STREAMLINES"] << std::endl;
-// std::cout << "Number of vertices: " << header["NB_VERTICES"] << std::endl;
-// std::cout << "Voxel to RASMM: " << header["VOXEL_TO_RASMM"] << std::endl;
-
-// load_from_zip(path);
-
-// TrxFile trx(1, 1);
-
-// std::cout << "Printing trk streamline data value " << trx.streamlines._data(0, 0) << endl;
-// std::cout << "Printing trk streamline offset value " << trx.streamlines._offset(0, 0) << endl;
-// return 1;
-//}

@@ -1,0 +1,10 @@
+**/CMakeCache.txt
+**/CMakeFiles
+**/*.cmake
+**/Makefile
+**/build
+**/bin
+**/load_trx
+**/tests/memmap
+libtrx.a
+tests/data
