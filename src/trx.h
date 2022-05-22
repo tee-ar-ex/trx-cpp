@@ -89,7 +89,39 @@ namespace trxmmap
 		 */
 		TrxFile<DT> *deepcopy();
 
+		/**
+		 * @brief Remove the ununsed portion of preallocated memmaps
+		 *
+		 * @param nb_streamlines The number of streamlines to keep
+		 * @param nb_vertices The number of vertices to keep
+		 * @param delete_dpg Remove data_per_group when resizing
+		 */
+		void resize(int nb_streamlines = -1, int nb_vertices = -1, bool delete_dpg = false);
+
+		/**
+		 * @brief Cleanup on-disk temporary folder and initialize an empty TrxFile
+		 *
+		 */
+		void close();
+
 	private:
+		/**
+		 * @brief Get the real size of data (ignoring zeros of preallocation)
+		 *
+		 * @return std::tuple<int, int> A tuple representing the index of the last streamline and the total length of all the streamlines
+		 */
+		std::tuple<int, int> _get_real_len();
+
+		/**
+		 * @brief Fill a TrxFile using another and start indexes (preallocation)
+		 *
+		 * @param trx TrxFile to copy data from
+		 * @param strs_start The start index of the streamline
+		 * @param pts_start The start index of the point
+		 * @param nb_strs_to_copy The number of streamlines to copy. If not set will copy all
+		 * @return std::tuple<int, int> A tuple representing the end of the copied streamlines and end of copied points
+		 */
+		std::tuple<int, int> _copy_fixed_arrays_from(TrxFile<DT> *trx, int strs_start = 0, int pts_start = 0, int nb_strs_to_copy = -1);
 		int len();
 	};
 

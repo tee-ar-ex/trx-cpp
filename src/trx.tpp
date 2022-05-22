@@ -287,7 +287,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 	trx->streamlines->mmap_off = trxmmap::_create_memmap(offsets_filename, shape_off, "w+", offsets_dtype);
 	new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape_off), std::get<1>(shape_off));
 
-	trx->streamlines->_lengths.resize(nb_streamlines, 1);
+	trx->streamlines->_lengths.resize(nb_streamlines);
 
 	if (init_as != NULL)
 	{
@@ -343,7 +343,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 				new (&(trx->data_per_vertex[x.first]->_data)) Map<Matrix<double, Dynamic, Dynamic>>(reinterpret_cast<double *>(trx->data_per_vertex[x.first]->mmap_pos.data()), rows, cols);
 			}
 
-			trx->data_per_vertex[x.first]->_offsets = trx->streamlines->_offsets;
+			new (&(trx->data_per_vertex[x.first]->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(trx->streamlines->_offsets.data(), int(trx->streamlines->_offsets.rows()), int(trx->streamlines->_offsets.cols()));
 			trx->data_per_vertex[x.first]->_lengths = trx->streamlines->_lengths;
 		}
 
@@ -758,6 +758,257 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 	copy_trx->_uncompressed_folder_handle = tmp_dir;
 
 	return copy_trx;
+}
+
+// TODO: verify that this function is actually necessary (there should not be preallocation zeros afaik)
+template <typename DT>
+std::tuple<int, int> TrxFile<DT>::_get_real_len()
+{
+	if (this->streamlines->_lengths.size() == 0)
+		return std::make_tuple(0, 0);
+
+	int last_elem_pos = _dichotomic_search(this->streamlines->_lengths);
+
+	if (last_elem_pos != -1)
+	{
+		int strs_end = last_elem_pos + 1;
+		int pts_end = this->streamlines->_lengths(seq(0, last_elem_pos), 0).sum();
+
+		return std::make_tuple(strs_end, pts_end);
+	}
+
+	return std::make_tuple(0, 0);
+}
+
+template <typename DT>
+std::tuple<int, int> TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int strs_start, int pts_start, int nb_strs_to_copy)
+{
+	int curr_strs_len, curr_pts_len;
+
+	if (nb_strs_to_copy == -1)
+	{
+		std::tuple<int, int> curr = this->_get_real_len();
+		curr_strs_len = std::get<0>(curr);
+		curr_pts_len = std::get<1>(curr);
+	}
+	else
+	{
+		curr_strs_len = nb_strs_to_copy;
+		curr_pts_len = trx->streamlines->_lengths(seq(0, curr_strs_len - 1)).sum();
+	}
+
+	if (pts_start == -1)
+	{
+		pts_start = 0;
+	}
+	if (strs_start == -1)
+	{
+		strs_start = 0;
+	}
+
+	int strs_end = strs_start + curr_strs_len;
+	int pts_end = pts_start + curr_pts_len;
+
+	if (curr_pts_len == 0)
+		return std::make_tuple(strs_start, pts_start);
+
+	this->streamlines->_data(seq(pts_start, pts_end - 1), all) = trx->streamlines->_data(seq(0, curr_pts_len - 1), all);
+	this->streamlines->_offsets(seq(strs_start, strs_end - 1), all) = (trx->streamlines->_offsets(seq(0, curr_strs_len - 1), all).array() + pts_start).matrix();
+	this->streamlines->_lengths(seq(strs_start, strs_end - 1), all) = trx->streamlines->_lengths(seq(0, curr_strs_len - 1), all);
+
+	for (auto const &x : this->data_per_vertex)
+	{
+		this->data_per_vertex[x.first]->_data(seq(pts_start, pts_end - 1), all) = trx->data_per_vertex[x.first]->_data(seq(0, curr_pts_len - 1), all);
+		new (&(this->data_per_vertex[x.first]->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(trx->data_per_vertex[x.first]->_offsets.data(), trx->data_per_vertex[x.first]->_offsets.rows(), trx->data_per_vertex[x.first]->_offsets.cols());
+		this->data_per_vertex[x.first]->_lengths = trx->data_per_vertex[x.first]->_lengths;
+	}
+
+	for (auto const &x : this->data_per_streamline)
+	{
+		this->data_per_streamline[x.first]->_matrix(seq(strs_start, strs_end - 1), all) = trx->data_per_streamline[x.first]->_matrix(seq(0, curr_strs_len - 1), all);
+	}
+
+	return std::make_tuple(strs_end, pts_end);
+}
+
+template <typename DT>
+void TrxFile<DT>::close()
+{
+	if (this->_uncompressed_folder_handle != "")
+	{
+		this->_uncompressed_folder_handle = "";
+	}
+
+	*this = TrxFile<DT>(); // probably dangerous to do
+	spdlog::debug("Deleted memmaps and initialized empty TrxFile.");
+}
+
+template <typename DT>
+void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
+{
+	if (!this->_copy_safe)
+	{
+		std::invalid_argument("Cannot resize a sliced dataset.");
+	}
+
+	std::tuple<int, int> sp_end = this->_get_real_len();
+	int strs_end = std::get<0>(sp_end);
+	int ptrs_end = std::get<1>(sp_end);
+
+	if (nb_streamlines != -1 && nb_streamlines < strs_end)
+	{
+		strs_end = nb_streamlines;
+		spdlog::info("Resizing (down) memmaps, less streamlines than it actually contains");
+	}
+
+	if (nb_vertices == -1)
+	{
+		ptrs_end = this->streamlines->_lengths(all, 0).sum();
+		nb_vertices = ptrs_end;
+	}
+	else if (nb_vertices < ptrs_end)
+	{
+		spdlog::warn("Cannot resize (down) vertices for consistency.");
+		return;
+	}
+
+	if (nb_streamlines == -1)
+	{
+		nb_streamlines = strs_end;
+	}
+
+	if (nb_streamlines == this->header["NB_STREAMLINES"] && nb_vertices == this->header["NB_VERTICES"])
+	{
+		spdlog::debug("TrxFile of the right size, no resizing.");
+		return;
+	}
+
+	TrxFile<DT> *trx = _initialize_empty_trx(nb_streamlines, nb_vertices, this);
+
+	spdlog::info("Resizing streamlines from size {} to {}", this->streamlines->_lengths.size(), nb_streamlines);
+	spdlog::info("Resizing vertices from size {} to  {}", this->streamlines->_data(all, 0).size(), nb_vertices);
+
+	if (nb_streamlines < this->header["NB_STREAMLINES"])
+		trx->_copy_fixed_arrays_from(this, -1, -1, nb_streamlines);
+	else
+	{
+		trx->_copy_fixed_arrays_from(this);
+	}
+
+	std::string tmp_dir = trx->_uncompressed_folder_handle;
+
+	if (this->groups.size() > 0)
+	{
+		std::string group_dir = tmp_dir + SEPARATOR + "groups" + SEPARATOR;
+		if (mkdir(group_dir.c_str(), S_IRWXU) != 0)
+		{
+			spdlog::error("Could not create directory {}", group_dir);
+		}
+
+		for (auto const &x : this->groups)
+		{
+			std::string group_dtype = _get_dtype(typeid(x.second->_matrix).name());
+			std::string group_name = group_dir + x.first + "." + group_dtype;
+
+			int ori_length = this->groups[x.first]->_matrix.size();
+
+			std::vector<int> keep_rows;
+			std::vector<int> keep_cols = {0};
+
+			// Slicing
+			for (int i = 0; i < x.second->_matrix.rows(); ++i)
+			{
+				for (int j = 0; j < x.second->_matrix.cols(); ++j)
+				{
+					if (x.second->_matrix(i, j) < strs_end)
+					{
+						keep_rows.push_back(i);
+					}
+				}
+			}
+			// std::cout << "Cols " << keep_rows.at(1) << std::endl;
+
+			Matrix<uint32_t, Dynamic, Dynamic> tmp = this->groups[x.first]->_matrix(keep_rows, keep_cols);
+			std::tuple<int, int> group_shape = std::make_tuple(tmp.size(), 1);
+
+			trx->groups[x.first] = new MMappedMatrix<uint32_t>();
+			trx->groups[x.first]->mmap = trxmmap::_create_memmap(group_name, group_shape, "w+", group_dtype);
+			new (&(trx->groups[x.first]->_matrix)) Map<Matrix<uint32_t, Dynamic, Dynamic>>(reinterpret_cast<uint32_t *>(trx->groups[x.first]->mmap.data()), std::get<0>(group_shape), std::get<1>(group_shape));
+
+			spdlog::debug("{} group went from {} items to {}", x.first, ori_length, tmp.size());
+
+			// update values
+			for (int i = 0; i < trx->groups[x.first]->_matrix.rows(); ++i)
+			{
+				for (int j = 0; j < trx->groups[x.first]->_matrix.cols(); ++j)
+				{
+					trx->groups[x.first]->_matrix(i, j) = tmp(i, j);
+				}
+			}
+		}
+	}
+
+	if (delete_dpg)
+	{
+		this->close();
+		return;
+	}
+
+	if (this->data_per_group.size() > 0)
+	{
+		// really need to refactor all these mkdirs
+		std::string dpg_dir = tmp_dir + SEPARATOR + "dpg" + SEPARATOR;
+		if (mkdir(dpg_dir.c_str(), S_IRWXU) != 0)
+		{
+			spdlog::error("Could not create directory {}", dpg_dir);
+		}
+
+		for (auto const &x : this->data_per_group)
+		{
+			std::string dpg_subdir = dpg_dir + x.first;
+			struct stat sb;
+
+			if (stat(dpg_subdir.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode))
+			{
+				if (mkdir(dpg_subdir.c_str(), S_IRWXU) != 0)
+				{
+					spdlog::error("Could not create directory {}", dpg_subdir);
+				}
+			}
+
+			if (trx->data_per_group.find(x.first) == trx->data_per_group.end())
+			{
+				trx->data_per_group[x.first] = {};
+			}
+
+			for (auto const &y : this->data_per_group[x.first])
+			{
+				std::string dpg_dtype = _get_dtype(typeid(this->data_per_group[x.first][y.first]->_matrix).name());
+				std::string dpg_filename = dpg_subdir + SEPARATOR + y.first;
+				dpg_filename = _generate_filename_from_data(this->data_per_group[x.first][y.first]->_matrix, dpg_filename);
+
+				std::tuple<int, int> dpg_shape = std::make_tuple(this->data_per_group[x.first][y.first]->_matrix.rows(), this->data_per_group[x.first][y.first]->_matrix.cols());
+
+				if (trx->data_per_group[x.first].find(y.first) == trx->data_per_group[x.first].end())
+				{
+					trx->data_per_group[x.first][y.first] = new MMappedMatrix<DT>();
+				}
+
+				trx->data_per_group[x.first][y.first]->mmap = _create_memmap(dpg_filename, dpg_shape, "w+", dpg_dtype);
+				new (&(trx->data_per_group[x.first][y.first]->_matrix)) Map<Matrix<uint32_t, Dynamic, Dynamic>>(reinterpret_cast<uint32_t *>(trx->data_per_group[x.first][y.first]->mmap.data()), std::get<0>(dpg_shape), std::get<1>(dpg_shape));
+
+				// update values
+				for (int i = 0; i < trx->data_per_group[x.first][y.first]->_matrix.rows(); ++i)
+				{
+					for (int j = 0; j < trx->data_per_group[x.first][y.first]->_matrix.cols(); ++j)
+					{
+						trx->data_per_group[x.first][y.first]->_matrix(i, j) = this->data_per_group[x.first][y.first]->_matrix(i, j);
+					}
+				}
+			}
+		}
+		this->close();
+	}
 }
 
 template <typename DT>
