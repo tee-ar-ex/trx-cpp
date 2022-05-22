@@ -1,3 +1,26 @@
+// Taken from: https://stackoverflow.com/a/25389481
+template <class Matrix>
+void write_binary(const char *filename, const Matrix &matrix)
+{
+	std::ofstream out(filename, std::ios::out | std::ios::binary | std::ios::trunc);
+	typename Matrix::Index rows = matrix.rows(), cols = matrix.cols();
+	// out.write((char *)(&rows), sizeof(typename Matrix::Index));
+	// out.write((char *)(&cols), sizeof(typename Matrix::Index));
+	out.write((char *)matrix.data(), rows * cols * sizeof(typename Matrix::Scalar));
+	out.close();
+}
+template <class Matrix>
+void read_binary(const char *filename, Matrix &matrix)
+{
+	std::ifstream in(filename, std::ios::in | std::ios::binary);
+	typename Matrix::Index rows = 0, cols = 0;
+	in.read((char *)(&rows), sizeof(typename Matrix::Index));
+	in.read((char *)(&cols), sizeof(typename Matrix::Index));
+	matrix.resize(rows, cols);
+	in.read((char *)matrix.data(), rows * cols * sizeof(typename Matrix::Scalar));
+	in.close();
+}
+
 template <typename DT>
 void ediff1d(Matrix<DT, Dynamic, 1> &lengths, Matrix<DT, Dynamic, Dynamic> &tmp, uint32_t to_end)
 {
@@ -13,25 +36,22 @@ void ediff1d(Matrix<DT, Dynamic, 1> &lengths, Matrix<DT, Dynamic, Dynamic> &tmp,
 }
 
 template <typename DT>
-std::string _generate_filename_from_data(const ArrayBase<DT> &arr, std::string filename)
+std::string _generate_filename_from_data(const MatrixBase<DT> &arr, std::string filename)
 {
 
-	int ext_pos = filename.find_last_of(".");
+	std::string base, ext;
 
-	if (ext_pos == 0)
-	{
-		throw;
-	}
-
-	std::string base = filename.substr(0, ext_pos);
-	std::string ext = filename.substr(ext_pos, filename.size());
+	base = filename; // get_base(SEPARATOR, filename);
+	ext = get_ext(filename);
 
 	if (ext.size() != 0)
 	{
 		spdlog::warn("Will overwrite provided extension if needed.");
+		base = base.substr(0, base.length() - ext.length() - 1);
 	}
 
-	std::string eigen_dt = typeid(arr.matrix().data()).name();
+	// A very backwards way of getting the datatype
+	std::string eigen_dt = typeid(arr.array().matrix().data()).name();
 	std::string dt = _get_dtype(eigen_dt);
 
 	int n_rows = arr.rows();
@@ -405,9 +425,9 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 		int dim = std::get<1>(base_tuple);
 		std::string ext(std::get<2>(base_tuple));
 
-		if (ext.compare(".bit") == 0)
+		if (ext.compare("bit") == 0)
 		{
-			ext = ".bool";
+			ext = "bool";
 		}
 
 		long long mem_adress = std::get<0>(x->second);
@@ -424,10 +444,15 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 		if (root.compare("") != 0 && folder.rfind(stripped, stripped.size()) == 0)
 		{
 			// 1 for the first forward slash
-			folder = folder.substr(1 + root.size(), folder.size() - (1 + root.size()));
+			folder = folder.replace(0, root.size(), "");
+
+			if (folder[0] == SEPARATOR.c_str()[0])
+			{
+				folder = folder.substr(1, folder.size());
+			}
 		}
 
-		if (base.compare("positions") == 0 && folder.compare(".") == 0)
+		if (base.compare("positions") == 0 && (folder.compare("") == 0 || folder.compare(".") == 0))
 		{
 			if (size != int(trx->header["NB_VERTICES"]) * 3 || dim != 3)
 			{
@@ -454,7 +479,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			}
 		}
 
-		else if (base.compare("offsets") == 0 && folder.compare(".") == 0)
+		else if (base.compare("offsets") == 0 && (folder.compare("") == 0 || folder.compare(".") == 0))
 		{
 			if (size != int(trx->header["NB_STREAMLINES"]) || dim != 1)
 			{
@@ -488,7 +513,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			{
 				shape = std::make_tuple(trx->header["NB_STREAMLINES"], nb_scalar);
 			}
-			trx->data_per_streamline[base]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext.substr(1, ext.size() - 1), mem_adress);
+			trx->data_per_streamline[base]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
 			if (ext.compare("float16") == 0)
 			{
@@ -519,7 +544,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			{
 				shape = std::make_tuple(trx->header["NB_VERTICES"], nb_scalar);
 			}
-			trx->data_per_vertex[base]->mmap_pos = trxmmap::_create_memmap(filename, shape, "r+", ext.substr(1, ext.size() - 1), mem_adress);
+			trx->data_per_vertex[base]->mmap_pos = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
 			if (ext.compare("float16") == 0)
 			{
@@ -541,7 +566,6 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 		else if (folder.rfind("dpg", 0) == 0)
 		{
 			std::tuple<int, int> shape;
-			trx->data_per_streamline[base] = new MMappedMatrix<DT>();
 
 			if (size != dim)
 			{
@@ -557,7 +581,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			std::string sub_folder = std::string(basename(const_cast<char *>(folder.c_str())));
 
 			trx->data_per_group[sub_folder][data_name] = new MMappedMatrix<DT>();
-			trx->data_per_group[sub_folder][data_name]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext.substr(1, ext.size() - 1), mem_adress);
+			trx->data_per_group[sub_folder][data_name]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
 			if (ext.compare("float16") == 0)
 			{
@@ -585,7 +609,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 				shape = std::make_tuple(size, 1);
 			}
 			trx->groups[base] = new MMappedMatrix<uint32_t>();
-			trx->groups[base]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext.substr(1, ext.size() - 1), mem_adress);
+			trx->groups[base]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
 			new (&(trx->groups[base]->_matrix)) Map<Matrix<uint32_t, Dynamic, Dynamic>>(reinterpret_cast<uint32_t *>(trx->groups[base]->mmap.data()), std::get<0>(shape), std::get<1>(shape));
 		}
 		else
@@ -602,6 +626,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 	return trx;
 }
 
+// TODO: Major refactoring
 template <typename DT>
 TrxFile<DT> *TrxFile<DT>::deepcopy()
 {
@@ -611,14 +636,128 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 
 	std::string tmp_dir(dirname);
 
-	std::string header = tmp_dir + "/header.json";
+	std::string header = tmp_dir + SEPARATOR + "header.json";
+	std::ofstream out_json(header);
 
 	// TODO: Definitely a better way to deepcopy
 	json tmp_header = json::parse(this->header.dump());
 
-	std::cout << "header " << tmp_header << std::endl;
+	ArraySequence<DT> *to_dump = new ArraySequence<DT>();
+	// TODO: Verify that this is indeed a deep copy
+	new (&(to_dump->_data)) Matrix<DT, Dynamic, Dynamic, RowMajor>(this->streamlines->_data);
+	new (&(to_dump->_offsets)) Matrix<uint64_t, Dynamic, Dynamic, RowMajor>(this->streamlines->_offsets);
+	new (&(to_dump->_lengths)) Matrix<uint32_t, Dynamic, 1>(this->streamlines->_lengths);
 
-	return NULL;
+	if (!this->_copy_safe)
+	{
+		tmp_header["NB_STREAMLINES"] = to_dump->_offsets.size();
+		tmp_header["NB_VERTICES"] = to_dump->_data.size() / 3;
+	}
+	if (out_json.is_open())
+	{
+		out_json << std::setw(4) << tmp_header << std::endl;
+		out_json.close();
+	}
+
+	std::string pos_rootfn = tmp_dir + SEPARATOR + "positions";
+	std::string positions_filename = _generate_filename_from_data(to_dump->_data, pos_rootfn);
+
+	write_binary(positions_filename.c_str(), to_dump->_data);
+
+	std::string off_rootfn = tmp_dir + SEPARATOR + "offsets";
+	std::string offsets_filename = _generate_filename_from_data(to_dump->_offsets, off_rootfn);
+
+	write_binary(offsets_filename.c_str(), to_dump->_offsets);
+
+	if (this->data_per_vertex.size() > 0)
+	{
+		std::string dpv_dirname = tmp_dir + SEPARATOR + "dpv" + SEPARATOR;
+		if (mkdir(dpv_dirname.c_str(), S_IRWXU) != 0)
+		{
+			spdlog::error("Could not create directory {}", dpv_dirname);
+		}
+		for (auto const &x : this->data_per_vertex)
+		{
+			Matrix<DT, Dynamic, Dynamic, RowMajor> dpv_todump = x.second->_data;
+			std::string dpv_filename = dpv_dirname + x.first;
+			dpv_filename = _generate_filename_from_data(dpv_todump, dpv_filename);
+
+			write_binary(dpv_filename.c_str(), dpv_todump);
+		}
+	}
+
+	if (this->data_per_streamline.size() > 0)
+	{
+		std::string dps_dirname = tmp_dir + SEPARATOR + "dps" + SEPARATOR;
+		if (mkdir(dps_dirname.c_str(), S_IRWXU) != 0)
+		{
+			spdlog::error("Could not create directory {}", dps_dirname);
+		}
+		for (auto const &x : this->data_per_streamline)
+		{
+			Matrix<DT, Dynamic, Dynamic> dps_todump = x.second->_matrix;
+			std::string dps_filename = dps_dirname + x.first;
+			dps_filename = _generate_filename_from_data(dps_todump, dps_filename);
+
+			write_binary(dps_filename.c_str(), dps_todump);
+		}
+	}
+
+	if (this->groups.size() > 0)
+	{
+		std::string groups_dirname = tmp_dir + SEPARATOR + "groups" + SEPARATOR;
+		if (mkdir(groups_dirname.c_str(), S_IRWXU) != 0)
+		{
+			spdlog::error("Could not create directory {}", groups_dirname);
+		}
+
+		for (auto const &x : this->groups)
+		{
+			Matrix<uint32_t, Dynamic, Dynamic> group_todump = x.second->_matrix;
+			std::string group_filename = groups_dirname + x.first;
+			group_filename = _generate_filename_from_data(group_todump, group_filename);
+
+			write_binary(group_filename.c_str(), group_todump);
+
+			if (this->data_per_group.find(x.first) == this->data_per_group.end())
+			{
+				continue;
+			}
+
+			for (auto const &y : this->data_per_group[x.first])
+			{
+				std::string dpg_dirname = tmp_dir + SEPARATOR + "dpg" + SEPARATOR;
+				std::string dpg_subdirname = dpg_dirname + x.first;
+				struct stat sb;
+
+				if (stat(dpg_dirname.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode))
+				{
+					if (mkdir(dpg_dirname.c_str(), S_IRWXU) != 0)
+					{
+						spdlog::error("Could not create directory {}", dpg_dirname);
+					}
+				}
+				if (stat(dpg_subdirname.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode))
+				{
+					if (mkdir(dpg_subdirname.c_str(), S_IRWXU) != 0)
+					{
+						spdlog::error("Could not create directory {}", dpg_subdirname);
+					}
+				}
+
+				Matrix<DT, Dynamic, Dynamic> dpg_todump = this->data_per_group[x.first][y.first]->_matrix;
+				std::string dpg_filename = dpg_subdirname + SEPARATOR + y.first;
+				dpg_filename = _generate_filename_from_data(dpg_todump, dpg_filename);
+
+				write_binary(dpg_filename.c_str(), dpg_todump);
+			}
+		}
+	}
+
+	TrxFile<DT> *copy_trx = load_from_directory<DT>(tmp_dir);
+	copy_trx->_uncompressed_folder_handle = tmp_dir;
+
+	return copy_trx;
 }
 
 template <typename DT>
@@ -701,11 +840,23 @@ TrxFile<DT> *load_from_zip(std::string filename)
 	return TrxFile<DT>::_create_trx_from_pointer(header, file_pointer_size, filename);
 }
 
-// TrxFile<DT> *load_from_directory(std::string *path)
-// {
-// 	std::string directory = string(canonicalize_file_name(path->c_str()));
-// 	std::string header = directory
-// }
+template <typename DT>
+TrxFile<DT> *load_from_directory(std::string path)
+{
+	std::string directory = (std::string)canonicalize_file_name(path.c_str());
+	std::string header_name = directory + SEPARATOR + "header.json";
+
+	// TODO: add check to verify that it's open
+	std::ifstream header_file(header_name);
+	json header;
+	header_file >> header;
+	header_file.close();
+
+	std::map<std::string, std::tuple<long long, long long>> files_pointer_size;
+	populate_fps(directory.c_str(), files_pointer_size);
+
+	return TrxFile<DT>::_create_trx_from_pointer(header, files_pointer_size, "", directory);
+}
 
 template <typename DT>
 void save(MatrixBase<DT> &trx, std::string filename, zip_uint32_t compression_standard)

@@ -12,21 +12,21 @@ TEST(TrxFileMemmap, __generate_filename_from_data)
 	std::string filename = "mean_fa.bit";
 	std::string output_fn;
 
-	Array<int16_t, 5, 4> arr1;
+	Matrix<int16_t, 5, 4> arr1;
 	std::string exp_1 = "mean_fa.4.int16";
 
 	output_fn = _generate_filename_from_data(arr1, filename);
 	EXPECT_STREQ(output_fn.c_str(), exp_1.c_str());
 	output_fn.clear();
 
-	Array<double, 5, 4> arr2;
+	Matrix<double, 5, 4> arr2;
 	std::string exp_2 = "mean_fa.4.float64";
 
 	output_fn = _generate_filename_from_data(arr2, filename);
 	EXPECT_STREQ(output_fn.c_str(), exp_2.c_str());
 	output_fn.clear();
 
-	Array<double, 5, 1> arr3;
+	Matrix<double, 5, 1> arr3;
 	std::string exp_3 = "mean_fa.float64";
 
 	output_fn = _generate_filename_from_data(arr3, filename);
@@ -297,7 +297,12 @@ TEST(TrxFileMemmap, TrxFile)
 TEST(TrxFileMemmap, deepcopy)
 {
 	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>("data/small.trx");
-	// trx->deepcopy();
+	trxmmap::TrxFile<half> *copy = trx->deepcopy();
+
+	EXPECT_EQ(trx->header, copy->header);
+	EXPECT_EQ(trx->streamlines->_data, trx->streamlines->_data);
+	EXPECT_EQ(trx->streamlines->_offsets, trx->streamlines->_offsets);
+	EXPECT_EQ(trx->streamlines->_lengths, trx->streamlines->_lengths);
 }
 
 int main(int argc, char **argv)

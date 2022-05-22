@@ -8,3 +8,4 @@
 **/tests/memmap
 libtrx.a
 tests/data
+.vscode

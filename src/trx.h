@@ -5,6 +5,7 @@
 #include <fstream>
 #include <zip.h>
 #include <string.h>
+#include <dirent.h>
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <variant>
@@ -24,6 +25,7 @@ using json = nlohmann::json;
 namespace trxmmap
 {
 
+	const std::string SEPARATOR = "/";
 	const std::vector<std::string> dtypes({"float16", "bit", "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "float32", "float64"});
 
 	template <typename DT>
@@ -144,7 +146,7 @@ namespace trxmmap
 	 *
 	 * */
 	template <typename DT>
-	TrxFile<DT> *load_from_zip(std::string *path);
+	TrxFile<DT> *load_from_zip(std::string path);
 
 	/**
 	 * @brief Load a TrxFile from a folder containing memmaps
@@ -154,7 +156,7 @@ namespace trxmmap
 	 * @return TrxFile<DT>* TrxFile representing the read data
 	 */
 	template <typename DT>
-	TrxFile<DT> *load_from_directory(std::string *path);
+	TrxFile<DT> *load_from_directory(std::string path);
 
 	/**
 	 * Get affine and dimensions from a Nifti or Trk file (Adapted from dipy)
@@ -188,7 +190,7 @@ namespace trxmmap
 	mio::shared_mmap_sink _create_memmap(std::string &filename, std::tuple<int, int> &shape, std::string mode = "r", std::string dtype = "float32", long long offset = 0);
 
 	template <typename DT>
-	std::string _generate_filename_from_data(const ArrayBase<DT> &arr, const std::string filename);
+	std::string _generate_filename_from_data(const MatrixBase<DT> &arr, const std::string filename);
 	std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string filename);
 
 	/**
@@ -241,6 +243,7 @@ namespace trxmmap
 
 	std::string get_base(const std::string &delimiter, const std::string &str);
 	std::string get_ext(const std::string &str);
+	void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &file_pointer_size);
 #include "trx.tpp"
 
 }

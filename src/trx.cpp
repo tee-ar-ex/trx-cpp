@@ -12,6 +12,72 @@ using namespace std;
 
 namespace trxmmap
 {
+	void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size)
+	{
+		DIR *dir;
+		struct dirent *entry;
+
+		if (!(dir = opendir(name)))
+			return;
+
+		while ((entry = readdir(dir)) != NULL)
+		{
+			if (entry->d_type == DT_DIR)
+			{
+				char path[1024];
+				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+					continue;
+				snprintf(path, sizeof(path), "%s/%s", name, entry->d_name);
+				populate_fps(path, files_pointer_size);
+			}
+			else
+			{
+				std::string filename(entry->d_name);
+				std::string root(name);
+				std::string elem_filename = root + SEPARATOR + filename;
+				std::string ext = get_ext(elem_filename);
+
+				if (strcmp(ext.c_str(), "json") == 0)
+				{
+					continue;
+				}
+
+				if (!_is_dtype_valid(ext))
+				{
+					throw std::invalid_argument(std::string("The dtype of ") + elem_filename + std::string(" is not supported"));
+				}
+
+				if (strcmp(ext.c_str(), "bit") == 0)
+				{
+					ext = "bool";
+				}
+
+				int dtype_size = _sizeof_dtype(ext);
+
+				struct stat sb;
+				unsigned long size = 0;
+
+				if (stat(elem_filename.c_str(), &sb) == 0)
+				{
+					size = sb.st_size / dtype_size;
+				}
+
+				if (sb.st_size % dtype_size == 0)
+				{
+					files_pointer_size[elem_filename] = std::make_tuple(0, size);
+				}
+				else if (sb.st_size == 1)
+				{
+					files_pointer_size[elem_filename] = std::make_tuple(0, 0);
+				}
+				else
+				{
+					std::invalid_argument("Wrong size of datatype");
+				}
+			}
+		}
+		closedir(dir);
+	}
 	std::string get_base(const std::string &delimiter, const std::string &str)
 	{
 		std::string token;
