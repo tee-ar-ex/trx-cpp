@@ -10,6 +10,7 @@ set(CMAKE_BUILD_TYPE Debug)
 find_package(libzip REQUIRED)
 find_package (Eigen3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 
 add_library(trx src/trx.cpp src/trx.tpp src/trx.h)
 
@@ -18,6 +19,8 @@ TARGET_LINK_LIBRARIES(trx
 	nlohmann_json::nlohmann_json
 	libzip::zip
 	Eigen3::Eigen
+    spdlog::spdlog
+    spdlog::spdlog_header_only
 )
 
 

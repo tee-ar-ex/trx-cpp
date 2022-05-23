@@ -5,6 +5,7 @@
 #include <fstream>
 #include <zip.h>
 #include <string.h>
+#include <dirent.h>
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <variant>
@@ -16,18 +17,21 @@
 #include <mio/mmap.hpp>
 #include <mio/shared_mmap.hpp>
 
+#include "spdlog/spdlog.h"
+
 using namespace Eigen;
 using json = nlohmann::json;
 
 namespace trxmmap
 {
 
+	const std::string SEPARATOR = "/";
 	const std::vector<std::string> dtypes({"float16", "bit", "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "float32", "float64"});
 
 	template <typename DT>
 	struct ArraySequence
 	{
-		Map<Matrix<DT, Dynamic, Dynamic>> _data;
+		Map<Matrix<DT, Dynamic, Dynamic, RowMajor>> _data;
 		Map<Matrix<uint64_t, Dynamic, Dynamic, RowMajor>> _offsets;
 		Matrix<uint32_t, Dynamic, 1> _lengths;
 		mio::shared_mmap_sink mmap_pos;
@@ -78,7 +82,46 @@ namespace trxmmap
 		 */
 		static TrxFile<DT> *_create_trx_from_pointer(json header, std::map<std::string, std::tuple<long long, long long>> dict_pointer_size, std::string root_zip = "", std::string root = "");
 
+		/**
+		 * @brief Create a deepcopy of the TrxFile
+		 *
+		 * @return TrxFile<DT>* A deepcopied TrxFile of the current object
+		 */
+		TrxFile<DT> *deepcopy();
+
+		/**
+		 * @brief Remove the ununsed portion of preallocated memmaps
+		 *
+		 * @param nb_streamlines The number of streamlines to keep
+		 * @param nb_vertices The number of vertices to keep
+		 * @param delete_dpg Remove data_per_group when resizing
+		 */
+		void resize(int nb_streamlines = -1, int nb_vertices = -1, bool delete_dpg = false);
+
+		/**
+		 * @brief Cleanup on-disk temporary folder and initialize an empty TrxFile
+		 *
+		 */
+		void close();
+
 	private:
+		/**
+		 * @brief Get the real size of data (ignoring zeros of preallocation)
+		 *
+		 * @return std::tuple<int, int> A tuple representing the index of the last streamline and the total length of all the streamlines
+		 */
+		std::tuple<int, int> _get_real_len();
+
+		/**
+		 * @brief Fill a TrxFile using another and start indexes (preallocation)
+		 *
+		 * @param trx TrxFile to copy data from
+		 * @param strs_start The start index of the streamline
+		 * @param pts_start The start index of the point
+		 * @param nb_strs_to_copy The number of streamlines to copy. If not set will copy all
+		 * @return std::tuple<int, int> A tuple representing the end of the copied streamlines and end of copied points
+		 */
+		std::tuple<int, int> _copy_fixed_arrays_from(TrxFile<DT> *trx, int strs_start = 0, int pts_start = 0, int nb_strs_to_copy = -1);
 		int len();
 	};
 
@@ -135,7 +178,17 @@ namespace trxmmap
 	 *
 	 * */
 	template <typename DT>
-	TrxFile<DT> *load_from_zip(std::string *path);
+	TrxFile<DT> *load_from_zip(std::string path);
+
+	/**
+	 * @brief Load a TrxFile from a folder containing memmaps
+	 *
+	 * @tparam DT
+	 * @param path path of the zipped TrxFile
+	 * @return TrxFile<DT>* TrxFile representing the read data
+	 */
+	template <typename DT>
+	TrxFile<DT> *load_from_directory(std::string path);
 
 	/**
 	 * Get affine and dimensions from a Nifti or Trk file (Adapted from dipy)
@@ -148,7 +201,7 @@ namespace trxmmap
 	void get_reference_info(std::string reference, const MatrixXf &affine, const RowVectorXf &dimensions);
 
 	template <typename DT>
-	std::ostream &operator<<(std::ostream &out, const TrxFile<DT> &TrxFile);
+	std::ostream &operator<<(std::ostream &out, const TrxFile<DT> &trx);
 	// private:
 
 	void allocate_file(const std::string &path, const int size);
@@ -169,7 +222,7 @@ namespace trxmmap
 	mio::shared_mmap_sink _create_memmap(std::string &filename, std::tuple<int, int> &shape, std::string mode = "r", std::string dtype = "float32", long long offset = 0);
 
 	template <typename DT>
-	std::string _generate_filename_from_data(const ArrayBase<DT> &arr, const std::string filename);
+	std::string _generate_filename_from_data(const MatrixBase<DT> &arr, const std::string filename);
 	std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string filename);
 
 	/**
@@ -208,6 +261,36 @@ namespace trxmmap
 
 	template <typename DT>
 	void ediff1d(Matrix<DT, Dynamic, 1> &lengths, const Matrix<DT, Dynamic, Dynamic> &tmp, uint32_t to_end);
+
+	/**
+	 * @brief Save a TrxFile
+	 *
+	 * @tparam DT
+	 * @param trx The TrxFile to save
+	 * @param filename  The path to save the TrxFile to
+	 * @param compression_standard The compression standard to use, as defined by libzip (default: no compression)
+	 */
+	template <typename DT>
+	void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+
+	/**
+	 * @brief Utils function to zip on-disk memmaps
+	 *
+	 * @param directory The path to the on-disk memmap
+	 * @param filename The path where the zip file should be created
+	 * @param compression_standard The compression standard to use, as defined by the ZipFile library
+	 */
+	void zip_from_folder(zip_t *zf, const std::string root, const std::string directory, zip_uint32_t compression_standard = ZIP_CM_STORE);
+
+	std::string get_base(const std::string &delimiter, const std::string &str);
+	std::string get_ext(const std::string &str);
+	void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &file_pointer_size);
+
+	void copy_dir(const char *src, const char *dst);
+	void copy_file(const char *src, const char *dst);
+	int rm_dir(const char *d);
+
+	std::string rm_root(std::string root, const std::string path);
 #include "trx.tpp"
 
 }

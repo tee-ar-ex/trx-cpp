@@ -10,35 +10,100 @@
 using namespace Eigen;
 using namespace std;
 
-std::string get_base(const std::string &delimiter, const std::string &str)
-{
-	std::string token;
-
-	if (str.rfind(delimiter) + 1 < str.length())
-	{
-		token = str.substr(str.rfind(delimiter) + 1);
-	}
-	else
-	{
-		token = str;
-	}
-	return token;
-}
-
-std::string get_ext(const std::string &str)
-{
-	std::string ext = "";
-	std::string delimeter = ".";
-
-	if (str.rfind(delimeter) + 1 < str.length())
-	{
-		ext = str.substr(str.rfind(delimeter) + 1);
-	}
-	return ext;
-}
-
 namespace trxmmap
 {
+	void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size)
+	{
+		DIR *dir;
+		struct dirent *entry;
+
+		if (!(dir = opendir(name)))
+			return;
+
+		while ((entry = readdir(dir)) != NULL)
+		{
+			if (entry->d_type == DT_DIR)
+			{
+				char path[1024];
+				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+					continue;
+				snprintf(path, sizeof(path), "%s/%s", name, entry->d_name);
+				populate_fps(path, files_pointer_size);
+			}
+			else
+			{
+				std::string filename(entry->d_name);
+				std::string root(name);
+				std::string elem_filename = root + SEPARATOR + filename;
+				std::string ext = get_ext(elem_filename);
+
+				if (strcmp(ext.c_str(), "json") == 0)
+				{
+					continue;
+				}
+
+				if (!_is_dtype_valid(ext))
+				{
+					throw std::invalid_argument(std::string("The dtype of ") + elem_filename + std::string(" is not supported"));
+				}
+
+				if (strcmp(ext.c_str(), "bit") == 0)
+				{
+					ext = "bool";
+				}
+
+				int dtype_size = _sizeof_dtype(ext);
+
+				struct stat sb;
+				unsigned long size = 0;
+
+				if (stat(elem_filename.c_str(), &sb) == 0)
+				{
+					size = sb.st_size / dtype_size;
+				}
+
+				if (sb.st_size % dtype_size == 0)
+				{
+					files_pointer_size[elem_filename] = std::make_tuple(0, size);
+				}
+				else if (sb.st_size == 1)
+				{
+					files_pointer_size[elem_filename] = std::make_tuple(0, 0);
+				}
+				else
+				{
+					std::invalid_argument("Wrong size of datatype");
+				}
+			}
+		}
+		closedir(dir);
+	}
+	std::string get_base(const std::string &delimiter, const std::string &str)
+	{
+		std::string token;
+
+		if (str.rfind(delimiter) + 1 < str.length())
+		{
+			token = str.substr(str.rfind(delimiter) + 1);
+		}
+		else
+		{
+			token = str;
+		}
+		return token;
+	}
+
+	std::string get_ext(const std::string &str)
+	{
+		std::string ext = "";
+		std::string delimeter = ".";
+
+		if (str.rfind(delimeter) < str.length() - 1)
+		{
+			ext = str.substr(str.rfind(delimeter) + 1);
+		}
+		return ext;
+	}
 	// TODO: check if there's a better way
 	int _sizeof_dtype(std::string dtype)
 	{
@@ -213,15 +278,18 @@ namespace trxmmap
 			filename.pop_back();
 		}
 
+		long filesize = std::get<0>(shape) * std::get<1>(shape) * _sizeof_dtype(dtype);
 		// if file does not exist, create and allocate it
+
 		struct stat buffer;
 		if (stat(filename.c_str(), &buffer) != 0)
 		{
-			allocate_file(filename, std::get<0>(shape) * std::get<1>(shape) * _sizeof_dtype(dtype));
+			allocate_file(filename, filesize);
 		}
 
 		// std::error_code error;
-		mio::shared_mmap_sink rw_mmap(filename, offset, mio::map_entire_file);
+
+		mio::shared_mmap_sink rw_mmap(filename, offset, filesize);
 
 		return rw_mmap;
 	}
@@ -274,29 +342,164 @@ namespace trxmmap
 			std::exit(1);
 		}
 	}
+
+	void copy_dir(const char *src, const char *dst)
+	{
+		DIR *dir;
+		struct dirent *entry;
+
+		if (!(dir = opendir(src)))
+			return;
+
+		if (mkdir(dst, S_IRWXU) != 0)
+		{
+			spdlog::error("Could not create directory {}", dst);
+		}
+
+		while ((entry = readdir(dir)) != NULL)
+		{
+			if (entry->d_type == DT_DIR)
+			{
+				char path[1024];
+				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+					continue;
+				char dstpath[1024];
+				snprintf(path, sizeof(path), "%s%s%s", src, SEPARATOR.c_str(), entry->d_name);
+				snprintf(dstpath, sizeof(dstpath), "%s%s%s", dst, SEPARATOR.c_str(), entry->d_name);
+				copy_dir(path, dstpath);
+			}
+			else
+			{
+				char srcfile[1024];
+				char dstfile[1024];
+				snprintf(srcfile, sizeof(srcfile), "%s%s%s", src, SEPARATOR.c_str(), entry->d_name);
+				snprintf(dstfile, sizeof(dstfile), "%s%s%s", dst, SEPARATOR.c_str(), entry->d_name);
+				copy_file(srcfile, dstfile);
+			}
+		}
+		closedir(dir);
+	}
+
+	// modified from:https://stackoverflow.com/a/7267734
+	void copy_file(const char *src, const char *dst)
+	{
+		int src_fd, dst_fd, n, err;
+		unsigned char buffer[4096];
+
+		src_fd = open(src, O_RDONLY);
+		dst_fd = open(dst, O_CREAT | O_WRONLY, 0666); // maybe keep original permissions?
+
+		while (1)
+		{
+			err = read(src_fd, buffer, 4096);
+			if (err == -1)
+			{
+				printf("Error reading file.\n");
+				exit(1);
+			}
+			n = err;
+
+			if (n == 0)
+				break;
+
+			err = write(dst_fd, buffer, n);
+			if (err == -1)
+			{
+				printf("Error writing to file.\n");
+				exit(1);
+			}
+		}
+		close(src_fd);
+		close(dst_fd);
+	}
+	int rm_dir(const char *d)
+	{
+
+		DIR *dir;
+		struct dirent *entry;
+
+		if (!(dir = opendir(d)))
+			return -1;
+
+		while ((entry = readdir(dir)) != NULL)
+		{
+			if (entry->d_type == DT_DIR)
+			{
+				char path[1024];
+				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+					continue;
+				snprintf(path, sizeof(path), "%s%s%s", d, SEPARATOR.c_str(), entry->d_name);
+				rm_dir(path);
+			}
+			else
+			{
+				char fn[1024];
+				snprintf(fn, sizeof(fn), "%s%s%s", d, SEPARATOR.c_str(), entry->d_name);
+				if (remove(fn) != 0)
+				{
+					spdlog::error("Could not remove file {}", fn);
+					return -1;
+				}
+			}
+		}
+		closedir(dir);
+		return rmdir(d);
+	}
+
+	void zip_from_folder(zip_t *zf, const std::string root, const std::string directory, zip_uint32_t compression_standard)
+	{
+		DIR *dir;
+		struct dirent *entry;
+
+		if (!(dir = opendir(directory.c_str())))
+			return;
+
+		while ((entry = readdir(dir)) != NULL)
+		{
+			if (entry->d_type == DT_DIR)
+			{
+				char path[1024];
+				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+					continue;
+				snprintf(path, sizeof(path), "%s%s%s", directory.c_str(), SEPARATOR.c_str(), entry->d_name);
+
+				std::string zip_fname(path);
+				zip_fname = rm_root(root, zip_fname);
+				zip_dir_add(zf, zip_fname.c_str(), ZIP_FL_ENC_GUESS);
+				zip_from_folder(zf, root, std::string(path), compression_standard);
+			}
+			else
+			{
+				std::string fn;
+				char fullpath[1024];
+
+				snprintf(fullpath, sizeof(fullpath), "%s%s%s", directory.c_str(), SEPARATOR.c_str(), entry->d_name);
+				fn = rm_root(root, std::string(fullpath));
+
+				zip_source_t *s;
+
+				if ((s = zip_source_file(zf, fullpath, 0, 0)) == NULL ||
+				    zip_file_add(zf, fn.c_str(), s, ZIP_FL_ENC_UTF_8) < 0)
+				{
+					zip_source_free(s);
+					spdlog::error("error adding file {}: {}", fn, zip_strerror(zf));
+				}
+			}
+		}
+		closedir(dir);
+	}
+
+	std::string rm_root(const std::string root, const std::string path)
+	{
+
+		std::size_t index;
+		std::string stripped;
+
+		index = path.find(root);
+		if (index != std::string::npos)
+		{
+			stripped = path.substr(index + root.size() + 1, path.size() - index - root.size() - 1);
+		}
+		return stripped;
+	}
 };
-// int main(int argc, char *argv[])
-//{
-//  Array<int16_t, 5, 4> arr;
-//  trxmmap::_generate_filename_from_data(arr, "mean_fa.int16");
-
-// // "Test cases" until i create more formal ones
-// int *errorp;
-// char *path = strdup(argv[1]);
-// zip_t *zf = zip_open(path, 0, errorp);
-// Json::Value header = load_header(zf);
-
-// std::cout << "**Reading header**" << std::endl;
-// std::cout << "Dimensions: " << header["DIMENSIONS"] << std::endl;
-// std::cout << "Number of streamlines: " << header["NB_STREAMLINES"] << std::endl;
-// std::cout << "Number of vertices: " << header["NB_VERTICES"] << std::endl;
-// std::cout << "Voxel to RASMM: " << header["VOXEL_TO_RASMM"] << std::endl;
-
-// load_from_zip(path);
-
-// TrxFile trx(1, 1);
-
-// std::cout << "Printing trk streamline data value " << trx.streamlines._data(0, 0) << endl;
-// std::cout << "Printing trk streamline offset value " << trx.streamlines._offset(0, 0) << endl;
-// return 1;
-//}
