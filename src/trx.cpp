@@ -98,7 +98,7 @@ namespace trxmmap
 		std::string ext = "";
 		std::string delimeter = ".";
 
-		if (str.rfind(delimeter) + 1 < str.length())
+		if (str.rfind(delimeter) < str.length() - 1)
 		{
 			ext = str.substr(str.rfind(delimeter) + 1);
 		}
@@ -280,6 +280,7 @@ namespace trxmmap
 
 		long filesize = std::get<0>(shape) * std::get<1>(shape) * _sizeof_dtype(dtype);
 		// if file does not exist, create and allocate it
+
 		struct stat buffer;
 		if (stat(filename.c_str(), &buffer) != 0)
 		{
@@ -340,5 +341,165 @@ namespace trxmmap
 			std::cout << "Trk reference not implemented" << std::endl;
 			std::exit(1);
 		}
+	}
+
+	void copy_dir(const char *src, const char *dst)
+	{
+		DIR *dir;
+		struct dirent *entry;
+
+		if (!(dir = opendir(src)))
+			return;
+
+		if (mkdir(dst, S_IRWXU) != 0)
+		{
+			spdlog::error("Could not create directory {}", dst);
+		}
+
+		while ((entry = readdir(dir)) != NULL)
+		{
+			if (entry->d_type == DT_DIR)
+			{
+				char path[1024];
+				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+					continue;
+				char dstpath[1024];
+				snprintf(path, sizeof(path), "%s%s%s", src, SEPARATOR.c_str(), entry->d_name);
+				snprintf(dstpath, sizeof(dstpath), "%s%s%s", dst, SEPARATOR.c_str(), entry->d_name);
+				copy_dir(path, dstpath);
+			}
+			else
+			{
+				char srcfile[1024];
+				char dstfile[1024];
+				snprintf(srcfile, sizeof(srcfile), "%s%s%s", src, SEPARATOR.c_str(), entry->d_name);
+				snprintf(dstfile, sizeof(dstfile), "%s%s%s", dst, SEPARATOR.c_str(), entry->d_name);
+				copy_file(srcfile, dstfile);
+			}
+		}
+		closedir(dir);
+	}
+
+	// modified from:https://stackoverflow.com/a/7267734
+	void copy_file(const char *src, const char *dst)
+	{
+		int src_fd, dst_fd, n, err;
+		unsigned char buffer[4096];
+
+		src_fd = open(src, O_RDONLY);
+		dst_fd = open(dst, O_CREAT | O_WRONLY, 0666); // maybe keep original permissions?
+
+		while (1)
+		{
+			err = read(src_fd, buffer, 4096);
+			if (err == -1)
+			{
+				printf("Error reading file.\n");
+				exit(1);
+			}
+			n = err;
+
+			if (n == 0)
+				break;
+
+			err = write(dst_fd, buffer, n);
+			if (err == -1)
+			{
+				printf("Error writing to file.\n");
+				exit(1);
+			}
+		}
+		close(src_fd);
+		close(dst_fd);
+	}
+	int rm_dir(const char *d)
+	{
+
+		DIR *dir;
+		struct dirent *entry;
+
+		if (!(dir = opendir(d)))
+			return -1;
+
+		while ((entry = readdir(dir)) != NULL)
+		{
+			if (entry->d_type == DT_DIR)
+			{
+				char path[1024];
+				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+					continue;
+				snprintf(path, sizeof(path), "%s%s%s", d, SEPARATOR.c_str(), entry->d_name);
+				rm_dir(path);
+			}
+			else
+			{
+				char fn[1024];
+				snprintf(fn, sizeof(fn), "%s%s%s", d, SEPARATOR.c_str(), entry->d_name);
+				if (remove(fn) != 0)
+				{
+					spdlog::error("Could not remove file {}", fn);
+					return -1;
+				}
+			}
+		}
+		closedir(dir);
+		return rmdir(d);
+	}
+
+	void zip_from_folder(zip_t *zf, const std::string root, const std::string directory, zip_uint32_t compression_standard)
+	{
+		DIR *dir;
+		struct dirent *entry;
+
+		if (!(dir = opendir(directory.c_str())))
+			return;
+
+		while ((entry = readdir(dir)) != NULL)
+		{
+			if (entry->d_type == DT_DIR)
+			{
+				char path[1024];
+				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+					continue;
+				snprintf(path, sizeof(path), "%s%s%s", directory.c_str(), SEPARATOR.c_str(), entry->d_name);
+
+				std::string zip_fname(path);
+				zip_fname = rm_root(root, zip_fname);
+				zip_dir_add(zf, zip_fname.c_str(), ZIP_FL_ENC_GUESS);
+				zip_from_folder(zf, root, std::string(path), compression_standard);
+			}
+			else
+			{
+				std::string fn;
+				char fullpath[1024];
+
+				snprintf(fullpath, sizeof(fullpath), "%s%s%s", directory.c_str(), SEPARATOR.c_str(), entry->d_name);
+				fn = rm_root(root, std::string(fullpath));
+
+				zip_source_t *s;
+
+				if ((s = zip_source_file(zf, fullpath, 0, 0)) == NULL ||
+				    zip_file_add(zf, fn.c_str(), s, ZIP_FL_ENC_UTF_8) < 0)
+				{
+					zip_source_free(s);
+					spdlog::error("error adding file {}: {}", fn, zip_strerror(zf));
+				}
+			}
+		}
+		closedir(dir);
+	}
+
+	std::string rm_root(const std::string root, const std::string path)
+	{
+
+		std::size_t index;
+		std::string stripped;
+
+		index = path.find(root);
+		if (index != std::string::npos)
+		{
+			stripped = path.substr(index + root.size() + 1, path.size() - index - root.size() - 1);
+		}
+		return stripped;
 	}
 };

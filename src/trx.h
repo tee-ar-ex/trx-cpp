@@ -271,11 +271,26 @@ namespace trxmmap
 	 * @param compression_standard The compression standard to use, as defined by libzip (default: no compression)
 	 */
 	template <typename DT>
-	void save(MatrixBase<DT> &trx, std::string filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+	void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+
+	/**
+	 * @brief Utils function to zip on-disk memmaps
+	 *
+	 * @param directory The path to the on-disk memmap
+	 * @param filename The path where the zip file should be created
+	 * @param compression_standard The compression standard to use, as defined by the ZipFile library
+	 */
+	void zip_from_folder(zip_t *zf, const std::string root, const std::string directory, zip_uint32_t compression_standard = ZIP_CM_STORE);
 
 	std::string get_base(const std::string &delimiter, const std::string &str);
 	std::string get_ext(const std::string &str);
 	void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &file_pointer_size);
+
+	void copy_dir(const char *src, const char *dst);
+	void copy_file(const char *src, const char *dst);
+	int rm_dir(const char *d);
+
+	std::string rm_root(std::string root, const std::string path);
 #include "trx.tpp"
 
 }

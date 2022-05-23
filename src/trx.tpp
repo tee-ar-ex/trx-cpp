@@ -1110,13 +1110,49 @@ TrxFile<DT> *load_from_directory(std::string path)
 }
 
 template <typename DT>
-void save(MatrixBase<DT> &trx, std::string filename, zip_uint32_t compression_standard)
+void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression_standard)
 {
 	std::string ext = get_ext(filename);
 
-	if ((strcmp(ext.c_str(), ".zip") == 0) || strcmp(ext.c_str(), ".trx"))
+	if (ext.size() > 0 && (strcmp(ext.c_str(), "zip") != 0 && strcmp(ext.c_str(), "trx") != 0))
 	{
-		throw std::invalid_argument("Unsupported extension.");
+		throw std::invalid_argument("Unsupported extension." + ext);
+	}
+
+	TrxFile<DT> *copy_trx = trx.deepcopy();
+	copy_trx->resize();
+	std::string tmp_dir_name = copy_trx->_uncompressed_folder_handle;
+
+	if (ext.size() > 0 && (strcmp(ext.c_str(), "zip") == 0 || strcmp(ext.c_str(), "trx") == 0))
+	{
+		int errorp;
+		zip_t *zf;
+		if ((zf = zip_open(filename.c_str(), ZIP_CREATE + ZIP_TRUNCATE, &errorp)) == NULL)
+		{
+			spdlog::error("Could not open file {} due to error: {}", filename, strerror(errorp));
+		}
+		else
+		{
+			zip_from_folder(zf, tmp_dir_name, tmp_dir_name, compression_standard);
+			if (zip_close(zf) != 0)
+			{
+				spdlog::error("Unable to close archive {} due to : {}", filename, strerror(errorp));
+			}
+		}
+	}
+	else
+	{
+		struct stat sb;
+
+		if (stat(filename.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode))
+		{
+			if (rm_dir(filename.c_str()) != 0)
+			{
+				spdlog::error("Could not remove existing directory {}", filename);
+			}
+		}
+		copy_dir(tmp_dir_name.c_str(), filename.c_str());
+		copy_trx->close();
 	}
 }
 
