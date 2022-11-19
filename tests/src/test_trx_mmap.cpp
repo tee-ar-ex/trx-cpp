@@ -1,5 +1,7 @@
+#include <filesystem>
+#include <iostream>
 #include <gtest/gtest.h>
-#include "../src/trx.h"
+#include <trx/trx.h>
 #include <typeinfo>
 
 using namespace Eigen;
@@ -204,6 +206,10 @@ TEST(TrxFileMemmap, __create_memmap)
 
 TEST(TrxFileMemmap, load_header)
 {
+
+    if(const char* env_p = std::getenv("DATA_DIR"))
+        std::cout << "Your PATH is: " << env_p << '\n';
+
 	std::string path = "data/small.trx";
 	int *errorp;
 	zip_t *zf = zip_open(path.c_str(), 0, errorp);
