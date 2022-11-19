@@ -5,6 +5,8 @@ enable_testing()
 find_package(GTest REQUIRED)
 include(GoogleTest)
 
+add_definitions(-DDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+
 add_executable(tests src/test_trx_mmap.cpp)
 target_link_libraries(tests PRIVATE ${CONAN_LIBS} ${LOCAL_PROJECT_NAME})
 

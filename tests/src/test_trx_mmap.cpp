@@ -206,11 +206,8 @@ TEST(TrxFileMemmap, __create_memmap)
 
 TEST(TrxFileMemmap, load_header)
 {
+	std::string path = DATA_DIR "/small.trx";
 
-    if(const char* env_p = std::getenv("DATA_DIR"))
-        std::cout << "Your PATH is: " << env_p << '\n';
-
-	std::string path = "data/small.trx";
 	int *errorp;
 	zip_t *zf = zip_open(path.c_str(), 0, errorp);
 	json root = trxmmap::load_header(zf);
@@ -253,7 +250,7 @@ TEST(TrxFileMemmap, load_header)
 
 TEST(TrxFileMemmap, load_zip)
 {
-	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>("data/small.trx");
+	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(DATA_DIR "/small.trx");
 	EXPECT_GT(trx->streamlines->_data.size(), 0);
 }
 
@@ -274,7 +271,7 @@ TEST(TrxFileMemmap, TrxFile)
 
 	EXPECT_EQ(trx->header, expected);
 
-	std::string path = "data/small.trx";
+	std::string path = DATA_DIR "/small.trx";
 	int *errorp;
 	zip_t *zf = zip_open(path.c_str(), 0, errorp);
 	json root = trxmmap::load_header(zf);
@@ -296,13 +293,13 @@ TEST(TrxFileMemmap, TrxFile)
 
 	EXPECT_EQ(root_init->header, init_as);
 	EXPECT_EQ(trx_init->streamlines->_data.size(), 33886 * 3);
-	EXPECT_EQ(trx_init->streamlines->_offsets.size(), 1000);
+	EXPECT_EQ(trx_init->streamlines->_offsets.size(), 1001);
 	EXPECT_EQ(trx_init->streamlines->_lengths.size(), 1000);
 }
 
 TEST(TrxFileMemmap, deepcopy)
 {
-	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>("data/small.trx");
+	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(DATA_DIR "/small.trx");
 	trxmmap::TrxFile<half> *copy = trx->deepcopy();
 
 	EXPECT_EQ(trx->header, copy->header);
@@ -313,13 +310,13 @@ TEST(TrxFileMemmap, deepcopy)
 
 TEST(TrxFileMemmap, resize)
 {
-	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>("data/small.trx");
+	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(DATA_DIR "/small.trx");
 	trx->resize();
 	trx->resize(10);
 }
 TEST(TrxFileMemmap, save)
 {
-	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>("data/small.trx");
+	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(DATA_DIR "/small.trx");
 	trxmmap::save(*trx, (std::string) "testsave");
 	trxmmap::save(*trx, (std::string) "testsave.trx");
 
