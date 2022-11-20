@@ -78,6 +78,32 @@ namespace trxmmap
 		}
 		closedir(dir);
 	}
+	std::string get_extraction_dir()
+	{
+		std::string dir_template = "/tmp/trx_XXXXXX";
+		char* extraction_dir;
+
+		if (const char* trx_tmp_dir = std::getenv("TRX_TMPDIR")) {
+			std::string trx_tmp_dir_s(trx_tmp_dir);
+			if (trx_tmp_dir_s.compare("use_working_dir") == 0) {
+				dir_template = "./trx_XXXXXX";
+			} else {
+				dir_template = trx_tmp_dir_s + "/trx_XXXXXX";
+			}
+		}
+		extraction_dir = mkdtemp(&dir_template[0]);
+		if (extraction_dir == NULL) {
+			spdlog::error("Could not create temporary directory {}", dir_template);
+			exit(1);
+		}
+		return std::string(extraction_dir);
+	}
+
+	int free_extraction_dir(std::string extraction_dir)
+	{
+		return rm_dir(extraction_dir.c_str());
+	}
+
 	std::string get_base(const std::string &delimiter, const std::string &str)
 	{
 		std::string token;
@@ -425,7 +451,7 @@ namespace trxmmap
 		{
 			if (entry->d_type == DT_DIR)
 			{
-				char path[1024];
+				char path[PATH_MAX];
 				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
 					continue;
 				snprintf(path, sizeof(path), "%s%s%s", d, SEPARATOR.c_str(), entry->d_name);
@@ -433,7 +459,7 @@ namespace trxmmap
 			}
 			else
 			{
-				char fn[1024];
+				char fn[PATH_MAX];
 				snprintf(fn, sizeof(fn), "%s%s%s", d, SEPARATOR.c_str(), entry->d_name);
 				if (remove(fn) != 0)
 				{
@@ -458,7 +484,7 @@ namespace trxmmap
 		{
 			if (entry->d_type == DT_DIR)
 			{
-				char path[1024];
+				char path[PATH_MAX];
 				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
 					continue;
 				snprintf(path, sizeof(path), "%s%s%s", directory.c_str(), SEPARATOR.c_str(), entry->d_name);
@@ -471,7 +497,7 @@ namespace trxmmap
 			else
 			{
 				std::string fn;
-				char fullpath[1024];
+				char fullpath[PATH_MAX];
 
 				snprintf(fullpath, sizeof(fullpath), "%s%s%s", directory.c_str(), SEPARATOR.c_str(), entry->d_name);
 				fn = rm_root(root, std::string(fullpath));

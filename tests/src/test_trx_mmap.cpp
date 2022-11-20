@@ -173,13 +173,10 @@ TEST(TrxFileMemmap, __dichotomic_search)
 
 TEST(TrxFileMemmap, __create_memmap)
 {
+	setenv("TRX_TMPDIR", DATA_DIR, 1);
 
-	char *dirname;
-	char t[] = "/tmp/trx_XXXXXX";
-	dirname = mkdtemp(t);
-
-	std::string path(dirname);
-	path += "/offsets.int16";
+	std::string dir = get_extraction_dir();
+	std::string path = dir + "/offsets.int16";
 
 	std::tuple<int, int> shape = std::make_tuple(3, 4);
 
@@ -202,6 +199,10 @@ TEST(TrxFileMemmap, __create_memmap)
 	Map<Matrix<half, 3, 4>> real_m(reinterpret_cast<half *>(filled_mmap.data()), std::get<0>(shape), std::get<1>(shape));
 
 	EXPECT_EQ(expected_m, real_m);
+
+	free_extraction_dir(dir);
+
+	unsetenv("TRX_TMPDIR");
 }
 
 TEST(TrxFileMemmap, load_header)

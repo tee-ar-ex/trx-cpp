@@ -223,11 +223,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 {
 	TrxFile<DT> *trx = new TrxFile<DT>();
 
-	char *dirname;
-	char t[] = "/tmp/trx_XXXXXX";
-	dirname = mkdtemp(t);
-
-	std::string tmp_dir(dirname);
+	std::string tmp_dir = get_extraction_dir();
 
 	spdlog::info("Temporary folder for memmaps: {}", tmp_dir);
 
@@ -630,11 +626,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 template <typename DT>
 TrxFile<DT> *TrxFile<DT>::deepcopy()
 {
-	char *dirname;
-	char t[] = "/tmp/trx_XXXXXX";
-	dirname = mkdtemp(t);
-
-	std::string tmp_dir(dirname);
+	std::string tmp_dir = get_extraction_dir();
 
 	std::string header = tmp_dir + SEPARATOR + "header.json";
 	std::ofstream out_json(header);
