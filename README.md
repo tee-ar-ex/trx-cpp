@@ -19,7 +19,7 @@ conan install ..
 
 In `./build`:
 ```bash
-cmake . && make
+cmake .. && make
 ```
 
 ### Running tests
