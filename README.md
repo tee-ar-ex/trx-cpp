@@ -23,6 +23,8 @@ cmake .. && make
 ```
 
 ### Running tests
+
+In `./build`:
 ```bash
 bin/tests
 ```
