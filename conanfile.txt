@@ -3,6 +3,7 @@ eigen/3.4.0@#3bc2bf84eff697283b6bd64d8262c423
 spdlog/1.10.0@#bd2bfacf219f212f2874313ebd74da23
 nlohmann_json/3.11.2@#a35423bb6e1eb8f931423557e282c7ed
 libzip/1.8.0@#5a0a692ec9d7d8a4337eb79e55869639
+mio/cci.20201220
 gtest/cci.20210126
 
 [generators]
