@@ -1,0 +1,39 @@
+on: [push, pull_request]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        include:
+          - os: macos-latest
+          - os: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v2
+    
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.7
+    
+      - name: Install Conan
+        run: pip install conan pytest && conan --version
+    
+      - name: Setup cmake
+        uses: jwlawson/actions-setup-cmake@v1.13
+        with:
+          cmake-version: '3.22.x'
+    
+      - name: Run Tests
+        run: |
+          mkdir build && cd build
+          conan install ..
+          cmake .. && make
+          bin/tests
