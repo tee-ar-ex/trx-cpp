@@ -36,6 +36,6 @@ jobs:
           mkdir build && cd build
           conan profile new ./.conan --detect
           conan profile update settings.compiler.libcxx=libstdc++11 ./.conan
-          conan install ..
+          conan install --profile ./.conan ..
           cmake .. && make
           bin/tests
