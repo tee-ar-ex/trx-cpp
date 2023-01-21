@@ -12,8 +12,14 @@ conan_basic_setup()
 
 #set(CMAKE_BUILD_TYPE RelWithDebInfo)
 set(CMAKE_BUILD_TYPE Debug)
+#set(CMAKE_BUILD_TYPE Release)
 
 add_library(${LOCAL_PROJECT_NAME} src/trx.cpp src/trx.tpp)
+
+target_link_libraries(
+    ${LOCAL_PROJECT_NAME}
+    PRIVATE ${CONAN_LIBS}
+)
 
 target_include_directories(${LOCAL_PROJECT_NAME}
     PUBLIC
@@ -22,11 +28,7 @@ target_include_directories(${LOCAL_PROJECT_NAME}
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_BINARY_DIR}/gen-private-include
-)
-
-target_link_libraries(
-    ${LOCAL_PROJECT_NAME}
-    PRIVATE ${CONAN_LIBS}
+        ${CONAN_INCLUDE_DIRS}
 )
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
