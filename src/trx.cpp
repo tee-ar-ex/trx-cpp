@@ -78,6 +78,7 @@ namespace trxmmap
 		}
 		closedir(dir);
 	}
+
 	std::string get_extraction_dir()
 	{
 		std::string dir_template = "/tmp/trx_XXXXXX";

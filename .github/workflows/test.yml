@@ -31,11 +31,16 @@ jobs:
         with:
           cmake-version: '3.22.x'
     
-      - name: Run Tests
+      - name: Build
         run: |
           mkdir build && cd build
           conan profile new ./.conan --detect
           conan profile update settings.compiler.libcxx=libstdc++11 ./.conan
           conan install --profile ./.conan ..
-          cmake .. && make
-          bin/tests
+          cmake -S .. -B . && make
+
+      - name: Test
+        run: |
+          build/bin/tests
+        env:
+          TRX_TMPDIR: ${{ runner.temp }}
