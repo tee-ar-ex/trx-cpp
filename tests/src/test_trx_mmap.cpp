@@ -318,11 +318,10 @@ TEST(TrxFileMemmap, resize)
 TEST(TrxFileMemmap, save)
 {
 	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(DATA_DIR "/small.trx");
-	trxmmap::save(*trx, (std::string) "testsave");
-	trxmmap::save(*trx, (std::string) "testsave.trx");
+	trxmmap::save(*trx, "/testsave.trx");
+	trxmmap::TrxFile<half> *saved = trxmmap::load_from_zip<half>("/testsave.trx");
 
-	// trxmmap::TrxFile<half> *saved = trxmmap::load_from_zip<half>("testsave.trx");
-	//  EXPECT_EQ(saved->data_per_vertex["color_x.float16"]->_data, trx->data_per_vertex["color_x.float16"]->_data);
+	EXPECT_EQ(saved->data_per_vertex["color_x"]->_data, trx->data_per_vertex["color_x"]->_data);
 }
 
 int main(int argc, char **argv)

@@ -529,9 +529,10 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 		{
 			std::tuple<int, int> shape;
 			trx->data_per_vertex[base] = new ArraySequence<DT>();
-			int nb_scalar = size / int(trx->header["NB_VERTICES"]);
+			int nb_vertices = int(trx->header["NB_VERTICES"]);
+			int nb_scalar = size / nb_vertices;
 
-			if (size % int(trx->header["NB_VERTICES"]) != 0 || nb_scalar != dim)
+			if (size % nb_vertices != 0 || nb_scalar != dim)
 			{
 
 				throw std::invalid_argument("Wrong dpv size/dimensionality");
@@ -647,7 +648,7 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 	}
 	if (out_json.is_open())
 	{
-		out_json << std::setw(4) << tmp_header << std::endl;
+		out_json << tmp_header << std::endl;
 		out_json.close();
 	}
 

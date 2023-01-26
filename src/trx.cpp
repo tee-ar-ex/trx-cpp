@@ -298,6 +298,7 @@ namespace trxmmap
 
 	mio::shared_mmap_sink _create_memmap(std::string &filename, std::tuple<int, int> &shape, std::string mode, std::string dtype, long long offset)
 	{
+
 		if (dtype.compare("bool") == 0)
 		{
 			std::string ext = "bit";
@@ -314,10 +315,7 @@ namespace trxmmap
 			allocate_file(filename, filesize);
 		}
 
-		// std::error_code error;
-
 		mio::shared_mmap_sink rw_mmap(filename, offset, filesize);
-
 		return rw_mmap;
 	}
 
@@ -504,12 +502,17 @@ namespace trxmmap
 				fn = rm_root(root, std::string(fullpath));
 
 				zip_source_t *s;
+				zip_int64_t idx;
 
-				if ((s = zip_source_file(zf, fullpath, 0, 0)) == NULL ||
-				    zip_file_add(zf, fn.c_str(), s, ZIP_FL_ENC_UTF_8) < 0)
+				if (
+					(s = zip_source_file(zf, fullpath, 0, 0)) == NULL ||
+					(idx = zip_file_add(zf, fn.c_str(), s, ZIP_FL_ENC_UTF_8)) < 0
+				)
 				{
 					zip_source_free(s);
 					spdlog::error("error adding file {}: {}", fn, zip_strerror(zf));
+				} else {
+					zip_set_file_compression(zf, idx, compression_standard, 0);
 				}
 			}
 		}
