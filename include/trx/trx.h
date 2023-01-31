@@ -17,6 +17,9 @@
 #include <mio/mmap.hpp>
 #include <mio/shared_mmap.hpp>
 
+#ifndef SPDLOG_FMT_EXTERNAL
+#define SPDLOG_FMT_EXTERNAL
+#endif
 #include "spdlog/spdlog.h"
 
 using namespace Eigen;
