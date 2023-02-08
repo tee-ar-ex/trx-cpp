@@ -1,0 +1,5 @@
+[requires]
+trx/1.0.0@user/channel
+
+[generators]
+cmake

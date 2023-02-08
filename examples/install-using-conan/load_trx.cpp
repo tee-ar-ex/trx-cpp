@@ -1,4 +1,4 @@
-#include "../src/trx.h"
+#include <trx/trx.h>
 
 using namespace trxmmap;
 int main(int argc, char **argv)
