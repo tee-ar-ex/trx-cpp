@@ -1,41 +1,20 @@
-cmake_minimum_required(VERSION 3.0.0)
-cmake_policy(SET CMP0074 NEW)
-cmake_policy(SET CMP0079 NEW)
-project(trx)
-set (CMAKE_CXX_STANDARD 11)
+if(TRX_USE_CONAN)
+    include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
+endif()
 
-set(PROJECT_BINARY_DIR ../../builds)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/build/tests)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/build/tests)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-
-set(CMAKE_BUILD_TYPE Debug)
-
-find_package(libzip REQUIRED)
-find_package (Eigen3 CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
-find_package(spdlog CONFIG REQUIRED)
-find_package(GTest CONFIG REQUIRED)
+include_directories(${PROJECT_SOURCE_DIR}/src)
 
 enable_testing()
-
-include_directories(../src)
-add_executable(test_mmap test_trx_mmap.cpp ../src/trx.h ../src/trx.tpp ../src/trx.cpp)
-
-
-TARGET_LINK_LIBRARIES(test_mmap
-	nlohmann_json::nlohmann_json
-	Eigen3::Eigen
-	libzip::zip
-	GTest::gtest
-	GTest::gtest_main
-	spdlog::spdlog
-	spdlog::spdlog_header_only
-)
-
-
-set(CPACK_PROJECT_NAME ${PROJECT_NAME})
-set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
-include(CPack)
+find_package(GTest REQUIRED)
 include(GoogleTest)
-gtest_discover_tests(test_mmap)
+
+add_definitions(-DDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+
+add_executable(tests src/test_trx_mmap.cpp)
+if(TRX_USE_CONAN)
+    target_link_libraries(tests PRIVATE ${CONAN_LIBS} ${LOCAL_PROJECT_NAME})
+else()
+    target_link_libraries(tests PRIVATE GTest::GTest GTest::Main)
+endif()
+
+gtest_discover_tests(tests)

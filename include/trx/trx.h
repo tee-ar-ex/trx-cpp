@@ -17,6 +17,9 @@
 #include <mio/mmap.hpp>
 #include <mio/shared_mmap.hpp>
 
+#ifndef SPDLOG_FMT_EXTERNAL
+#define SPDLOG_FMT_EXTERNAL
+#endif
 #include "spdlog/spdlog.h"
 
 using namespace Eigen;
@@ -282,6 +285,8 @@ namespace trxmmap
 	 */
 	void zip_from_folder(zip_t *zf, const std::string root, const std::string directory, zip_uint32_t compression_standard = ZIP_CM_STORE);
 
+	std::string get_extraction_dir();
+	int free_extraction_dir(std::string extraction_dir);
 	std::string get_base(const std::string &delimiter, const std::string &str);
 	std::string get_ext(const std::string &str);
 	void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &file_pointer_size);
@@ -291,6 +296,7 @@ namespace trxmmap
 	int rm_dir(const char *d);
 
 	std::string rm_root(std::string root, const std::string path);
+
 #include "trx.tpp"
 
 }

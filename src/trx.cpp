@@ -1,4 +1,4 @@
-#include "trx.h"
+#include <trx/trx.h>
 #include <fstream>
 #include <typeinfo>
 #include <errno.h>
@@ -78,6 +78,33 @@ namespace trxmmap
 		}
 		closedir(dir);
 	}
+
+	std::string get_extraction_dir()
+	{
+		std::string dir_template = "/tmp/trx_XXXXXX";
+		char* extraction_dir;
+
+		if (const char* trx_tmp_dir = std::getenv("TRX_TMPDIR")) {
+			std::string trx_tmp_dir_s(trx_tmp_dir);
+			if (trx_tmp_dir_s.compare("use_working_dir") == 0) {
+				dir_template = "./trx_XXXXXX";
+			} else {
+				dir_template = trx_tmp_dir_s + "/trx_XXXXXX";
+			}
+		}
+		extraction_dir = mkdtemp(&dir_template[0]);
+		if (extraction_dir == NULL) {
+			spdlog::error("Could not create temporary directory {}", dir_template);
+			exit(1);
+		}
+		return std::string(extraction_dir);
+	}
+
+	int free_extraction_dir(std::string extraction_dir)
+	{
+		return rm_dir(extraction_dir.c_str());
+	}
+
 	std::string get_base(const std::string &delimiter, const std::string &str)
 	{
 		std::string token;
@@ -271,6 +298,7 @@ namespace trxmmap
 
 	mio::shared_mmap_sink _create_memmap(std::string &filename, std::tuple<int, int> &shape, std::string mode, std::string dtype, long long offset)
 	{
+
 		if (dtype.compare("bool") == 0)
 		{
 			std::string ext = "bit";
@@ -287,10 +315,7 @@ namespace trxmmap
 			allocate_file(filename, filesize);
 		}
 
-		// std::error_code error;
-
 		mio::shared_mmap_sink rw_mmap(filename, offset, filesize);
-
 		return rw_mmap;
 	}
 
@@ -425,7 +450,7 @@ namespace trxmmap
 		{
 			if (entry->d_type == DT_DIR)
 			{
-				char path[1024];
+				char path[PATH_MAX];
 				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
 					continue;
 				snprintf(path, sizeof(path), "%s%s%s", d, SEPARATOR.c_str(), entry->d_name);
@@ -433,7 +458,7 @@ namespace trxmmap
 			}
 			else
 			{
-				char fn[1024];
+				char fn[PATH_MAX];
 				snprintf(fn, sizeof(fn), "%s%s%s", d, SEPARATOR.c_str(), entry->d_name);
 				if (remove(fn) != 0)
 				{
@@ -458,7 +483,7 @@ namespace trxmmap
 		{
 			if (entry->d_type == DT_DIR)
 			{
-				char path[1024];
+				char path[PATH_MAX];
 				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
 					continue;
 				snprintf(path, sizeof(path), "%s%s%s", directory.c_str(), SEPARATOR.c_str(), entry->d_name);
@@ -471,18 +496,23 @@ namespace trxmmap
 			else
 			{
 				std::string fn;
-				char fullpath[1024];
+				char fullpath[PATH_MAX];
 
 				snprintf(fullpath, sizeof(fullpath), "%s%s%s", directory.c_str(), SEPARATOR.c_str(), entry->d_name);
 				fn = rm_root(root, std::string(fullpath));
 
 				zip_source_t *s;
+				zip_int64_t idx;
 
-				if ((s = zip_source_file(zf, fullpath, 0, 0)) == NULL ||
-				    zip_file_add(zf, fn.c_str(), s, ZIP_FL_ENC_UTF_8) < 0)
+				if (
+					(s = zip_source_file(zf, fullpath, 0, 0)) == NULL ||
+					(idx = zip_file_add(zf, fn.c_str(), s, ZIP_FL_ENC_UTF_8)) < 0
+				)
 				{
 					zip_source_free(s);
 					spdlog::error("error adding file {}: {}", fn, zip_strerror(zf));
+				} else {
+					zip_set_file_compression(zf, idx, compression_standard, 0);
 				}
 			}
 		}

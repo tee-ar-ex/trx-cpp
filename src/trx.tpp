@@ -223,11 +223,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 {
 	TrxFile<DT> *trx = new TrxFile<DT>();
 
-	char *dirname;
-	char t[] = "/tmp/trx_XXXXXX";
-	dirname = mkdtemp(t);
-
-	std::string tmp_dir(dirname);
+	std::string tmp_dir = get_extraction_dir();
 
 	spdlog::info("Temporary folder for memmaps: {}", tmp_dir);
 
@@ -285,7 +281,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 	std::tuple<int, int> shape_off = std::make_tuple(nb_streamlines, 1);
 
 	trx->streamlines->mmap_off = trxmmap::_create_memmap(offsets_filename, shape_off, "w+", offsets_dtype);
-	new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape_off), std::get<1>(shape_off));
+	new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape_off) + 1, std::get<1>(shape_off));
 
 	trx->streamlines->_lengths.resize(nb_streamlines);
 
@@ -343,7 +339,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 				new (&(trx->data_per_vertex[x.first]->_data)) Map<Matrix<double, Dynamic, Dynamic>>(reinterpret_cast<double *>(trx->data_per_vertex[x.first]->mmap_pos.data()), rows, cols);
 			}
 
-			new (&(trx->data_per_vertex[x.first]->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(trx->streamlines->_offsets.data(), int(trx->streamlines->_offsets.rows()), int(trx->streamlines->_offsets.cols()));
+			new (&(trx->data_per_vertex[x.first]->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(trx->streamlines->_offsets.data(), int(trx->streamlines->_offsets.rows()) + 1, int(trx->streamlines->_offsets.cols()));
 			trx->data_per_vertex[x.first]->_lengths = trx->streamlines->_lengths;
 		}
 
@@ -481,16 +477,16 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 
 		else if (base.compare("offsets") == 0 && (folder.compare("") == 0 || folder.compare(".") == 0))
 		{
-			if (size != int(trx->header["NB_STREAMLINES"]) || dim != 1)
+			int nb_streamlines = int(trx->header["NB_STREAMLINES"]);
+			if (size != nb_streamlines + 1 || dim != 1)
 			{
-
 				throw std::invalid_argument("Wrong offsets size/dimensionality");
 			}
 
 			std::tuple<int, int> shape = std::make_tuple(trx->header["NB_STREAMLINES"], 1);
 			trx->streamlines->mmap_off = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
-			new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape), std::get<1>(shape));
+			new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape) + 1, std::get<1>(shape));
 
 			// TODO : adapt compute_lengths to accept a map
 			Matrix<uint64_t, Dynamic, 1> offsets;
@@ -533,9 +529,10 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 		{
 			std::tuple<int, int> shape;
 			trx->data_per_vertex[base] = new ArraySequence<DT>();
-			int nb_scalar = size / int(trx->header["NB_VERTICES"]);
+			int nb_vertices = int(trx->header["NB_VERTICES"]);
+			int nb_scalar = size / nb_vertices;
 
-			if (size % int(trx->header["NB_VERTICES"]) != 0 || nb_scalar != dim)
+			if (size % nb_vertices != 0 || nb_scalar != dim)
 			{
 
 				throw std::invalid_argument("Wrong dpv size/dimensionality");
@@ -617,7 +614,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			spdlog::error("{} is not part of a valid structure.", elem_filename);
 		}
 	}
-	if (trx->streamlines->_data.size() == 0 || trx->streamlines->_offsets.size() == 0)
+	if (trx->streamlines->_data.size() == 0 || trx->streamlines->_offsets.size() <= 1)
 	{
 
 		throw std::invalid_argument("Missing essential data.");
@@ -630,11 +627,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 template <typename DT>
 TrxFile<DT> *TrxFile<DT>::deepcopy()
 {
-	char *dirname;
-	char t[] = "/tmp/trx_XXXXXX";
-	dirname = mkdtemp(t);
-
-	std::string tmp_dir(dirname);
+	std::string tmp_dir = get_extraction_dir();
 
 	std::string header = tmp_dir + SEPARATOR + "header.json";
 	std::ofstream out_json(header);
@@ -650,12 +643,12 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 
 	if (!this->_copy_safe)
 	{
-		tmp_header["NB_STREAMLINES"] = to_dump->_offsets.size();
+		tmp_header["NB_STREAMLINES"] = to_dump->_offsets.size() - 1;
 		tmp_header["NB_VERTICES"] = to_dump->_data.size() / 3;
 	}
 	if (out_json.is_open())
 	{
-		out_json << std::setw(4) << tmp_header << std::endl;
+		out_json << tmp_header << std::endl;
 		out_json.close();
 	}
 
@@ -813,7 +806,7 @@ std::tuple<int, int> TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int 
 		return std::make_tuple(strs_start, pts_start);
 
 	this->streamlines->_data(seq(pts_start, pts_end - 1), all) = trx->streamlines->_data(seq(0, curr_pts_len - 1), all);
-	this->streamlines->_offsets(seq(strs_start, strs_end - 1), all) = (trx->streamlines->_offsets(seq(0, curr_strs_len - 1), all).array() + pts_start).matrix();
+	this->streamlines->_offsets(seq(strs_start, strs_end), all) = (trx->streamlines->_offsets(seq(0, curr_strs_len), all).array() + pts_start).matrix();
 	this->streamlines->_lengths(seq(strs_start, strs_end - 1), all) = trx->streamlines->_lengths(seq(0, curr_strs_len - 1), all);
 
 	for (auto const &x : this->data_per_vertex)
