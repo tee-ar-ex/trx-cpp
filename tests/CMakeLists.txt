@@ -10,7 +10,7 @@ include(GoogleTest)
 
 add_definitions(-DDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 
-add_executable(tests src/test_trx_mmap.cpp)
+add_executable(tests src/test_trx.cpp)
 if(TRX_USE_CONAN)
     target_link_libraries(tests PRIVATE ${CONAN_LIBS} ${LOCAL_PROJECT_NAME})
 else()

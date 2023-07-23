@@ -251,13 +251,13 @@ TEST(TrxFileMemmap, load_header)
 
 TEST(TrxFileMemmap, load_zip)
 {
-	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(DATA_DIR "/small.trx");
+	trxmmap::TrxFile *trx = trxmmap::load_from_zip(DATA_DIR "/small.trx");
 	EXPECT_GT(trx->streamlines->_data.size(), 0);
 }
 
 TEST(TrxFileMemmap, TrxFile)
 {
-	trxmmap::TrxFile<half> *trx = new TrxFile<half>();
+	trxmmap::TrxFile *trx = new TrxFile();
 
 	// expected header
 	json expected;
@@ -265,10 +265,12 @@ TEST(TrxFileMemmap, TrxFile)
 	expected["DIMENSIONS"] = {1, 1, 1};
 	expected["NB_STREAMLINES"] = 0;
 	expected["NB_VERTICES"] = 0;
-	expected["VOXEL_TO_RASMM"] = {{1.0, 0.0, 0.0, 0.0},
-				      {0.0, 1.0, 0.0, 0.0},
-				      {0.0, 0.0, 1.0, 0.0},
-				      {0.0, 0.0, 0.0, 1.0}};
+	expected["VOXEL_TO_RASMM"] = {
+		{1.0, 0.0, 0.0, 0.0},
+		{0.0, 1.0, 0.0, 0.0},
+		{0.0, 0.0, 1.0, 0.0},
+		{0.0, 0.0, 0.0, 1.0}
+	};
 
 	EXPECT_EQ(trx->header, expected);
 
@@ -276,21 +278,23 @@ TEST(TrxFileMemmap, TrxFile)
 	int *errorp;
 	zip_t *zf = zip_open(path.c_str(), 0, errorp);
 	json root = trxmmap::load_header(zf);
-	TrxFile<half> *root_init = new TrxFile<half>();
+	TrxFile *root_init = new TrxFile();
 	root_init->header = root;
 
 	// TODO: test for now..
 
-	trxmmap::TrxFile<half> *trx_init = new TrxFile<half>(33886, 1000, root_init);
+	trxmmap::TrxFile *trx_init = new TrxFile(33886, 1000, root_init);
 	json init_as;
 
 	init_as["DIMENSIONS"] = {117, 151, 115};
 	init_as["NB_STREAMLINES"] = 1000;
 	init_as["NB_VERTICES"] = 33886;
-	init_as["VOXEL_TO_RASMM"] = {{-1.25, 0.0, 0.0, 72.5},
-				     {0.0, 1.25, 0.0, -109.75},
-				     {0.0, 0.0, 1.25, -64.5},
-				     {0.0, 0.0, 0.0, 1.0}};
+	init_as["VOXEL_TO_RASMM"] = {
+		{-1.25, 0.0, 0.0, 72.5},
+		{0.0, 1.25, 0.0, -109.75},
+		{0.0, 0.0, 1.25, -64.5},
+		{0.0, 0.0, 0.0, 1.0}
+	};
 
 	EXPECT_EQ(root_init->header, init_as);
 	EXPECT_EQ(trx_init->streamlines->_data.size(), 33886 * 3);
@@ -300,8 +304,8 @@ TEST(TrxFileMemmap, TrxFile)
 
 TEST(TrxFileMemmap, deepcopy)
 {
-	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(DATA_DIR "/small.trx");
-	trxmmap::TrxFile<half> *copy = trx->deepcopy();
+	trxmmap::TrxFile *trx = trxmmap::load_from_zip(DATA_DIR "/small.trx");
+	trxmmap::TrxFile *copy = trx->deepcopy();
 
 	EXPECT_EQ(trx->header, copy->header);
 	EXPECT_EQ(trx->streamlines->_data, trx->streamlines->_data);
@@ -311,15 +315,15 @@ TEST(TrxFileMemmap, deepcopy)
 
 TEST(TrxFileMemmap, resize)
 {
-	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(DATA_DIR "/small.trx");
+	trxmmap::TrxFile *trx = trxmmap::load_from_zip(DATA_DIR "/small.trx");
 	trx->resize();
 	trx->resize(10);
 }
 TEST(TrxFileMemmap, save)
 {
-	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(DATA_DIR "/small.trx");
-	trxmmap::save(*trx, "/testsave.trx");
-	trxmmap::TrxFile<half> *saved = trxmmap::load_from_zip<half>("/testsave.trx");
+	trxmmap::TrxFile *trx = trxmmap::load_from_zip(DATA_DIR "/small.trx");
+	trxmmap::save(*trx, DATA_DIR "/testsave.trx");
+	trxmmap::TrxFile *saved = trxmmap::load_from_zip(DATA_DIR "/testsave.trx");
 
 	EXPECT_EQ(saved->data_per_vertex["color_x"]->_data, trx->data_per_vertex["color_x"]->_data);
 }

@@ -5,13 +5,129 @@
 #include <algorithm>
 #define SYSERROR() errno
 
-//#define ZIP_DD_SIG 0x08074b50
-//#define ZIP_CD_SIG 0x06054b50
 using namespace Eigen;
 using namespace std;
-
-namespace trxmmap
+namespace trx
 {
+
+	TrxFile::TrxFile(int nb_vertices, int nb_streamlines)
+	{
+		std::vector<std::vector<float>> affine(4);
+		std::vector<uint16_t> dimensions(3);
+
+		for (int i = 0; i < 4; i++)
+		{
+			affine[i] = {0, 0, 0, 0};
+			affine[i][i] = 1;
+		}
+		dimensions = {1, 1, 1};
+	}
+
+	std::string get_ext(const std::string &str)
+	{
+		std::string ext = "";
+		std::string delimeter = ".";
+
+		if (str.rfind(delimeter) < str.length() - 1)
+		{
+			ext = str.substr(str.rfind(delimeter) + 1);
+		}
+		return ext;
+	}
+
+	bool _is_dtype_valid(std::string &ext)
+	{
+		return true;
+		// if (ext.compare("bit") == 0)
+		// 	return true;
+		// if (std::find(trx::dtypes.begin(), trx::dtypes.end(), ext) != trx::dtypes.end())
+		// 	return true;
+		// return false;
+	}
+
+	std::string get_base(const std::string &delimiter, const std::string &str)
+	{
+		std::string token;
+
+		if (str.rfind(delimiter) + 1 < str.length())
+		{
+			token = str.substr(str.rfind(delimiter) + 1);
+		}
+		else
+		{
+			token = str;
+		}
+		return token;
+	}
+
+	std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string filename)
+	{
+
+		// TODO: won't work on windows and not validating OS type
+		std::string base = get_base("/", filename);
+
+		size_t num_splits = std::count(base.begin(), base.end(), '.');
+		int dim;
+
+		if (num_splits != 1 and num_splits != 2)
+		{
+			throw std::invalid_argument("Invalid filename");
+		}
+
+		std::string ext = get_ext(filename);
+
+		base = base.substr(0, base.length() - ext.length() - 1);
+
+		if (num_splits == 1)
+		{
+			dim = 1;
+		}
+		else
+		{
+			int pos = base.find_last_of(".");
+			dim = std::stoi(base.substr(pos + 1, base.size()));
+			base = base.substr(0, pos);
+		}
+
+		bool is_valid = _is_dtype_valid(ext);
+
+		if (is_valid == false)
+		{
+			// TODO: make formatted string and include provided extension name
+			throw std::invalid_argument("Unsupported file extension");
+		}
+
+		std::tuple<std::string, int, std::string> output{base, dim, ext};
+
+		return output;
+	}
+
+	Dtype _get_dtype(std::string dtype)
+	{
+		for (int i = 0; i < sizeof(AllDtypes); i++)
+		{
+			if (dtype == AllDtypes[i].name)
+			{
+				return (Dtype)i;
+			}
+		}
+
+		return (Dtype)-1;
+	}
+
+	int _sizeof_dtype(std::string dtype)
+	{
+		for (int i = 0; i < sizeof(AllDtypes); i++)
+		{
+			if (dtype == AllDtypes[i].name)
+			{
+				return AllDtypes[i].size;
+			}
+		}
+
+		return -1;
+	}
+
 	void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size)
 	{
 		DIR *dir;
@@ -79,206 +195,92 @@ namespace trxmmap
 		closedir(dir);
 	}
 
-	std::string get_extraction_dir()
+	TrxFile *load_from_directory(std::string path)
 	{
-		std::string dir_template = "/tmp/trx_XXXXXX";
-		char* extraction_dir;
+		std::string directory = (std::string)canonicalize_file_name(path.c_str());
+		std::string header_name = directory + SEPARATOR + "header.json";
 
-		if (const char* trx_tmp_dir = std::getenv("TRX_TMPDIR")) {
-			std::string trx_tmp_dir_s(trx_tmp_dir);
-			if (trx_tmp_dir_s.compare("use_working_dir") == 0) {
-				dir_template = "./trx_XXXXXX";
-			} else {
-				dir_template = trx_tmp_dir_s + "/trx_XXXXXX";
+		std::ifstream header_file(header_name);
+		json header;
+		header_file >> header;
+		header_file.close();
+
+		std::map<std::string, std::tuple<long long, long long>> files_pointer_size;
+		populate_fps(directory.c_str(), files_pointer_size);
+		
+		return TrxFile::_create_trx_from_pointer(header, files_pointer_size, "", directory);
+	}
+
+	std::string * _get_pointer_by_name(
+		std::string lookup,
+		std::map<std::string, std::tuple<long long, long long>> dict_pointer_size
+	)
+	{
+		for(std::map<std::string, std::tuple<long long, long long>>::iterator iter = dict_pointer_size.begin(); iter != dict_pointer_size.end(); ++iter)
+		{
+			std::string k =  iter->first;
+			if (strncmp(k.c_str(), lookup.c_str(), lookup.size())) {
+				return new std::string(iter->first.c_str());
 			}
 		}
-		extraction_dir = mkdtemp(&dir_template[0]);
-		if (extraction_dir == NULL) {
-			spdlog::error("Could not create temporary directory {}", dir_template);
-			exit(1);
-		}
-		return std::string(extraction_dir);
+		return NULL;
 	}
-
-	int free_extraction_dir(std::string extraction_dir)
-	{
-		return rm_dir(extraction_dir.c_str());
-	}
-
-	std::string get_base(const std::string &delimiter, const std::string &str)
-	{
-		std::string token;
-
-		if (str.rfind(delimiter) + 1 < str.length())
-		{
-			token = str.substr(str.rfind(delimiter) + 1);
-		}
-		else
-		{
-			token = str;
-		}
-		return token;
-	}
-
-	std::string get_ext(const std::string &str)
-	{
-		std::string ext = "";
-		std::string delimeter = ".";
-
-		if (str.rfind(delimeter) < str.length() - 1)
-		{
-			ext = str.substr(str.rfind(delimeter) + 1);
-		}
-		return ext;
-	}
-	// TODO: check if there's a better way
-	int _sizeof_dtype(std::string dtype)
-	{
-		// TODO: make dtypes enum??
-		auto it = std::find(dtypes.begin(), dtypes.end(), dtype);
-		int index = 0;
-		if (it != dtypes.end())
-		{
-			index = std::distance(dtypes.begin(), it);
-		}
-
-		switch (index)
-		{
-		case 1:
-			return 1;
-		case 2:
-			return sizeof(uint8_t);
-		case 3:
-			return sizeof(uint16_t);
-		case 4:
-			return sizeof(uint32_t);
-		case 5:
-			return sizeof(uint64_t);
-		case 6:
-			return sizeof(int8_t);
-		case 7:
-			return sizeof(int16_t);
-		case 8:
-			return sizeof(int32_t);
-		case 9:
-			return sizeof(int64_t);
-		case 10:
-			return sizeof(float);
-		case 11:
-			return sizeof(double);
-		default:
-			return sizeof(half); // setting this as default for now but a better solution is needed
-		}
-	}
-
-	std::string _get_dtype(std::string dtype)
-	{
-		char dt = dtype.back();
-		switch (dt)
-		{
-		case 'b':
-			return "bit";
-		case 'h':
-			return "uint8";
-		case 't':
-			return "uint16";
-		case 'j':
-			return "uint32";
-		case 'm':
-			return "uint64";
-		case 'a':
-			return "int8";
-		case 's':
-			return "int16";
-		case 'i':
-			return "int32";
-		case 'l':
-			return "int64";
-		case 'f':
-			return "float32";
-		case 'd':
-			return "float64";
-		default:
-			return "float16"; // setting this as default for now but a better solution is needed
-		}
-	}
-	std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string filename)
+	
+	mio::shared_mmap_sink _create_memmap(std::string &filename, std::vector<int> shape, std::string mode, std::string dtype, long long offset)
 	{
 
-		// TODO: won't work on windows and not validating OS type
-		std::string base = get_base("/", filename);
-
-		size_t num_splits = std::count(base.begin(), base.end(), '.');
-		int dim;
-
-		if (num_splits != 1 and num_splits != 2)
+		if (dtype.compare("bool") == 0)
 		{
-			throw std::invalid_argument("Invalid filename");
+			std::string ext = "bit";
+			filename.replace(filename.size() - 4, 3, ext);
+			filename.pop_back();
 		}
 
-		std::string ext = get_ext(filename);
+		long filesize = _sizeof_dtype(dtype);
+		for(std::vector<int>::iterator it = shape.begin(); it != shape.end(); ++it)
+			filesize += *it;
 
-		base = base.substr(0, base.length() - ext.length() - 1);
-
-		if (num_splits == 1)
+		struct stat buffer;
+		if (stat(filename.c_str(), &buffer) != 0)
 		{
-			dim = 1;
-		}
-		else
-		{
-			int pos = base.find_last_of(".");
-			dim = std::stoi(base.substr(pos + 1, base.size()));
-			base = base.substr(0, pos);
+			allocate_file(filename, filesize);
 		}
 
-		bool is_valid = _is_dtype_valid(ext);
-
-		if (is_valid == false)
-		{
-			// TODO: make formatted string and include provided extension name
-			throw std::invalid_argument("Unsupported file extension");
-		}
-
-		std::tuple<std::string, int, std::string> output{base, dim, ext};
-
-		return output;
+		mio::shared_mmap_sink rw_mmap(filename, offset, filesize);
+		return rw_mmap;
 	}
 
-	bool _is_dtype_valid(std::string &ext)
+	uint32_t* _compute_lengths(uint64_t* offsets, int nb_streamlines, int nb_vertices)
 	{
-		if (ext.compare("bit") == 0)
-			return true;
-		if (std::find(trxmmap::dtypes.begin(), trxmmap::dtypes.end(), ext) != trxmmap::dtypes.end())
-			return true;
-		return false;
-	}
-
-	json load_header(zip_t *zfolder)
-	{
-		// load file
-		zip_file_t *zh = zip_fopen(zfolder, "header.json", ZIP_FL_UNCHANGED);
-
-		// read data from file in chunks of 255 characters until data is fully loaded
-		int buff_len = 255 * sizeof(char);
-		char *buffer = (char *)malloc(buff_len);
-
-		std::string jstream = "";
-		zip_int64_t nbytes;
-		while ((nbytes = zip_fread(zh, buffer, buff_len - 1)) > 0)
+		if (nb_streamlines > 1)
 		{
-			if (buffer != NULL)
+			int last_elem_pos = _dichotomic_search(offsets);
+			Matrix<uint32_t, Dynamic, 1> lengths;
+
+			if (last_elem_pos == nb_streamlines - 1)
 			{
-				jstream += string(buffer, nbytes);
+				Matrix<uint32_t, Dynamic, Dynamic> tmp(offsets.template cast<u_int32_t>());
+				ediff1d(lengths, tmp, uint32_t(nb_vertices - offsets(last)));
 			}
+			else
+			{
+				Matrix<uint32_t, Dynamic, Dynamic> tmp(offsets.template cast<u_int32_t>());
+				tmp(last_elem_pos + 1) = uint32_t(nb_vertices);
+				ediff1d(lengths, tmp, 0);
+				lengths(last_elem_pos + 1) = uint32_t(0);
+			}
+			return lengths;
+		}
+		if (nb_streamlines == 1)
+		{
+			Matrix<uint32_t, 1, 1, RowMajor> lengths(nb_vertices);
+			return lengths;
 		}
 
-		free(zh);
-		free(buffer);
-
-		// convert jstream data into Json.
-		auto root = json::parse(jstream);
-		return root;
+		Matrix<uint32_t, 1, 1, RowMajor> lengths(0);
+		return lengths;
 	}
+
 
 	void allocate_file(const std::string &path, const int size)
 	{
@@ -296,240 +298,193 @@ namespace trxmmap
 		}
 	}
 
-	mio::shared_mmap_sink _create_memmap(std::string &filename, std::tuple<int, int> &shape, std::string mode, std::string dtype, long long offset)
-	{
 
-		if (dtype.compare("bool") == 0)
+		template <typename DT>
+		void ediff1d(Matrix<DT, Dynamic, 1> &lengths, Matrix<DT, Dynamic, Dynamic> &tmp, uint32_t to_end)
 		{
-			std::string ext = "bit";
-			filename.replace(filename.size() - 4, 3, ext);
-			filename.pop_back();
-		}
+			Map<RowVector<uint32_t, Dynamic>> v(tmp.data(), tmp.size());
+			lengths.resize(v.size(), 1);
 
-		long filesize = std::get<0>(shape) * std::get<1>(shape) * _sizeof_dtype(dtype);
-		// if file does not exist, create and allocate it
-
-		struct stat buffer;
-		if (stat(filename.c_str(), &buffer) != 0)
-		{
-			allocate_file(filename, filesize);
-		}
-
-		mio::shared_mmap_sink rw_mmap(filename, offset, filesize);
-		return rw_mmap;
-	}
-
-	// TODO: support FORTRAN ORDERING
-	// template <typename Derived>
-
-	json assignHeader(json root)
-	{
-		json header = root;
-		// MatrixXf affine(4, 4);
-		// RowVectorXi dimensions(3);
-
-		// for (int i = 0; i < 4; i++)
-		// {
-		// 	for (int j = 0; j < 4; j++)
-		// 	{
-		// 		affine << root["VOXEL_TO_RASMM"][i][j].asFloat();
-		// 	}
-		// }
-
-		// for (int i = 0; i < 3; i++)
-		// {
-		// 	dimensions[i] << root["DIMENSIONS"][i].asUInt();
-		// }
-		// header["VOXEL_TO_RASMM"] = affine;
-		// header["DIMENSIONS"] = dimensions;
-		// header["NB_VERTICES"] = (int)root["NB_VERTICES"].asUInt();
-		// header["NB_STREAMLINES"] = (int)root["NB_STREAMLINES"].asUInt();
-
-		return header;
-	}
-
-	void get_reference_info(std::string reference, const MatrixXf &affine, const RowVectorXi &dimensions)
-	{
-		// TODO: find a library to use for nifti and trk (MRtrix??)
-		//  if (reference.find(".nii") != std::string::npos)
-		//  {
-		//  }
-		if (reference.find(".trk") != std::string::npos)
-		{
-			// TODO: Create exception class
-			std::cout << "Trk reference not implemented" << std::endl;
-			std::exit(1);
-		}
-		else
-		{
-			// TODO: Create exception class
-			std::cout << "Trk reference not implemented" << std::endl;
-			std::exit(1);
-		}
-	}
-
-	void copy_dir(const char *src, const char *dst)
-	{
-		DIR *dir;
-		struct dirent *entry;
-
-		if (!(dir = opendir(src)))
-			return;
-
-		if (mkdir(dst, S_IRWXU) != 0)
-		{
-			spdlog::error("Could not create directory {}", dst);
-		}
-
-		while ((entry = readdir(dir)) != NULL)
-		{
-			if (entry->d_type == DT_DIR)
+			// TODO: figure out if there's a built in way to manage this
+			for (int i = 0; i < v.size() - 1; i++)
 			{
-				char path[1024];
-				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-					continue;
-				char dstpath[1024];
-				snprintf(path, sizeof(path), "%s%s%s", src, SEPARATOR.c_str(), entry->d_name);
-				snprintf(dstpath, sizeof(dstpath), "%s%s%s", dst, SEPARATOR.c_str(), entry->d_name);
-				copy_dir(path, dstpath);
+				lengths(i) = v(i + 1) - v(i);
+			}
+			lengths(v.size() - 1) = to_end;
+		}
+
+	TrxFile *TrxFile::_create_trx_from_pointer(
+		json header,
+		std::map<std::string, std::tuple<long long, long long>> dict_pointer_size,
+		std::string root_zip, std::string root
+	)
+	{
+		TrxFile *trx = new TrxFile();
+		trx->header = header;
+
+		std::string filename;
+
+		std::string* positions = _get_pointer_by_name(
+			"positions.",
+			dict_pointer_size
+		);
+		if (positions == NULL) {
+			throw std::invalid_argument("positions not found.");
+		}
+		
+		std::string* offsets = _get_pointer_by_name(
+			"offsets.",
+			dict_pointer_size
+		);
+		if (offsets == NULL) {
+			throw std::invalid_argument("offsets not found.");
+		}
+
+		int nb_vertices(int(trx->header["NB_VERTICES"]));
+		int nb_streamlines(int(trx->header["NB_STREAMLINES"]));
+
+		auto positions_filename = *positions;
+		auto positions_dtype = std::get<2>(_split_ext_with_dimensionality(positions_filename));
+		std::tuple<long long, long long> positions_offset_size = dict_pointer_size[positions_filename];
+
+		auto offsets_filename = *offsets;
+		auto offsets_dtype = std::get<2>(_split_ext_with_dimensionality(offsets_filename));
+		std::tuple<long long, long long> offsets_offset_size = dict_pointer_size[offsets_filename];
+
+		trx->streamlines = new ArraySequence(_get_dtype(positions_dtype));
+		trx->streamlines->mmap_positions = _create_memmap(positions_filename, std::vector<int>{nb_vertices, 3}, "r+", positions_dtype, std::get<0>(positions_offset_size));
+		trx->streamlines->mmap_offsets = _create_memmap(offsets_filename, std::vector<int>{nb_vertices}, "r+", offsets_dtype, std::get<0>(offsets_offset_size));
+
+		uint64_t* offsets = trx->streamlines->_offsets;
+		trx->streamlines->_lengths = _compute_lengths(
+			offsets, nb_streamlines, nb_vertices
+		);
+
+		for (auto entry = dict_pointer_size.begin(); entry != dict_pointer_size.end(); entry++)
+		{
+			std::string elem_filename = entry->first;
+
+			if (root_zip.size() > 0)
+			{
+				filename = root_zip;
 			}
 			else
 			{
-				char srcfile[1024];
-				char dstfile[1024];
-				snprintf(srcfile, sizeof(srcfile), "%s%s%s", src, SEPARATOR.c_str(), entry->d_name);
-				snprintf(dstfile, sizeof(dstfile), "%s%s%s", dst, SEPARATOR.c_str(), entry->d_name);
-				copy_file(srcfile, dstfile);
+				filename = elem_filename;
 			}
-		}
-		closedir(dir);
-	}
 
-	// modified from:https://stackoverflow.com/a/7267734
-	void copy_file(const char *src, const char *dst)
-	{
-		int src_fd, dst_fd, n, err;
-		unsigned char buffer[4096];
+			std::string folder = std::string(dirname(const_cast<char *>(strdup(elem_filename.c_str()))));
 
-		src_fd = open(src, O_RDONLY);
-		dst_fd = open(dst, O_CREAT | O_WRONLY, 0666); // maybe keep original permissions?
+			std::tuple<std::string, int, std::string> base_tuple = _split_ext_with_dimensionality(elem_filename);
+			std::string base(std::get<0>(base_tuple));
+			int dim = std::get<1>(base_tuple);
+			std::string ext(std::get<2>(base_tuple));
 
-		while (1)
-		{
-			err = read(src_fd, buffer, 4096);
-			if (err == -1)
+			Dtype dtype = _get_dtype(ext);
+
+			long long mem_adress = std::get<0>(x->second);
+			long long size = std::get<1>(x->second);
+
+			std::string stripped = root;
+			if (stripped.rfind("/") == stripped.size() - 1)
 			{
-				printf("Error reading file.\n");
-				exit(1);
+				stripped = stripped.substr(0, stripped.size() - 1);
 			}
-			n = err;
 
-			if (n == 0)
-				break;
-
-			err = write(dst_fd, buffer, n);
-			if (err == -1)
+			if (root.compare("") != 0 && folder.rfind(stripped, stripped.size()) == 0)
 			{
-				printf("Error writing to file.\n");
-				exit(1);
-			}
-		}
-		close(src_fd);
-		close(dst_fd);
-	}
-	int rm_dir(const char *d)
-	{
-
-		DIR *dir;
-		struct dirent *entry;
-
-		if (!(dir = opendir(d)))
-			return -1;
-
-		while ((entry = readdir(dir)) != NULL)
-		{
-			if (entry->d_type == DT_DIR)
-			{
-				char path[PATH_MAX];
-				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-					continue;
-				snprintf(path, sizeof(path), "%s%s%s", d, SEPARATOR.c_str(), entry->d_name);
-				rm_dir(path);
-			}
-			else
-			{
-				char fn[PATH_MAX];
-				snprintf(fn, sizeof(fn), "%s%s%s", d, SEPARATOR.c_str(), entry->d_name);
-				if (remove(fn) != 0)
+				folder = folder.replace(0, root.size(), "");
+				if (folder[0] == SEPARATOR.c_str()[0])
 				{
-					spdlog::error("Could not remove file {}", fn);
-					return -1;
+					folder = folder.substr(1, folder.size());
 				}
 			}
-		}
-		closedir(dir);
-		return rmdir(d);
-	}
 
-	void zip_from_folder(zip_t *zf, const std::string root, const std::string directory, zip_uint32_t compression_standard)
-	{
-		DIR *dir;
-		struct dirent *entry;
-
-		if (!(dir = opendir(directory.c_str())))
-			return;
-
-		while ((entry = readdir(dir)) != NULL)
-		{
-			if (entry->d_type == DT_DIR)
+			if (folder.compare("dps") == 0)
 			{
-				char path[PATH_MAX];
-				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-					continue;
-				snprintf(path, sizeof(path), "%s%s%s", directory.c_str(), SEPARATOR.c_str(), entry->d_name);
+				Dtype dtype = _get_dtype(ext);
 
-				std::string zip_fname(path);
-				zip_fname = rm_root(root, zip_fname);
-				zip_dir_add(zf, zip_fname.c_str(), ZIP_FL_ENC_GUESS);
-				zip_from_folder(zf, root, std::string(path), compression_standard);
+				std::tuple<int, int> shape;
+				trx->data_per_streamline[base] = new MMappedMatrix(dtype);
+				int nb_scalar = size / nb_streamlines;
+
+				if (size % nb_streamlines != 0 || nb_scalar != dim)
+				{
+
+					throw std::invalid_argument("Wrong dps size/dimensionality");
+				}
+				else
+				{
+					shape = std::make_tuple(nb_streamlines, nb_scalar);
+				}
+				trx->data_per_streamline[base]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
+			}
+
+			else if (folder.compare("dpv") == 0)
+			{
+				std::tuple<int, int> shape;
+				int nb_scalar = size / nb_vertices;
+
+				if (size % nb_vertices != 0 || nb_scalar != dim)
+				{
+
+					throw std::invalid_argument("Wrong dpv size/dimensionality");
+				}
+				else
+				{
+					shape = std::make_tuple(trx->header["NB_VERTICES"], nb_scalar);
+				}
+
+				Dtype dtype = _get_dtype(ext);
+				trx->data_per_vertex[base] = new ArraySequence(dtype);
+				trx->data_per_vertex[base]->mmap_pos = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
+				trx->data_per_vertex[base]->_lengths = trx->streamlines->_lengths;
+			}
+
+			else if (folder.rfind("dpg", 0) == 0)
+			{
+				std::tuple<int, int> shape;
+
+				if (size != dim)
+				{
+					throw std::invalid_argument("Wrong dpg size/dimensionality");
+				}
+				else
+				{
+					shape = std::make_tuple(1, size);
+				}
+
+				std::string data_name = std::string(basename(const_cast<char *>(base.c_str())));
+				std::string sub_folder = std::string(basename(const_cast<char *>(folder.c_str())));
+
+				Dtype dtype = _get_dtype(ext);
+
+				trx->data_per_group[sub_folder][data_name] = new MMappedMatrix(dtype);
+				trx->data_per_group[sub_folder][data_name]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
+			}
+
+			else if (folder.compare("groups") == 0)
+			{
+				std::tuple<int, int> shape;
+				if (dim != 1)
+				{
+					throw std::invalid_argument("Wrong group dimensionality");
+				}
+				else
+				{
+					shape = std::make_tuple(size, 1);
+				}
+				Dtype dtype = _get_dtype(ext);
+				trx->groups[base] = new MMappedMatrix(dtype);
+				trx->groups[base]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
 			}
 			else
 			{
-				std::string fn;
-				char fullpath[PATH_MAX];
-
-				snprintf(fullpath, sizeof(fullpath), "%s%s%s", directory.c_str(), SEPARATOR.c_str(), entry->d_name);
-				fn = rm_root(root, std::string(fullpath));
-
-				zip_source_t *s;
-				zip_int64_t idx;
-
-				if (
-					(s = zip_source_file(zf, fullpath, 0, 0)) == NULL ||
-					(idx = zip_file_add(zf, fn.c_str(), s, ZIP_FL_ENC_UTF_8)) < 0
-				)
-				{
-					zip_source_free(s);
-					spdlog::error("error adding file {}: {}", fn, zip_strerror(zf));
-				} else {
-					zip_set_file_compression(zf, idx, compression_standard, 0);
-				}
+				spdlog::error("{} is not part of a valid structure.", elem_filename);
 			}
 		}
-		closedir(dir);
+
+		return trx;
 	}
 
-	std::string rm_root(const std::string root, const std::string path)
-	{
-
-		std::size_t index;
-		std::string stripped;
-
-		index = path.find(root);
-		if (index != std::string::npos)
-		{
-			stripped = path.substr(index + root.size() + 1, path.size() - index - root.size() - 1);
-		}
-		return stripped;
-	}
-};
+}

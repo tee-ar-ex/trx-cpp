@@ -13,7 +13,7 @@ option(TRX_USE_CONAN "Should Conan package manager be used?" ON)
 set(CMAKE_BUILD_TYPE Debug)
 #set(CMAKE_BUILD_TYPE Release)
 
-add_library(${LOCAL_PROJECT_NAME} src/trx.cpp src/trx.tpp)
+add_library(${LOCAL_PROJECT_NAME} src/trx.cpp)
 
 include(cmake/ConanSetup.cmake)
 
