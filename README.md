@@ -7,12 +7,12 @@ The C++ implementations to the memory-mapped tractography file format.
 ### Dependencies
 
 - c++11 compiler / cmake
-- libzip
-- nlohmann::json
-- Eigen3
-- spdlog
+- libzip (version 1.10.1 downloaded from https://libzip.org/download/)
+- nlohmann::json(version 3.11.3 cloned from https://github.com/nlohmann/json)
+- Eigen3(version 3.4.0 from https://eigen.tuxfamily.org/index.php?title=Main_Page )
+- spdlog(spd) [version: 1.13.0 cloned from https://github.com/gabime/spdlog)
 - GTest (optional)
-- mio
+- mio (cloned from fhttps://github.com/vimpunk/mio/tree/master)
 
 ### Installing
 
