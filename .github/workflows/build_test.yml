@@ -1,0 +1,40 @@
+name: C++ Build and Test
+'on':
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update 
+          sudo apt-get install \
+          libzip-dev\
+          eigen3-dev\
+          nlohmann-json-dev\ 
+          spdlog-dev\ 
+      - name: Install Google Test v1.12.1
+        run: |
+          git clone -b release-1.12.1 https://github.com/google/googletest.git
+          cd googletest
+          cmake -B build
+          sudo make
+          sudo make install
+      - name: Install mio
+        run: |
+          git clone -b master https://github.com/vimpunk/mio.git
+          cd mio
+          cmake -B build
+          sudo make
+          sudo make install
+      - name: Build C++ project
+        run: |
+          cmake -B build
+          make
