@@ -1,4 +1,4 @@
-name: C++ Build and Test
+name: C++ Build
 'on':
   push:
     branches:
@@ -7,7 +7,7 @@ name: C++ Build and Test
     branches:
       - master
 jobs:
-  build_and_test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
