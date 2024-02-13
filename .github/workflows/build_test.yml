@@ -14,12 +14,9 @@ jobs:
         uses: actions/checkout@v4
       - name: Install dependencies
         run: |
-          sudo apt-get update 
-          sudo apt-get install \
-          libzip-dev\
-          eigen3-dev\
-          nlohmann-json-dev\ 
-          spdlog-dev\ 
+          sudo apt-get update -y
+          sudo apt-get install -y libzip-dev
+          
       - name: Install Google Test v1.12.1
         run: |
           git clone -b release-1.12.1 https://github.com/google/googletest.git
