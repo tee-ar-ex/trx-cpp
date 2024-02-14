@@ -15,7 +15,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libzip-dev
+          sudo apt-get install -y libzip-dev libeigen3-dev nlohmann-json-dev libspdlog-dev
           
       - name: Install Google Test v1.12.1
         run: |
@@ -30,7 +30,9 @@ jobs:
         run: |
           git clone -b master https://github.com/vimpunk/mio.git
           cd mio
-          cmake -B build
+          mkdir build
+          cd build
+          cmake ..
           sudo make
           sudo make install
       - name: Build C++ project
