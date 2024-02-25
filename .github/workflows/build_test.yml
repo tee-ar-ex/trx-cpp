@@ -12,11 +12,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - name: Setup cmake
+        uses: jwlawson/actions-setup-cmake@v1.14
+        with:
+          cmake-version: 'latest'
       - name: Install dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libzip-dev libeigen3-dev nlohmann-json3-dev libspdlog-dev
-          
+          sudo apt-get install -y libzip-dev libeigen3-dev nlohmann-json3-dev libspdlog-dev libgtest-dev
       - name: Install Google Test v1.12.1
         run: |
           git clone -b release-1.12.1 https://github.com/google/googletest.git
@@ -37,5 +40,7 @@ jobs:
           sudo make install
       - name: Build C++ project
         run: |
-          cmake -B build
-          make
+          mkdir build
+          cd build
+          cmake ..
+          sudo make
