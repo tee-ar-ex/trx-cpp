@@ -1,0 +1,18 @@
+name: C++ Build
+'on':
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Build C++ project
+        run: |
+          docker build -t ci_cd_image .
+          docker run ci_cd_image
