@@ -53,7 +53,8 @@ jobs:
           cmake -S tests -B tests/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DMIO_INCLUDE_DIR=${GITHUB_WORKSPACE}/deps/mio/include \
-            -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/deps/libzip/install;${GITHUB_WORKSPACE}/deps/googletest/install
+            -DGTest_DIR=${GITHUB_WORKSPACE}/deps/googletest/install/lib/cmake/GTest \
+            -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/deps/libzip/install
 
       - name: Build trx-cpp tests
         run: cmake --build tests/build
