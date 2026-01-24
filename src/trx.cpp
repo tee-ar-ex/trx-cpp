@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <algorithm>
 #include <stdexcept>
+#include <vector>
 #define SYSERROR() errno
 
 //#define ZIP_DD_SIG 0x08074b50
@@ -464,19 +465,57 @@ namespace trxmmap
 		return rmdir(d);
 	}
 
+	std::string make_temp_dir(const std::string &prefix)
+	{
+		const char *candidates[] = {std::getenv("TMPDIR"), std::getenv("TEMP"), std::getenv("TMP")};
+		std::string base_dir;
+		for (const char *candidate : candidates)
+		{
+			if (candidate == nullptr || std::string(candidate).empty())
+			{
+				continue;
+			}
+			std::filesystem::path path(candidate);
+			std::error_code ec;
+			if (std::filesystem::exists(path, ec) && std::filesystem::is_directory(path, ec))
+			{
+				base_dir = path.string();
+				break;
+			}
+		}
+		if (base_dir.empty())
+		{
+			std::error_code ec;
+			auto sys_tmp = std::filesystem::temp_directory_path(ec);
+			if (!ec)
+			{
+				base_dir = sys_tmp.string();
+			}
+		}
+		if (base_dir.empty())
+		{
+			base_dir = "/tmp";
+		}
+
+		std::filesystem::path tmpl = std::filesystem::path(base_dir) / (prefix + "_XXXXXX");
+		std::string tmpl_str = tmpl.string();
+		std::vector<char> buf(tmpl_str.begin(), tmpl_str.end());
+		buf.push_back('\0');
+		char *dirname = mkdtemp(buf.data());
+		if (dirname == nullptr)
+		{
+			throw std::runtime_error("Failed to create temporary directory");
+		}
+		return std::string(dirname);
+	}
+
 	std::string extract_zip_to_directory(zip_t *zfolder)
 	{
 		if (zfolder == nullptr)
 		{
 			throw std::invalid_argument("Zip archive pointer is null");
 		}
-		char t[] = "/tmp/trx_zip_XXXXXX";
-		char *dirname = mkdtemp(t);
-		if (dirname == nullptr)
-		{
-			throw std::runtime_error("Failed to create temporary directory for zip extraction");
-		}
-		std::string root_dir(dirname);
+		std::string root_dir = make_temp_dir("trx_zip");
 
 		zip_int64_t num_entries = zip_get_num_entries(zfolder, ZIP_FL_UNCHANGED);
 		for (zip_int64_t i = 0; i < num_entries; ++i)

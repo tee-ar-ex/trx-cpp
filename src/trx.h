@@ -292,6 +292,7 @@ namespace trxmmap
 	void copy_dir(const char *src, const char *dst);
 	void copy_file(const char *src, const char *dst);
 	int rm_dir(const char *d);
+	std::string make_temp_dir(const std::string &prefix);
 	std::string extract_zip_to_directory(zip_t *zfolder);
 
 	std::string rm_root(std::string root, const std::string path);
