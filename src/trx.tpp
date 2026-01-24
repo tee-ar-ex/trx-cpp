@@ -282,6 +282,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 	new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape_off), std::get<1>(shape_off));
 
 	trx->streamlines->_lengths.resize(nb_streamlines);
+	trx->streamlines->_lengths.setZero();
 
 	if (init_as != NULL)
 	{
