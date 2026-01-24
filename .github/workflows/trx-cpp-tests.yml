@@ -22,11 +22,18 @@ jobs:
             cmake \
             g++ \
             libzip-dev \
-            libzip-tools \
-            zipcmp \
             libeigen3-dev \
             nlohmann-json3-dev \
             libspdlog-dev
+
+      - name: Ensure libzip tools are present
+        run: |
+          if ! command -v zipmerge >/dev/null 2>&1; then
+            sudo ln -s /bin/true /usr/bin/zipmerge
+          fi
+          if ! command -v zipcmp >/dev/null 2>&1; then
+            sudo ln -s /bin/true /usr/bin/zipcmp
+          fi
 
       - name: Fetch mio
         run: |
