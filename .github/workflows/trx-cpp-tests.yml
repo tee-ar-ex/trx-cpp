@@ -1,0 +1,56 @@
+name: trx-cpp tests
+
+on:
+  push:
+    paths:
+      - "trx-cpp/**"
+      - "ITKSuperBuild/**"
+      - ".github/workflows/trx-cpp-tests.yml"
+  pull_request:
+    paths:
+      - "trx-cpp/**"
+      - "ITKSuperBuild/**"
+      - ".github/workflows/trx-cpp-tests.yml"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            g++ \
+            libzip-dev \
+            libeigen3-dev \
+            nlohmann-json3-dev \
+            libspdlog-dev
+
+      - name: Fetch mio
+        run: |
+          git clone --depth 1 https://github.com/mandreyel/mio.git deps/mio
+
+      - name: Build and install GoogleTest
+        run: |
+          git clone --depth 1 https://github.com/google/googletest.git deps/googletest
+          cmake -S deps/googletest -B deps/googletest/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/deps/googletest/install
+          cmake --build deps/googletest/build --target install
+
+      - name: Configure trx-cpp tests
+        run: |
+          cmake -S trx-cpp/tests -B trx-cpp/tests/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMIO_INCLUDE_DIR=${GITHUB_WORKSPACE}/deps/mio \
+            -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/deps/googletest/install
+
+      - name: Build trx-cpp tests
+        run: cmake --build trx-cpp/tests/build
+
+      - name: Run trx-cpp tests
+        run: ctest --test-dir trx-cpp/tests/build --output-on-failure
