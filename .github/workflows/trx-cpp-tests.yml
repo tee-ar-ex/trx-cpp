@@ -21,26 +21,24 @@ jobs:
           sudo apt-get install -y \
             cmake \
             g++ \
-            libzip-dev \
+            zlib1g-dev \
             libeigen3-dev \
             nlohmann-json3-dev \
             libspdlog-dev
 
-      - name: Ensure libzip tools are present
-        run: |
-          if ! command -v zipmerge >/dev/null 2>&1; then
-            sudo ln -s /bin/true /usr/bin/zipmerge
-          fi
-          if ! command -v zipcmp >/dev/null 2>&1; then
-            sudo ln -s /bin/true /usr/bin/zipcmp
-          fi
-          if ! command -v ziptool >/dev/null 2>&1; then
-            sudo ln -s /bin/true /usr/bin/ziptool
-          fi
-
       - name: Fetch mio
         run: |
           git clone --depth 1 https://github.com/mandreyel/mio.git deps/mio
+
+      - name: Build and install libzip (with tools)
+        run: |
+          git clone --depth 1 https://github.com/nih-at/libzip.git deps/libzip
+          cmake -S deps/libzip -B deps/libzip/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TOOLS=ON \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/deps/libzip/install
+          cmake --build deps/libzip/build --target install
 
       - name: Build and install GoogleTest
         run: |
@@ -55,7 +53,7 @@ jobs:
           cmake -S tests -B tests/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DMIO_INCLUDE_DIR=${GITHUB_WORKSPACE}/deps/mio/include \
-            -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/deps/googletest/install
+            -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/deps/libzip/install;${GITHUB_WORKSPACE}/deps/googletest/install
 
       - name: Build trx-cpp tests
         run: cmake --build tests/build
