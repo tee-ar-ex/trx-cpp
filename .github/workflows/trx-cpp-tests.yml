@@ -54,7 +54,7 @@ jobs:
         run: |
           cmake -S tests -B tests/build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DMIO_INCLUDE_DIR=${GITHUB_WORKSPACE}/deps/mio \
+            -DMIO_INCLUDE_DIR=${GITHUB_WORKSPACE}/deps/mio/single_include \
             -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/deps/googletest/install
 
       - name: Build trx-cpp tests
