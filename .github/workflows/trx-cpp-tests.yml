@@ -34,6 +34,9 @@ jobs:
           if ! command -v zipcmp >/dev/null 2>&1; then
             sudo ln -s /bin/true /usr/bin/zipcmp
           fi
+          if ! command -v ziptool >/dev/null 2>&1; then
+            sudo ln -s /bin/true /usr/bin/ziptool
+          fi
 
       - name: Fetch mio
         run: |
