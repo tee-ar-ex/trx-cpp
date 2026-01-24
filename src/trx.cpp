@@ -3,6 +3,7 @@
 #include <typeinfo>
 #include <errno.h>
 #include <algorithm>
+#include <stdexcept>
 #define SYSERROR() errno
 
 //#define ZIP_DD_SIG 0x08074b50
@@ -159,6 +160,8 @@ namespace trxmmap
 			return "uint32";
 		case 'm':
 			return "uint64";
+		case 'y': // unsigned long long (Itanium ABI)
+			return "uint64";
 		case 'a':
 			return "int8";
 		case 's':
@@ -166,6 +169,8 @@ namespace trxmmap
 		case 'i':
 			return "int32";
 		case 'l':
+			return "int64";
+		case 'x': // long long (Itanium ABI)
 			return "int64";
 		case 'f':
 			return "float32";
@@ -228,8 +233,16 @@ namespace trxmmap
 
 	json load_header(zip_t *zfolder)
 	{
+		if (zfolder == nullptr)
+		{
+			throw std::invalid_argument("Zip archive pointer is null");
+		}
 		// load file
 		zip_file_t *zh = zip_fopen(zfolder, "header.json", ZIP_FL_UNCHANGED);
+		if (zh == nullptr)
+		{
+			throw std::runtime_error("Failed to open header.json in zip archive");
+		}
 
 		// read data from file in chunks of 255 characters until data is fully loaded
 		int buff_len = 255 * sizeof(char);
@@ -245,7 +258,7 @@ namespace trxmmap
 			}
 		}
 
-		free(zh);
+		zip_fclose(zh);
 		free(buffer);
 
 		// convert jstream data into Json.
@@ -286,6 +299,11 @@ namespace trxmmap
 		{
 			allocate_file(filename, filesize);
 		}
+
+	if (filesize == 0)
+	{
+		return mio::shared_mmap_sink();
+	}
 
 		// std::error_code error;
 
@@ -446,6 +464,75 @@ namespace trxmmap
 		return rmdir(d);
 	}
 
+	std::string extract_zip_to_directory(zip_t *zfolder)
+	{
+		if (zfolder == nullptr)
+		{
+			throw std::invalid_argument("Zip archive pointer is null");
+		}
+		char t[] = "/tmp/trx_zip_XXXXXX";
+		char *dirname = mkdtemp(t);
+		if (dirname == nullptr)
+		{
+			throw std::runtime_error("Failed to create temporary directory for zip extraction");
+		}
+		std::string root_dir(dirname);
+
+		zip_int64_t num_entries = zip_get_num_entries(zfolder, ZIP_FL_UNCHANGED);
+		for (zip_int64_t i = 0; i < num_entries; ++i)
+		{
+			const char *entry_name = zip_get_name(zfolder, i, ZIP_FL_UNCHANGED);
+			if (entry_name == nullptr)
+			{
+				continue;
+			}
+			std::string entry(entry_name);
+			std::filesystem::path out_path = std::filesystem::path(root_dir) / entry;
+
+			if (!entry.empty() && entry.back() == '/')
+			{
+				std::error_code ec;
+				std::filesystem::create_directories(out_path, ec);
+				if (ec)
+				{
+					throw std::runtime_error("Failed to create directory: " + out_path.string());
+				}
+				continue;
+			}
+
+			std::error_code ec;
+			std::filesystem::create_directories(out_path.parent_path(), ec);
+			if (ec)
+			{
+				throw std::runtime_error("Failed to create parent directory: " + out_path.parent_path().string());
+			}
+
+			zip_file_t *zf = zip_fopen_index(zfolder, i, ZIP_FL_UNCHANGED);
+			if (zf == nullptr)
+			{
+				throw std::runtime_error("Failed to open zip entry: " + entry);
+			}
+
+			std::ofstream out(out_path, std::ios::binary);
+			if (!out.is_open())
+			{
+				zip_fclose(zf);
+				throw std::runtime_error("Failed to open output file: " + out_path.string());
+			}
+
+			char buffer[4096];
+			zip_int64_t nbytes = 0;
+			while ((nbytes = zip_fread(zf, buffer, sizeof(buffer))) > 0)
+			{
+				out.write(buffer, nbytes);
+			}
+			out.close();
+			zip_fclose(zf);
+		}
+
+		return root_dir;
+	}
+
 	void zip_from_folder(zip_t *zf, const std::string root, const std::string directory, zip_uint32_t compression_standard)
 	{
 		DIR *dir;
@@ -478,11 +565,16 @@ namespace trxmmap
 
 				zip_source_t *s;
 
+				zip_int64_t file_idx = -1;
 				if ((s = zip_source_file(zf, fullpath, 0, 0)) == NULL ||
-				    zip_file_add(zf, fn.c_str(), s, ZIP_FL_ENC_UTF_8) < 0)
+				    (file_idx = zip_file_add(zf, fn.c_str(), s, ZIP_FL_ENC_UTF_8)) < 0)
 				{
 					zip_source_free(s);
 					spdlog::error("error adding file {}: {}", fn, zip_strerror(zf));
+				}
+				else if (zip_set_file_compression(zf, file_idx, compression_standard, 0) < 0)
+				{
+					spdlog::error("error setting compression for {}: {}", fn, zip_strerror(zf));
 				}
 			}
 		}

@@ -13,6 +13,9 @@
 #include <libgen.h>
 #include <Eigen/Core>
 #include <filesystem>
+#include <limits.h>
+#include <stdlib.h>
+#include <stdexcept>
 
 #include <mio/mmap.hpp>
 #include <mio/shared_mmap.hpp>
@@ -289,6 +292,7 @@ namespace trxmmap
 	void copy_dir(const char *src, const char *dst);
 	void copy_file(const char *src, const char *dst);
 	int rm_dir(const char *d);
+	std::string extract_zip_to_directory(zip_t *zfolder);
 
 	std::string rm_root(std::string root, const std::string path);
 #include "trx.tpp"

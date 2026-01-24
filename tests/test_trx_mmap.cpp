@@ -1,9 +1,140 @@
 #include <gtest/gtest.h>
 #include "../src/trx.h"
 #include <typeinfo>
+#include <stdexcept>
+#include <sys/stat.h>
 
 using namespace Eigen;
 using namespace trxmmap;
+
+namespace
+{
+	struct TestTrxFixture
+	{
+		std::string path;
+		std::string dir_path;
+		json expected_header;
+		int nb_vertices;
+		int nb_streamlines;
+	};
+
+	TestTrxFixture create_fixture()
+	{
+		char t[] = "/tmp/trx_test_XXXXXX";
+		char *dirname = mkdtemp(t);
+		if (dirname == nullptr)
+		{
+			throw std::runtime_error("Failed to create temporary directory");
+		}
+
+		TestTrxFixture fixture;
+		std::string root_dir(dirname);
+		std::string trx_dir = root_dir + "/trx_data";
+		if (mkdir(trx_dir.c_str(), S_IRWXU) != 0)
+		{
+			throw std::runtime_error("Failed to create trx data directory");
+		}
+		fixture.path = root_dir + "/small.trx";
+		fixture.dir_path = trx_dir;
+		fixture.nb_vertices = 12;
+		fixture.nb_streamlines = 4;
+
+		fixture.expected_header["DIMENSIONS"] = {117, 151, 115};
+		fixture.expected_header["NB_STREAMLINES"] = fixture.nb_streamlines;
+		fixture.expected_header["NB_VERTICES"] = fixture.nb_vertices;
+		fixture.expected_header["VOXEL_TO_RASMM"] = {{-1.25, 0.0, 0.0, 72.5},
+							    {0.0, 1.25, 0.0, -109.75},
+							    {0.0, 0.0, 1.25, -64.5},
+							    {0.0, 0.0, 0.0, 1.0}};
+
+		// Write header.json
+		std::string header_path = trx_dir + "/header.json";
+		std::ofstream header_out(header_path);
+		if (!header_out.is_open())
+		{
+			throw std::runtime_error("Failed to write header.json");
+		}
+		header_out << std::setw(4) << fixture.expected_header << std::endl;
+		header_out.close();
+
+		// Write positions (float16)
+		Matrix<half, Dynamic, Dynamic, RowMajor> positions(fixture.nb_vertices, 3);
+		positions.setZero();
+		std::string positions_path = trx_dir + "/positions.3.float16";
+		trxmmap::write_binary(positions_path.c_str(), positions);
+		struct stat sb;
+		if (stat(positions_path.c_str(), &sb) != 0)
+		{
+			throw std::runtime_error("Failed to stat positions file");
+		}
+		const size_t expected_positions_bytes = fixture.nb_vertices * 3 * sizeof(half);
+		if (static_cast<size_t>(sb.st_size) != expected_positions_bytes)
+		{
+			throw std::runtime_error("Positions file size mismatch");
+		}
+
+		// Write offsets (uint64)
+		Matrix<uint64_t, Dynamic, Dynamic, RowMajor> offsets(fixture.nb_streamlines, 1);
+		for (int i = 0; i < fixture.nb_streamlines; ++i)
+		{
+			offsets(i, 0) = static_cast<uint64_t>(i * (fixture.nb_vertices / fixture.nb_streamlines));
+		}
+		std::string offsets_path = trx_dir + "/offsets.uint64";
+		trxmmap::write_binary(offsets_path.c_str(), offsets);
+		if (stat(offsets_path.c_str(), &sb) != 0)
+		{
+			throw std::runtime_error("Failed to stat offsets file");
+		}
+		const size_t expected_offsets_bytes = fixture.nb_streamlines * sizeof(uint64_t);
+		if (static_cast<size_t>(sb.st_size) != expected_offsets_bytes)
+		{
+			throw std::runtime_error("Offsets file size mismatch");
+		}
+
+		// Zip the directory into a trx file without compression
+		int errorp = 0;
+		zip_t *zf = zip_open(fixture.path.c_str(), ZIP_CREATE | ZIP_TRUNCATE, &errorp);
+		if (zf == nullptr)
+		{
+			throw std::runtime_error("Failed to create trx zip file");
+		}
+		trxmmap::zip_from_folder(zf, trx_dir, trx_dir, ZIP_CM_STORE);
+		if (zip_close(zf) != 0)
+		{
+			throw std::runtime_error("Failed to close trx zip file");
+		}
+
+		// Validate zip entry sizes
+		int zip_err = 0;
+		zip_t *verify_zip = zip_open(fixture.path.c_str(), 0, &zip_err);
+		if (verify_zip == nullptr)
+		{
+			throw std::runtime_error("Failed to reopen trx zip file");
+		}
+		zip_stat_t stat_buf;
+		if (zip_stat(verify_zip, "offsets.uint64", ZIP_FL_UNCHANGED, &stat_buf) != 0 ||
+		    static_cast<size_t>(stat_buf.size) != expected_offsets_bytes)
+		{
+			zip_close(verify_zip);
+			throw std::runtime_error("Zip offsets entry size mismatch");
+		}
+		if (zip_stat(verify_zip, "positions.3.float16", ZIP_FL_UNCHANGED, &stat_buf) != 0 ||
+		    static_cast<size_t>(stat_buf.size) != expected_positions_bytes)
+		{
+			zip_close(verify_zip);
+			throw std::runtime_error("Zip positions entry size mismatch");
+		}
+		zip_close(verify_zip);
+
+		return fixture;
+	}
+
+	const TestTrxFixture &get_fixture()
+	{
+		static TestTrxFixture fixture = create_fixture();
+		return fixture;
+	}
+}
 
 // TODO: Test null filenames. Maybe use MatrixBase instead of ArrayBase
 // TODO: try to update test case to use GTest parameterization
@@ -202,31 +333,34 @@ TEST(TrxFileMemmap, __create_memmap)
 	EXPECT_EQ(expected_m, real_m);
 }
 
+TEST(TrxFileMemmap, __create_memmap_empty)
+{
+	char t[] = "/tmp/trx_XXXXXX";
+	char *dirname = mkdtemp(t);
+
+	std::string path(dirname);
+	path += "/empty.float32";
+
+	std::tuple<int, int> shape = std::make_tuple(0, 1);
+	mio::shared_mmap_sink empty_mmap = trxmmap::_create_memmap(path, shape);
+
+	struct stat sb;
+	ASSERT_EQ(stat(path.c_str(), &sb), 0);
+	EXPECT_EQ(sb.st_size, 0);
+	EXPECT_EQ(empty_mmap.size(), 0u);
+}
+
 TEST(TrxFileMemmap, load_header)
 {
-	std::string path = "data/small.trx";
-	int *errorp;
-	zip_t *zf = zip_open(path.c_str(), 0, errorp);
+	const auto &fixture = get_fixture();
+	int errorp = 0;
+	zip_t *zf = zip_open(fixture.path.c_str(), 0, &errorp);
 	json root = trxmmap::load_header(zf);
 
-	// expected output
-	json expected;
+	EXPECT_EQ(root, fixture.expected_header);
+	EXPECT_EQ(root.dump(), fixture.expected_header.dump());
 
-	expected["DIMENSIONS"] = {117, 151, 115};
-	expected["NB_STREAMLINES"] = 1000;
-	expected["NB_VERTICES"] = 33886;
-	expected["VOXEL_TO_RASMM"] = {{-1.25, 0.0, 0.0, 72.5},
-				      {0.0, 1.25, 0.0, -109.75},
-				      {0.0, 0.0, 1.25, -64.5},
-				      {0.0, 0.0, 0.0, 1.0}};
-
-	EXPECT_EQ(root, expected);
-
-	std::string expected_str = "{\"DIMENSIONS\":[117,151,115],\"NB_STREAMLINES\":1000,\"NB_VERTICES\":33886,\"VOXEL_TO_RASMM\":[[-1.25,0.0,0.0,72.5],[0.0,1.25,0.0,-109.75],[0.0,0.0,1.25,-64.5],[0.0,0.0,0.0,1.0]]}";
-
-	EXPECT_EQ(root.dump(), expected_str);
-
-	free(zf);
+	zip_close(zf);
 }
 
 // TEST(TrxFileMemmap, _load)
@@ -247,7 +381,15 @@ TEST(TrxFileMemmap, load_header)
 
 TEST(TrxFileMemmap, load_zip)
 {
-	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>("data/small.trx");
+	const auto &fixture = get_fixture();
+	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(fixture.path);
+	EXPECT_GT(trx->streamlines->_data.size(), 0);
+}
+
+TEST(TrxFileMemmap, load_directory)
+{
+	const auto &fixture = get_fixture();
+	trxmmap::TrxFile<half> *trx = trxmmap::load_from_directory<half>(fixture.dir_path);
 	EXPECT_GT(trx->streamlines->_data.size(), 0);
 }
 
@@ -268,35 +410,37 @@ TEST(TrxFileMemmap, TrxFile)
 
 	EXPECT_EQ(trx->header, expected);
 
-	std::string path = "data/small.trx";
-	int *errorp;
-	zip_t *zf = zip_open(path.c_str(), 0, errorp);
+	const auto &fixture = get_fixture();
+	int errorp = 0;
+	zip_t *zf = zip_open(fixture.path.c_str(), 0, &errorp);
 	json root = trxmmap::load_header(zf);
 	TrxFile<half> *root_init = new TrxFile<half>();
 	root_init->header = root;
+	zip_close(zf);
 
 	// TODO: test for now..
 
-	trxmmap::TrxFile<half> *trx_init = new TrxFile<half>(33886, 1000, root_init);
+	trxmmap::TrxFile<half> *trx_init = new TrxFile<half>(fixture.nb_vertices, fixture.nb_streamlines, root_init);
 	json init_as;
 
 	init_as["DIMENSIONS"] = {117, 151, 115};
-	init_as["NB_STREAMLINES"] = 1000;
-	init_as["NB_VERTICES"] = 33886;
+	init_as["NB_STREAMLINES"] = fixture.nb_streamlines;
+	init_as["NB_VERTICES"] = fixture.nb_vertices;
 	init_as["VOXEL_TO_RASMM"] = {{-1.25, 0.0, 0.0, 72.5},
 				     {0.0, 1.25, 0.0, -109.75},
 				     {0.0, 0.0, 1.25, -64.5},
 				     {0.0, 0.0, 0.0, 1.0}};
 
 	EXPECT_EQ(root_init->header, init_as);
-	EXPECT_EQ(trx_init->streamlines->_data.size(), 33886 * 3);
-	EXPECT_EQ(trx_init->streamlines->_offsets.size(), 1000);
-	EXPECT_EQ(trx_init->streamlines->_lengths.size(), 1000);
+	EXPECT_EQ(trx_init->streamlines->_data.size(), fixture.nb_vertices * 3);
+	EXPECT_EQ(trx_init->streamlines->_offsets.size(), fixture.nb_streamlines);
+	EXPECT_EQ(trx_init->streamlines->_lengths.size(), fixture.nb_streamlines);
 }
 
 TEST(TrxFileMemmap, deepcopy)
 {
-	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>("data/small.trx");
+	const auto &fixture = get_fixture();
+	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(fixture.path);
 	trxmmap::TrxFile<half> *copy = trx->deepcopy();
 
 	EXPECT_EQ(trx->header, copy->header);
@@ -307,13 +451,15 @@ TEST(TrxFileMemmap, deepcopy)
 
 TEST(TrxFileMemmap, resize)
 {
-	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>("data/small.trx");
+	const auto &fixture = get_fixture();
+	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(fixture.path);
 	trx->resize();
 	trx->resize(10);
 }
 TEST(TrxFileMemmap, save)
 {
-	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>("data/small.trx");
+	const auto &fixture = get_fixture();
+	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(fixture.path);
 	trxmmap::save(*trx, (std::string) "testsave");
 	trxmmap::save(*trx, (std::string) "testsave.trx");
 
