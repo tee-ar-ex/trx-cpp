@@ -809,20 +809,20 @@ std::tuple<int, int> TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int 
 	if (curr_pts_len == 0)
 		return std::make_tuple(strs_start, pts_start);
 
-	this->streamlines->_data(seq(pts_start, pts_end - 1), Eigen::placeholders::all) = trx->streamlines->_data(seq(0, curr_pts_len - 1), Eigen::placeholders::all);
-	this->streamlines->_offsets(seq(strs_start, strs_end - 1), Eigen::placeholders::all) = (trx->streamlines->_offsets(seq(0, curr_strs_len - 1), Eigen::placeholders::all).array() + pts_start).matrix();
-	this->streamlines->_lengths(seq(strs_start, strs_end - 1), Eigen::placeholders::all) = trx->streamlines->_lengths(seq(0, curr_strs_len - 1), Eigen::placeholders::all);
+	this->streamlines->_data(seq(pts_start, pts_end - 1), Eigen::all) = trx->streamlines->_data(seq(0, curr_pts_len - 1), Eigen::all);
+	this->streamlines->_offsets(seq(strs_start, strs_end - 1), Eigen::all) = (trx->streamlines->_offsets(seq(0, curr_strs_len - 1), Eigen::all).array() + pts_start).matrix();
+	this->streamlines->_lengths(seq(strs_start, strs_end - 1), Eigen::all) = trx->streamlines->_lengths(seq(0, curr_strs_len - 1), Eigen::all);
 
 	for (auto const &x : this->data_per_vertex)
 	{
-		this->data_per_vertex[x.first]->_data(seq(pts_start, pts_end - 1), Eigen::placeholders::all) = trx->data_per_vertex[x.first]->_data(seq(0, curr_pts_len - 1), Eigen::placeholders::all);
+		this->data_per_vertex[x.first]->_data(seq(pts_start, pts_end - 1), Eigen::all) = trx->data_per_vertex[x.first]->_data(seq(0, curr_pts_len - 1), Eigen::all);
 		new (&(this->data_per_vertex[x.first]->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(trx->data_per_vertex[x.first]->_offsets.data(), trx->data_per_vertex[x.first]->_offsets.rows(), trx->data_per_vertex[x.first]->_offsets.cols());
 		this->data_per_vertex[x.first]->_lengths = trx->data_per_vertex[x.first]->_lengths;
 	}
 
 	for (auto const &x : this->data_per_streamline)
 	{
-		this->data_per_streamline[x.first]->_matrix(seq(strs_start, strs_end - 1), Eigen::placeholders::all) = trx->data_per_streamline[x.first]->_matrix(seq(0, curr_strs_len - 1), Eigen::placeholders::all);
+		this->data_per_streamline[x.first]->_matrix(seq(strs_start, strs_end - 1), Eigen::all) = trx->data_per_streamline[x.first]->_matrix(seq(0, curr_strs_len - 1), Eigen::all);
 	}
 
 	return std::make_tuple(strs_end, pts_end);
@@ -860,7 +860,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 
 	if (nb_vertices == -1)
 	{
-		ptrs_end = this->streamlines->_lengths(Eigen::placeholders::all, 0).sum();
+		ptrs_end = this->streamlines->_lengths(Eigen::all, 0).sum();
 		nb_vertices = ptrs_end;
 	}
 	else if (nb_vertices < ptrs_end)
@@ -883,7 +883,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 	TrxFile<DT> *trx = _initialize_empty_trx(nb_streamlines, nb_vertices, this);
 
 	spdlog::info("Resizing streamlines from size {} to {}", this->streamlines->_lengths.size(), nb_streamlines);
-	spdlog::info("Resizing vertices from size {} to  {}", this->streamlines->_data(Eigen::placeholders::all, 0).size(), nb_vertices);
+	spdlog::info("Resizing vertices from size {} to  {}", this->streamlines->_data(Eigen::all, 0).size(), nb_vertices);
 
 	if (nb_streamlines < this->header["NB_STREAMLINES"])
 		trx->_copy_fixed_arrays_from(this, -1, -1, nb_streamlines);
