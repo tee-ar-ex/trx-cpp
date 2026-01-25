@@ -48,16 +48,16 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/deps/googletest/install
           cmake --build deps/googletest/build --target install
 
-          - name: Configure trx-cpp (root)
-          run: |
-            cmake -S . -B build \
-              -DTRX_BUILD_TESTS=ON \
-              -DMIO_INCLUDE_DIR=${GITHUB_WORKSPACE}/deps/mio/include \
-              -DGTest_DIR=${GITHUB_WORKSPACE}/deps/googletest/install/lib/cmake/GTest \
-              -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/deps/libzip/install
-        
-          - name: Build
-            run: cmake --build build
-        
-          - name: Test
-            run: ctest --test-dir build --output-on-failure
+      - name: Configure trx-cpp
+        run: |
+          cmake -S . -B build \
+            -DTRX_BUILD_TESTS=ON \
+            -DMIO_INCLUDE_DIR=${GITHUB_WORKSPACE}/deps/mio/include \
+            -DGTest_DIR=${GITHUB_WORKSPACE}/deps/googletest/install/lib/cmake/GTest \
+            -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/deps/libzip/install
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
