@@ -106,6 +106,21 @@ namespace trxmmap
 		}
 		return ext;
 	}
+
+bool _is_path_within(const std::filesystem::path &child, const std::filesystem::path &parent)
+{
+	auto parent_it = parent.begin();
+	auto child_it = child.begin();
+
+	for (; parent_it != parent.end(); ++parent_it, ++child_it)
+	{
+		if (child_it == child.end() || *parent_it != *child_it)
+		{
+			return false;
+		}
+	}
+	return true;
+}
 	// TODO: check if there's a better way
 	int _sizeof_dtype(std::string dtype)
 	{
@@ -296,10 +311,10 @@ namespace trxmmap
 		// if file does not exist, create and allocate it
 
 		struct stat buffer;
-		if (stat(filename.c_str(), &buffer) != 0)
-		{
-			allocate_file(filename, filesize);
-		}
+	if (stat(filename.c_str(), &buffer) != 0)
+	{
+		allocate_file(filename, filesize);
+	}
 
 	if (filesize == 0)
 	{
@@ -492,10 +507,10 @@ namespace trxmmap
 				base_dir = sys_tmp.string();
 			}
 		}
-		if (base_dir.empty())
-		{
-			base_dir = "/tmp";
-		}
+	if (base_dir.empty())
+	{
+		base_dir = "/tmp";
+	}
 
 		std::filesystem::path tmpl = std::filesystem::path(base_dir) / (prefix + "_XXXXXX");
 		std::string tmpl_str = tmpl.string();
@@ -515,59 +530,95 @@ namespace trxmmap
 		{
 			throw std::invalid_argument("Zip archive pointer is null");
 		}
-		std::string root_dir = make_temp_dir("trx_zip");
+	std::string root_dir = make_temp_dir("trx_zip");
+	std::filesystem::path normalized_root = std::filesystem::path(root_dir).lexically_normal();
 
-		zip_int64_t num_entries = zip_get_num_entries(zfolder, ZIP_FL_UNCHANGED);
-		for (zip_int64_t i = 0; i < num_entries; ++i)
+	zip_int64_t num_entries = zip_get_num_entries(zfolder, ZIP_FL_UNCHANGED);
+	for (zip_int64_t i = 0; i < num_entries; ++i)
+	{
+		const char *entry_name = zip_get_name(zfolder, i, ZIP_FL_UNCHANGED);
+		if (entry_name == nullptr)
 		{
-			const char *entry_name = zip_get_name(zfolder, i, ZIP_FL_UNCHANGED);
-			if (entry_name == nullptr)
-			{
-				continue;
-			}
-			std::string entry(entry_name);
-			std::filesystem::path out_path = std::filesystem::path(root_dir) / entry;
+			continue;
+		}
+		std::string entry(entry_name);
 
-			if (!entry.empty() && entry.back() == '/')
-			{
-				std::error_code ec;
-				std::filesystem::create_directories(out_path, ec);
-				if (ec)
-				{
-					throw std::runtime_error("Failed to create directory: " + out_path.string());
-				}
-				continue;
-			}
+		std::filesystem::path entry_path(entry);
+		if (entry_path.is_absolute())
+		{
+			throw std::runtime_error("Zip entry has absolute path: " + entry);
+		}
 
+		std::filesystem::path normalized_entry = entry_path.lexically_normal();
+		std::filesystem::path out_path = normalized_root / normalized_entry;
+		std::filesystem::path normalized_out = out_path.lexically_normal();
+
+		if (!_is_path_within(normalized_out, normalized_root))
+		{
+			throw std::runtime_error("Zip entry escapes temporary directory: " + entry);
+		}
+
+		if (!entry.empty() && entry.back() == '/')
+		{
 			std::error_code ec;
-			std::filesystem::create_directories(out_path.parent_path(), ec);
+			std::filesystem::create_directories(normalized_out, ec);
 			if (ec)
 			{
-				throw std::runtime_error("Failed to create parent directory: " + out_path.parent_path().string());
+				throw std::runtime_error("Failed to create directory: " + normalized_out.string());
 			}
+			continue;
+		}
 
-			zip_file_t *zf = zip_fopen_index(zfolder, i, ZIP_FL_UNCHANGED);
-			if (zf == nullptr)
-			{
-				throw std::runtime_error("Failed to open zip entry: " + entry);
-			}
+		std::error_code ec;
+		std::filesystem::create_directories(normalized_out.parent_path(), ec);
+		if (ec)
+		{
+			throw std::runtime_error("Failed to create parent directory: " + normalized_out.parent_path().string());
+		}
 
-			std::ofstream out(out_path, std::ios::binary);
-			if (!out.is_open())
+		zip_file_t *zf = zip_fopen_index(zfolder, i, ZIP_FL_UNCHANGED);
+		if (zf == nullptr)
+		{
+			throw std::runtime_error("Failed to open zip entry: " + entry);
+		}
+
+		std::ofstream out(normalized_out, std::ios::binary);
+		if (!out.is_open())
+		{
+			zip_fclose(zf);
+			throw std::runtime_error("Failed to open output file: " + normalized_out.string());
+		}
+
+		char buffer[4096];
+		zip_int64_t nbytes = 0;
+		while ((nbytes = zip_fread(zf, buffer, sizeof(buffer))) > 0)
+		{
+			out.write(buffer, nbytes);
+			if (!out)
 			{
+				out.close();
 				zip_fclose(zf);
-				throw std::runtime_error("Failed to open output file: " + out_path.string());
+				throw std::runtime_error("Failed to write to output file: " + normalized_out.string());
 			}
-
-			char buffer[4096];
-			zip_int64_t nbytes = 0;
-			while ((nbytes = zip_fread(zf, buffer, sizeof(buffer))) > 0)
-			{
-				out.write(buffer, nbytes);
-			}
+		}
+		if (nbytes < 0)
+		{
 			out.close();
 			zip_fclose(zf);
+			throw std::runtime_error("Failed to read data from zip entry: " + entry);
 		}
+
+		out.flush();
+		if (!out)
+		{
+			out.close();
+			zip_fclose(zf);
+			throw std::runtime_error("Failed to flush output file: " + normalized_out.string());
+		}
+
+		out.close();
+		zip_fclose(zf);
+	}
 
 		return root_dir;
 	}

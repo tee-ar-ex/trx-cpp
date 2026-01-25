@@ -69,10 +69,12 @@ namespace trxmmap
 		std::map<std::string, std::map<std::string, MMappedMatrix<DT> *>> data_per_group;
 		std::string _uncompressed_folder_handle;
 		bool _copy_safe;
+		bool _owns_uncompressed_folder = false;
 
 		// Member Functions()
 		// TrxFile(int nb_vertices = 0, int nb_streamlines = 0);
 		TrxFile(int nb_vertices = 0, int nb_streamlines = 0, const TrxFile<DT> *init_as = NULL, std::string reference = "");
+		~TrxFile();
 
 		/**
 		 * @brief After reading the structure of a zip/folder, create a TrxFile
@@ -106,6 +108,7 @@ namespace trxmmap
 		 *
 		 */
 		void close();
+		void _cleanup_temporary_directory();
 
 	private:
 		/**

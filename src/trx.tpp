@@ -197,7 +197,11 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 		this->data_per_vertex = trx->data_per_vertex;
 		this->data_per_group = trx->data_per_group;
 		this->_uncompressed_folder_handle = trx->_uncompressed_folder_handle;
+		this->_owns_uncompressed_folder = trx->_owns_uncompressed_folder;
 		this->_copy_safe = trx->_copy_safe;
+		trx->_owns_uncompressed_folder = false;
+		trx->_uncompressed_folder_handle.clear();
+		delete trx;
 	}
 	else
 	{
@@ -385,6 +389,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 	}
 
 	trx->_uncompressed_folder_handle = tmp_dir;
+	trx->_owns_uncompressed_folder = true;
 
 	return trx;
 }
@@ -753,6 +758,7 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 
 	TrxFile<DT> *copy_trx = load_from_directory<DT>(tmp_dir);
 	copy_trx->_uncompressed_folder_handle = tmp_dir;
+	copy_trx->_owns_uncompressed_folder = true;
 
 	return copy_trx;
 }
@@ -831,13 +837,29 @@ std::tuple<int, int> TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int 
 template <typename DT>
 void TrxFile<DT>::close()
 {
-	if (this->_uncompressed_folder_handle != "")
-	{
-		this->_uncompressed_folder_handle = "";
-	}
-
+	this->_cleanup_temporary_directory();
 	*this = TrxFile<DT>(); // probably dangerous to do
 	spdlog::debug("Deleted memmaps and initialized empty TrxFile.");
+}
+
+template <typename DT>
+TrxFile<DT>::~TrxFile()
+{
+	this->_cleanup_temporary_directory();
+}
+
+template <typename DT>
+void TrxFile<DT>::_cleanup_temporary_directory()
+{
+	if (this->_owns_uncompressed_folder && !this->_uncompressed_folder_handle.empty())
+	{
+		if (rm_dir(this->_uncompressed_folder_handle.c_str()) != 0)
+		{
+			spdlog::warn("Could not remove temporary folder {}", this->_uncompressed_folder_handle);
+		}
+		this->_uncompressed_folder_handle.clear();
+		this->_owns_uncompressed_folder = false;
+	}
 }
 
 template <typename DT>
@@ -1021,7 +1043,10 @@ TrxFile<DT> *load_from_zip(std::string filename)
 	std::string temp_dir = extract_zip_to_directory(zf);
 	zip_close(zf);
 
-	return load_from_directory<DT>(temp_dir);
+	TrxFile<DT> *trx = load_from_directory<DT>(temp_dir);
+	trx->_uncompressed_folder_handle = temp_dir;
+	trx->_owns_uncompressed_folder = true;
+	return trx;
 }
 
 template <typename DT>

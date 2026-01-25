@@ -3,6 +3,10 @@
 #include <typeinfo>
 #include <stdexcept>
 #include <sys/stat.h>
+#include <iomanip>
+#include <filesystem>
+#include <random>
+#include <system_error>
 
 using namespace Eigen;
 using namespace trxmmap;
@@ -11,31 +15,72 @@ namespace
 {
 	struct TestTrxFixture
 	{
+		std::filesystem::path root_dir;
 		std::string path;
 		std::string dir_path;
 		json expected_header;
 		int nb_vertices;
 		int nb_streamlines;
+
+		~TestTrxFixture()
+		{
+			std::error_code ec;
+			if (!root_dir.empty())
+			{
+				std::filesystem::remove_all(root_dir, ec);
+				if (ec)
+				{
+					std::cerr << "Failed to clean up test directory " << root_dir.string()
+						  << ": " << ec.message() << std::endl;
+				}
+				root_dir.clear();
+			}
+		}
 	};
+
+	std::filesystem::path make_temp_test_dir(const std::string &prefix)
+	{
+		std::error_code ec;
+		auto base = std::filesystem::temp_directory_path(ec);
+		if (ec)
+		{
+			throw std::runtime_error("Failed to get temp directory: " + ec.message());
+		}
+
+		static std::mt19937_64 rng(std::random_device{}());
+		std::uniform_int_distribution<uint64_t> dist;
+
+		for (int attempt = 0; attempt < 100; ++attempt)
+		{
+			std::filesystem::path candidate = base / (prefix + "_" + std::to_string(dist(rng)));
+			std::error_code dir_ec;
+			if (std::filesystem::create_directory(candidate, dir_ec))
+			{
+				return candidate;
+			}
+			if (dir_ec && dir_ec != std::errc::file_exists)
+			{
+				throw std::runtime_error("Failed to create temporary directory: " + dir_ec.message());
+			}
+		}
+		throw std::runtime_error("Unable to create unique temporary directory");
+	}
 
 	TestTrxFixture create_fixture()
 	{
-		char t[] = "/tmp/trx_test_XXXXXX";
-		char *dirname = mkdtemp(t);
-		if (dirname == nullptr)
-		{
-			throw std::runtime_error("Failed to create temporary directory");
-		}
 
 		TestTrxFixture fixture;
-		std::string root_dir(dirname);
-		std::string trx_dir = root_dir + "/trx_data";
-		if (mkdir(trx_dir.c_str(), S_IRWXU) != 0)
+		std::filesystem::path root_dir = make_temp_test_dir("trx_test");
+		std::filesystem::path trx_dir = root_dir / "trx_data";
+		std::error_code ec;
+		if (!std::filesystem::create_directory(trx_dir, ec) && ec)
 		{
-			throw std::runtime_error("Failed to create trx data directory");
+			throw std::runtime_error("Failed to create trx data directory: " + ec.message());
 		}
-		fixture.path = root_dir + "/small.trx";
-		fixture.dir_path = trx_dir;
+
+		fixture.root_dir = root_dir;
+		fixture.path = (root_dir / "small.trx").string();
+		fixture.dir_path = trx_dir.string();
 		fixture.nb_vertices = 12;
 		fixture.nb_streamlines = 4;
 
@@ -48,7 +93,7 @@ namespace
 							    {0.0, 0.0, 0.0, 1.0}};
 
 		// Write header.json
-		std::string header_path = trx_dir + "/header.json";
+		std::filesystem::path header_path = trx_dir / "header.json";
 		std::ofstream header_out(header_path);
 		if (!header_out.is_open())
 		{
@@ -60,7 +105,7 @@ namespace
 		// Write positions (float16)
 		Matrix<half, Dynamic, Dynamic, RowMajor> positions(fixture.nb_vertices, 3);
 		positions.setZero();
-		std::string positions_path = trx_dir + "/positions.3.float16";
+		std::filesystem::path positions_path = trx_dir / "positions.3.float16";
 		trxmmap::write_binary(positions_path.c_str(), positions);
 		struct stat sb;
 		if (stat(positions_path.c_str(), &sb) != 0)
@@ -79,7 +124,7 @@ namespace
 		{
 			offsets(i, 0) = static_cast<uint64_t>(i * (fixture.nb_vertices / fixture.nb_streamlines));
 		}
-		std::string offsets_path = trx_dir + "/offsets.uint64";
+		std::filesystem::path offsets_path = trx_dir / "offsets.uint64";
 		trxmmap::write_binary(offsets_path.c_str(), offsets);
 		if (stat(offsets_path.c_str(), &sb) != 0)
 		{
@@ -98,7 +143,7 @@ namespace
 		{
 			throw std::runtime_error("Failed to create trx zip file");
 		}
-		trxmmap::zip_from_folder(zf, trx_dir, trx_dir, ZIP_CM_STORE);
+		trxmmap::zip_from_folder(zf, trx_dir.string(), trx_dir.string(), ZIP_CM_STORE);
 		if (zip_close(zf) != 0)
 		{
 			throw std::runtime_error("Failed to close trx zip file");
@@ -303,12 +348,8 @@ TEST(TrxFileMemmap, __dichotomic_search)
 TEST(TrxFileMemmap, __create_memmap)
 {
 
-	char *dirname;
-	char t[] = "/tmp/trx_XXXXXX";
-	dirname = mkdtemp(t);
-
-	std::string path(dirname);
-	path += "/offsets.int16";
+	std::filesystem::path dir = make_temp_test_dir("trx_memmap");
+	std::filesystem::path path = dir / "offsets.int16";
 
 	std::tuple<int, int> shape = std::make_tuple(3, 4);
 
@@ -331,15 +372,15 @@ TEST(TrxFileMemmap, __create_memmap)
 	Map<Matrix<half, 3, 4>> real_m(reinterpret_cast<half *>(filled_mmap.data()), std::get<0>(shape), std::get<1>(shape));
 
 	EXPECT_EQ(expected_m, real_m);
+
+	std::error_code ec;
+	std::filesystem::remove_all(dir, ec);
 }
 
 TEST(TrxFileMemmap, __create_memmap_empty)
 {
-	char t[] = "/tmp/trx_XXXXXX";
-	char *dirname = mkdtemp(t);
-
-	std::string path(dirname);
-	path += "/empty.float32";
+	std::filesystem::path dir = make_temp_test_dir("trx_memmap_empty");
+	std::filesystem::path path = dir / "empty.float32";
 
 	std::tuple<int, int> shape = std::make_tuple(0, 1);
 	mio::shared_mmap_sink empty_mmap = trxmmap::_create_memmap(path, shape);
@@ -348,6 +389,9 @@ TEST(TrxFileMemmap, __create_memmap_empty)
 	ASSERT_EQ(stat(path.c_str(), &sb), 0);
 	EXPECT_EQ(sb.st_size, 0);
 	EXPECT_EQ(empty_mmap.size(), 0u);
+
+	std::error_code ec;
+	std::filesystem::remove_all(dir, ec);
 }
 
 TEST(TrxFileMemmap, load_header)
@@ -384,6 +428,7 @@ TEST(TrxFileMemmap, load_zip)
 	const auto &fixture = get_fixture();
 	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(fixture.path);
 	EXPECT_GT(trx->streamlines->_data.size(), 0);
+	delete trx;
 }
 
 TEST(TrxFileMemmap, load_directory)
@@ -391,6 +436,7 @@ TEST(TrxFileMemmap, load_directory)
 	const auto &fixture = get_fixture();
 	trxmmap::TrxFile<half> *trx = trxmmap::load_from_directory<half>(fixture.dir_path);
 	EXPECT_GT(trx->streamlines->_data.size(), 0);
+	delete trx;
 }
 
 TEST(TrxFileMemmap, TrxFile)
@@ -435,6 +481,9 @@ TEST(TrxFileMemmap, TrxFile)
 	EXPECT_EQ(trx_init->streamlines->_data.size(), fixture.nb_vertices * 3);
 	EXPECT_EQ(trx_init->streamlines->_offsets.size(), fixture.nb_streamlines);
 	EXPECT_EQ(trx_init->streamlines->_lengths.size(), fixture.nb_streamlines);
+	delete trx;
+	delete root_init;
+	delete trx_init;
 }
 
 TEST(TrxFileMemmap, deepcopy)
@@ -447,6 +496,8 @@ TEST(TrxFileMemmap, deepcopy)
 	EXPECT_EQ(trx->streamlines->_data, trx->streamlines->_data);
 	EXPECT_EQ(trx->streamlines->_offsets, trx->streamlines->_offsets);
 	EXPECT_EQ(trx->streamlines->_lengths, trx->streamlines->_lengths);
+	delete trx;
+	delete copy;
 }
 
 TEST(TrxFileMemmap, resize)
@@ -455,6 +506,7 @@ TEST(TrxFileMemmap, resize)
 	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(fixture.path);
 	trx->resize();
 	trx->resize(10);
+	delete trx;
 }
 TEST(TrxFileMemmap, save)
 {
@@ -462,6 +514,8 @@ TEST(TrxFileMemmap, save)
 	trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(fixture.path);
 	trxmmap::save(*trx, (std::string) "testsave");
 	trxmmap::save(*trx, (std::string) "testsave.trx");
+
+	delete trx;
 
 	// trxmmap::TrxFile<half> *saved = trxmmap::load_from_zip<half>("testsave.trx");
 	//  EXPECT_EQ(saved->data_per_vertex["color_x.float16"]->_data, trx->data_per_vertex["color_x.float16"]->_data);
