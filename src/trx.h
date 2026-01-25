@@ -27,6 +27,8 @@ using json = nlohmann::json;
 
 namespace trxmmap
 {
+using Eigen::indexing::all;
+using Eigen::indexing::seq;
 
 	const std::string SEPARATOR = "/";
 	const std::vector<std::string> dtypes({"float16", "bit", "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "float32", "float64"});
@@ -289,7 +291,7 @@ namespace trxmmap
 	std::string get_ext(const std::string &str);
 	void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &file_pointer_size);
 
-	void copy_dir(const char *src, const char *dst);
+	bool copy_dir(const char *src, const char *dst);
 	void copy_file(const char *src, const char *dst);
 	int rm_dir(const char *d);
 	std::string make_temp_dir(const std::string &prefix);

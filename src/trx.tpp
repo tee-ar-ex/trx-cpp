@@ -809,20 +809,20 @@ std::tuple<int, int> TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int 
 	if (curr_pts_len == 0)
 		return std::make_tuple(strs_start, pts_start);
 
-	this->streamlines->_data(seq(pts_start, pts_end - 1), Eigen::all) = trx->streamlines->_data(seq(0, curr_pts_len - 1), Eigen::all);
-	this->streamlines->_offsets(seq(strs_start, strs_end - 1), Eigen::all) = (trx->streamlines->_offsets(seq(0, curr_strs_len - 1), Eigen::all).array() + pts_start).matrix();
-	this->streamlines->_lengths(seq(strs_start, strs_end - 1), Eigen::all) = trx->streamlines->_lengths(seq(0, curr_strs_len - 1), Eigen::all);
+	this->streamlines->_data(seq(pts_start, pts_end - 1), all) = trx->streamlines->_data(seq(0, curr_pts_len - 1), all);
+	this->streamlines->_offsets(seq(strs_start, strs_end - 1), all) = (trx->streamlines->_offsets(seq(0, curr_strs_len - 1), all).array() + pts_start).matrix();
+	this->streamlines->_lengths(seq(strs_start, strs_end - 1), all) = trx->streamlines->_lengths(seq(0, curr_strs_len - 1), all);
 
 	for (auto const &x : this->data_per_vertex)
 	{
-		this->data_per_vertex[x.first]->_data(seq(pts_start, pts_end - 1), Eigen::all) = trx->data_per_vertex[x.first]->_data(seq(0, curr_pts_len - 1), Eigen::all);
+		this->data_per_vertex[x.first]->_data(seq(pts_start, pts_end - 1), all) = trx->data_per_vertex[x.first]->_data(seq(0, curr_pts_len - 1), all);
 		new (&(this->data_per_vertex[x.first]->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(trx->data_per_vertex[x.first]->_offsets.data(), trx->data_per_vertex[x.first]->_offsets.rows(), trx->data_per_vertex[x.first]->_offsets.cols());
 		this->data_per_vertex[x.first]->_lengths = trx->data_per_vertex[x.first]->_lengths;
 	}
 
 	for (auto const &x : this->data_per_streamline)
 	{
-		this->data_per_streamline[x.first]->_matrix(seq(strs_start, strs_end - 1), Eigen::all) = trx->data_per_streamline[x.first]->_matrix(seq(0, curr_strs_len - 1), Eigen::all);
+		this->data_per_streamline[x.first]->_matrix(seq(strs_start, strs_end - 1), all) = trx->data_per_streamline[x.first]->_matrix(seq(0, curr_strs_len - 1), all);
 	}
 
 	return std::make_tuple(strs_end, pts_end);
@@ -860,7 +860,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 
 	if (nb_vertices == -1)
 	{
-		ptrs_end = this->streamlines->_lengths(Eigen::all, 0).sum();
+		ptrs_end = this->streamlines->_lengths(all, 0).sum();
 		nb_vertices = ptrs_end;
 	}
 	else if (nb_vertices < ptrs_end)
@@ -883,7 +883,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 	TrxFile<DT> *trx = _initialize_empty_trx(nb_streamlines, nb_vertices, this);
 
 	spdlog::info("Resizing streamlines from size {} to {}", this->streamlines->_lengths.size(), nb_streamlines);
-	spdlog::info("Resizing vertices from size {} to  {}", this->streamlines->_data(Eigen::all, 0).size(), nb_vertices);
+spdlog::info("Resizing vertices from size {} to  {}", this->streamlines->_data(all, 0).size(), nb_vertices);
 
 	if (nb_streamlines < this->header["NB_STREAMLINES"])
 		trx->_copy_fixed_arrays_from(this, -1, -1, nb_streamlines);
@@ -1005,6 +1005,8 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 			}
 		}
 		this->close();
+		*this = *trx;
+		delete trx;
 	}
 }
 
@@ -1051,6 +1053,8 @@ template <typename DT>
 void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression_standard)
 {
 	std::string ext = get_ext(filename);
+	const char *debug_env = getenv("TRX_CPP_DEBUG_SAVE");
+	const bool debug_save = (debug_env != nullptr && debug_env[0] != '\0');
 
 	if (ext.size() > 0 && (strcmp(ext.c_str(), "zip") != 0 && strcmp(ext.c_str(), "trx") != 0))
 	{
@@ -1060,6 +1064,18 @@ void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression
 	TrxFile<DT> *copy_trx = trx.deepcopy();
 	copy_trx->resize();
 	std::string tmp_dir_name = copy_trx->_uncompressed_folder_handle;
+	if (tmp_dir_name.empty() && !trx._uncompressed_folder_handle.empty())
+	{
+		tmp_dir_name = trx._uncompressed_folder_handle;
+	}
+	if (tmp_dir_name.empty())
+	{
+		throw std::runtime_error("TRX save failed: temporary directory is empty.");
+	}
+	if (debug_save)
+	{
+		std::cerr << "TRX save: filename=" << filename << " ext=" << ext << " tmp_dir=" << tmp_dir_name << std::endl;
+	}
 
 	if (ext.size() > 0 && (strcmp(ext.c_str(), "zip") == 0 || strcmp(ext.c_str(), "trx") == 0))
 	{
@@ -1106,10 +1122,17 @@ void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression
 				                         dest_path.parent_path().string());
 			}
 		}
-		copy_dir(tmp_dir_name.c_str(), filename.c_str());
+		if (!copy_dir(tmp_dir_name.c_str(), filename.c_str()))
+		{
+			throw std::runtime_error("Failed to copy TRX directory from " + tmp_dir_name + " to " + filename);
+		}
 		if (stat(filename.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode))
 		{
 			throw std::runtime_error("Failed to create output directory: " + filename);
+		}
+		if (debug_save)
+		{
+			std::cerr << "TRX save: output directory created at " << filename << std::endl;
 		}
 		const std::filesystem::path header_path = dest_path / "header.json";
 		if (!std::filesystem::exists(header_path))

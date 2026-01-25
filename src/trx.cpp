@@ -362,17 +362,19 @@ namespace trxmmap
 		}
 	}
 
-	void copy_dir(const char *src, const char *dst)
+	bool copy_dir(const char *src, const char *dst)
 	{
 		DIR *dir;
 		struct dirent *entry;
 
 		if (!(dir = opendir(src)))
-			return;
+			return false;
 
-		if (mkdir(dst, S_IRWXU) != 0)
+		if (mkdir(dst, S_IRWXU) != 0 && errno != EEXIST)
 		{
 			spdlog::error("Could not create directory {}", dst);
+			closedir(dir);
+			return false;
 		}
 
 		while ((entry = readdir(dir)) != NULL)
@@ -385,7 +387,11 @@ namespace trxmmap
 				char dstpath[1024];
 				snprintf(path, sizeof(path), "%s%s%s", src, SEPARATOR.c_str(), entry->d_name);
 				snprintf(dstpath, sizeof(dstpath), "%s%s%s", dst, SEPARATOR.c_str(), entry->d_name);
-				copy_dir(path, dstpath);
+				if (!copy_dir(path, dstpath))
+				{
+					closedir(dir);
+					return false;
+				}
 			}
 			else
 			{
@@ -397,6 +403,7 @@ namespace trxmmap
 			}
 		}
 		closedir(dir);
+		return true;
 	}
 
 	// modified from:https://stackoverflow.com/a/7267734
