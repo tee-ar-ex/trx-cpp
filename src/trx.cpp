@@ -298,7 +298,7 @@ bool _is_path_within(const std::filesystem::path &child, const std::filesystem::
 		}
 	}
 
-	mio::shared_mmap_sink _create_memmap(std::string &filename, std::tuple<int, int> &shape, std::string mode, std::string dtype, long long offset)
+mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> &shape, std::string mode, std::string dtype, long long offset)
 	{
 		if (dtype.compare("bool") == 0)
 		{
@@ -323,7 +323,7 @@ bool _is_path_within(const std::filesystem::path &child, const std::filesystem::
 
 		// std::error_code error;
 
-		mio::shared_mmap_sink rw_mmap(filename, offset, filesize);
+	mio::shared_mmap_sink rw_mmap(filename, offset, filesize);
 
 		return rw_mmap;
 	}
@@ -482,8 +482,30 @@ bool _is_path_within(const std::filesystem::path &child, const std::filesystem::
 
 	std::string make_temp_dir(const std::string &prefix)
 	{
+	const char *env_tmp = std::getenv("TRX_TMPDIR");
+	std::string base_dir;
+
+	if (env_tmp != nullptr)
+	{
+		std::string val(env_tmp);
+		if (val == "use_working_dir")
+		{
+			base_dir = ".";
+		}
+		else
+		{
+			std::filesystem::path env_path(val);
+			std::error_code ec;
+			if (std::filesystem::exists(env_path, ec) && std::filesystem::is_directory(env_path, ec))
+			{
+				base_dir = env_path.string();
+			}
+		}
+	}
+
+	if (base_dir.empty())
+	{
 		const char *candidates[] = {std::getenv("TMPDIR"), std::getenv("TEMP"), std::getenv("TMP")};
-		std::string base_dir;
 		for (const char *candidate : candidates)
 		{
 			if (candidate == nullptr || std::string(candidate).empty())
@@ -498,30 +520,31 @@ bool _is_path_within(const std::filesystem::path &child, const std::filesystem::
 				break;
 			}
 		}
-		if (base_dir.empty())
+	}
+	if (base_dir.empty())
+	{
+		std::error_code ec;
+		auto sys_tmp = std::filesystem::temp_directory_path(ec);
+		if (!ec)
 		{
-			std::error_code ec;
-			auto sys_tmp = std::filesystem::temp_directory_path(ec);
-			if (!ec)
-			{
-				base_dir = sys_tmp.string();
-			}
+			base_dir = sys_tmp.string();
 		}
+	}
 	if (base_dir.empty())
 	{
 		base_dir = "/tmp";
 	}
 
-		std::filesystem::path tmpl = std::filesystem::path(base_dir) / (prefix + "_XXXXXX");
-		std::string tmpl_str = tmpl.string();
-		std::vector<char> buf(tmpl_str.begin(), tmpl_str.end());
-		buf.push_back('\0');
-		char *dirname = mkdtemp(buf.data());
-		if (dirname == nullptr)
-		{
-			throw std::runtime_error("Failed to create temporary directory");
-		}
-		return std::string(dirname);
+	std::filesystem::path tmpl = std::filesystem::path(base_dir) / (prefix + "_XXXXXX");
+	std::string tmpl_str = tmpl.string();
+	std::vector<char> buf(tmpl_str.begin(), tmpl_str.end());
+	buf.push_back('\0');
+	char *dirname = mkdtemp(buf.data());
+	if (dirname == nullptr)
+	{
+		throw std::runtime_error("Failed to create temporary directory");
+	}
+	return std::string(dirname);
 	}
 
 	std::string extract_zip_to_directory(zip_t *zfolder)

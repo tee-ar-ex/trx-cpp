@@ -20,6 +20,9 @@
 #include <mio/mmap.hpp>
 #include <mio/shared_mmap.hpp>
 
+#ifndef SPDLOG_FMT_EXTERNAL
+#define SPDLOG_FMT_EXTERNAL
+#endif
 #include "spdlog/spdlog.h"
 
 using namespace Eigen;
@@ -225,7 +228,7 @@ namespace trxmmap
 	// TODO: ADD order??
 	// TODO: change tuple to vector to support ND arrays?
 	// TODO: remove data type as that's done outside of this function
-	mio::shared_mmap_sink _create_memmap(std::string &filename, std::tuple<int, int> &shape, std::string mode = "r", std::string dtype = "float32", long long offset = 0);
+	mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> &shape, std::string mode = "r", std::string dtype = "float32", long long offset = 0);
 
 	template <typename DT>
 	std::string _generate_filename_from_data(const MatrixBase<DT> &arr, const std::string filename);

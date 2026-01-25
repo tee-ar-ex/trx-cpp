@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../src/trx.h"
+#include <trx/trx.h>
 #include <typeinfo>
 #include <stdexcept>
 #include <sys/stat.h>
@@ -118,19 +118,21 @@ namespace
 			throw std::runtime_error("Positions file size mismatch");
 		}
 
-		// Write offsets (uint64)
-		Matrix<uint64_t, Dynamic, Dynamic, RowMajor> offsets(fixture.nb_streamlines, 1);
+		// Write offsets (uint64) with sentinel (NB_STREAMLINES + 1)
+		Matrix<uint64_t, Dynamic, Dynamic, RowMajor> offsets(fixture.nb_streamlines + 1, 1);
 		for (int i = 0; i < fixture.nb_streamlines; ++i)
 		{
 			offsets(i, 0) = static_cast<uint64_t>(i * (fixture.nb_vertices / fixture.nb_streamlines));
 		}
+		offsets(fixture.nb_streamlines, 0) = static_cast<uint64_t>(fixture.nb_vertices);
+
 		std::filesystem::path offsets_path = trx_dir / "offsets.uint64";
 		trxmmap::write_binary(offsets_path.c_str(), offsets);
 		if (stat(offsets_path.c_str(), &sb) != 0)
 		{
 			throw std::runtime_error("Failed to stat offsets file");
 		}
-		const size_t expected_offsets_bytes = fixture.nb_streamlines * sizeof(uint64_t);
+		const size_t expected_offsets_bytes = (fixture.nb_streamlines + 1) * sizeof(uint64_t);
 		if (static_cast<size_t>(sb.st_size) != expected_offsets_bytes)
 		{
 			throw std::runtime_error("Offsets file size mismatch");
@@ -270,34 +272,33 @@ TEST(TrxFileMemmap, __split_ext_with_dimensionality)
 TEST(TrxFileMemmap, __compute_lengths)
 {
 	Matrix<uint64_t, 5, 1> offsets{uint64_t(0), uint64_t(1), uint64_t(2), uint64_t(3), uint64_t(4)};
-	Matrix<uint32_t, 5, 1> lengths(trxmmap::_compute_lengths(offsets, 4));
-	Matrix<uint32_t, 5, 1> result{uint32_t(1), uint32_t(1), uint32_t(1), uint32_t(1), uint32_t(0)};
+	Matrix<uint32_t, 4, 1> lengths(trxmmap::_compute_lengths(offsets, 4));
+	Matrix<uint32_t, 4, 1> result{uint32_t(1), uint32_t(1), uint32_t(1), uint32_t(1)};
 
 	EXPECT_EQ(lengths, result);
 
-	Matrix<uint64_t, 5, 1> offsets2{uint64_t(0), uint64_t(1), uint64_t(0), uint64_t(3), uint64_t(4)};
-	Matrix<uint32_t, 5, 1> lengths2(trxmmap::_compute_lengths(offsets2, 4));
-	Matrix<uint32_t, 5, 1> result2{uint32_t(1), uint32_t(3), uint32_t(0), uint32_t(1), uint32_t(0)};
+	Matrix<uint64_t, 5, 1> offsets2{uint64_t(0), uint64_t(1), uint64_t(1), uint64_t(3), uint64_t(4)};
+	Matrix<uint32_t, 4, 1> lengths2(trxmmap::_compute_lengths(offsets2, 4));
+	Matrix<uint32_t, 4, 1> result2{uint32_t(1), uint32_t(0), uint32_t(2), uint32_t(1)};
 
 	EXPECT_EQ(lengths2, result2);
 
-	Matrix<uint64_t, 4, 1> offsets3{uint64_t(0), uint64_t(1), uint64_t(2), uint64_t(3)};
-	Matrix<uint32_t, 4, 1> lengths3(trxmmap::_compute_lengths(offsets3, 4));
-	Matrix<uint32_t, 4, 1> result3{uint32_t(1), uint32_t(1), uint32_t(1), uint32_t(1)};
+	Matrix<uint64_t, 4, 1> offsets3{uint64_t(0), uint64_t(1), uint64_t(2), uint64_t(4)};
+	Matrix<uint32_t, 3, 1> lengths3(trxmmap::_compute_lengths(offsets3, 4));
+	Matrix<uint32_t, 3, 1> result3{uint32_t(1), uint32_t(1), uint32_t(2)};
 
 	EXPECT_EQ(lengths3, result3);
 
-	Matrix<uint64_t, 1, 1> offsets4(uint64_t(4));
+	Matrix<uint64_t, 2, 1> offsets4;
+	offsets4 << uint64_t(0), uint64_t(2);
 	Matrix<uint32_t, 1, 1> lengths4(trxmmap::_compute_lengths(offsets4, 2));
 	Matrix<uint32_t, 1, 1> result4(uint32_t(2));
 
 	EXPECT_EQ(lengths4, result4);
 
 	Matrix<uint64_t, 0, 0> offsets5;
-	Matrix<uint32_t, 1, 1> lengths5(trxmmap::_compute_lengths(offsets5, 2));
-	Matrix<uint32_t, 1, 1> result5(uint32_t(0));
-
-	EXPECT_EQ(lengths5, result5);
+	Matrix<uint32_t, 0, 1> lengths5(trxmmap::_compute_lengths(offsets5, 2));
+	EXPECT_EQ(lengths5.size(), 0);
 }
 
 TEST(TrxFileMemmap, __is_dtype_valid)
@@ -349,12 +350,12 @@ TEST(TrxFileMemmap, __create_memmap)
 {
 
 	std::filesystem::path dir = make_temp_test_dir("trx_memmap");
-	std::filesystem::path path = dir / "offsets.int16";
+        std::filesystem::path path = dir / "offsets.int16";
 
 	std::tuple<int, int> shape = std::make_tuple(3, 4);
 
 	// Test 1: create file and allocate space assert that correct data is filled
-	mio::shared_mmap_sink empty_mmap = trxmmap::_create_memmap(path, shape);
+        mio::shared_mmap_sink empty_mmap = trxmmap::_create_memmap(path.string(), shape);
 	Map<Matrix<half, 3, 4>> expected_m(reinterpret_cast<half *>(empty_mmap.data()));
 	Matrix<half, 3, 4> zero_filled{{half(0), half(0), half(0), half(0)},
 				       {half(0), half(0), half(0), half(0)},
@@ -368,7 +369,7 @@ TEST(TrxFileMemmap, __create_memmap)
 		expected_m(i) = half(i);
 	}
 
-	mio::shared_mmap_sink filled_mmap = trxmmap::_create_memmap(path, shape);
+        mio::shared_mmap_sink filled_mmap = trxmmap::_create_memmap(path.string(), shape);
 	Map<Matrix<half, 3, 4>> real_m(reinterpret_cast<half *>(filled_mmap.data()), std::get<0>(shape), std::get<1>(shape));
 
 	EXPECT_EQ(expected_m, real_m);
@@ -380,10 +381,10 @@ TEST(TrxFileMemmap, __create_memmap)
 TEST(TrxFileMemmap, __create_memmap_empty)
 {
 	std::filesystem::path dir = make_temp_test_dir("trx_memmap_empty");
-	std::filesystem::path path = dir / "empty.float32";
+        std::filesystem::path path = dir / "empty.float32";
 
 	std::tuple<int, int> shape = std::make_tuple(0, 1);
-	mio::shared_mmap_sink empty_mmap = trxmmap::_create_memmap(path, shape);
+        mio::shared_mmap_sink empty_mmap = trxmmap::_create_memmap(path.string(), shape);
 
 	struct stat sb;
 	ASSERT_EQ(stat(path.c_str(), &sb), 0);
@@ -479,7 +480,7 @@ TEST(TrxFileMemmap, TrxFile)
 
 	EXPECT_EQ(root_init->header, init_as);
 	EXPECT_EQ(trx_init->streamlines->_data.size(), fixture.nb_vertices * 3);
-	EXPECT_EQ(trx_init->streamlines->_offsets.size(), fixture.nb_streamlines);
+	EXPECT_EQ(trx_init->streamlines->_offsets.size(), fixture.nb_streamlines + 1);
 	EXPECT_EQ(trx_init->streamlines->_lengths.size(), fixture.nb_streamlines);
 	delete trx;
 	delete root_init;
