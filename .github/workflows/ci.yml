@@ -23,26 +23,19 @@ jobs:
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgJsonIgnores: "[]"
-          vcpkgGitCommitId: "2024.12.16"
-          runVcpkgInstall: true
-          vcpkgInstallDir: "${{ github.workspace }}/vcpkg_installed"
-          vcpkgConfigurationJson: |
-            {
-              "name": "trx-cpp-ci",
-              "version-string": "0",
-              "dependencies": [
-                "libzip",
-                "nlohmann-json",
-                "eigen3",
-                "spdlog",
-                "boost-filesystem",
-                "boost-system",
-                "gtest"
-              ]
-            }
+        shell: pwsh
+        run: |
+          git clone https://github.com/microsoft/vcpkg "$env:GITHUB_WORKSPACE\vcpkg"
+          & "$env:GITHUB_WORKSPACE\vcpkg\bootstrap-vcpkg.bat"
+          & "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe" install `
+            libzip `
+            nlohmann-json `
+            eigen3 `
+            spdlog `
+            boost-filesystem `
+            boost-system `
+            gtest `
+            --triplet x64-windows
 
       - name: Configure (macOS)
         if: runner.os == 'macOS'
