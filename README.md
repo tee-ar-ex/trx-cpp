@@ -11,7 +11,7 @@ Required:
 - nlohmann::json
 - Eigen3
 - spdlog
-- mio (header-only memory-mapped IO)
+- mio (header-only memory-mapped IO, vendored in `third_party/mio`)
 
 Optional:
 - GTest (for building tests)
@@ -38,11 +38,18 @@ ctest --test-dir build --output-on-failure
 
 ### mio include path
 
-If `mio` is not available via your system include paths, point CMake at it:
+`mio` is vendored under `third_party/mio` and headers are copied into
+`include/mio` for downstream builds. If you want to use a system-provided `mio`,
+point CMake at it:
 
 ```
 cmake -S . -B build -DMIO_INCLUDE_DIR=/path/to/mio/include
 ```
+
+## Third-party notices
+
+- `mio` by Martin Andreyel (https://github.com/mandreyel/mio) is vendored in
+  `third_party/mio`. See `third_party/mio/LICENSE` for the license text.
 
 ### Filesystem shim
 
