@@ -5,6 +5,7 @@
 #include <fstream>
 #include <zip.h>
 #include <string.h>
+#include <vector>
 #include <dirent.h>
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -40,6 +41,7 @@ namespace trxmmap
 		Map<Matrix<DT, Dynamic, Dynamic, RowMajor>> _data;
 		Map<Matrix<uint64_t, Dynamic, Dynamic, RowMajor>> _offsets;
 		Matrix<uint32_t, Dynamic, 1> _lengths;
+		std::vector<uint64_t> _offsets_owned;
 		mio::shared_mmap_sink mmap_pos;
 		mio::shared_mmap_sink mmap_off;
 
