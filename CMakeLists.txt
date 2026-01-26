@@ -47,7 +47,12 @@ find_package(mio CONFIG QUIET)
 if(TARGET mio::mio)
     set(TRX_HAVE_MIO_TARGET ON)
 else()
-    find_path(MIO_INCLUDE_DIR mio/mmap.hpp PATH_SUFFIXES include)
+    find_path(
+        MIO_INCLUDE_DIR
+        mio/mmap.hpp
+        PATHS "${CMAKE_CURRENT_SOURCE_DIR}"
+        PATH_SUFFIXES include
+    )
     if (NOT MIO_INCLUDE_DIR)
         message(FATAL_ERROR "mio headers not found. Set MIO_INCLUDE_DIR to the folder containing mio/mmap.hpp.")
     endif()
