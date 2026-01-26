@@ -475,7 +475,22 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			std::tuple<int, int> shape = std::make_tuple(nb_str + 1, 1);
 			trx->streamlines->mmap_off = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
-			new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape), std::get<1>(shape));
+			if (ext.compare("uint64") == 0)
+			{
+				new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape), std::get<1>(shape));
+			}
+			else if (ext.compare("uint32") == 0)
+			{
+				trx->streamlines->_offsets_owned.resize(std::get<0>(shape));
+				auto *src = reinterpret_cast<const uint32_t *>(trx->streamlines->mmap_off.data());
+				for (int i = 0; i < std::get<0>(shape); ++i)
+					trx->streamlines->_offsets_owned[size_t(i)] = uint64_t(src[i]);
+				new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(trx->streamlines->_offsets_owned.data(), std::get<0>(shape), std::get<1>(shape));
+			}
+			else
+			{
+				throw std::invalid_argument("Unsupported offsets datatype: " + ext);
+			}
 
 			Matrix<uint64_t, Dynamic, 1> offsets = trx->streamlines->_offsets;
 			trx->streamlines->_lengths = _compute_lengths(offsets, int(trx->header["NB_VERTICES"]));
@@ -542,7 +557,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 				new (&(trx->data_per_vertex[base]->_data)) Map<Matrix<double, Dynamic, Dynamic>>(reinterpret_cast<double *>(trx->data_per_vertex[base]->mmap_pos.data()), std::get<0>(shape), std::get<1>(shape));
 			}
 
-			new (&(trx->data_per_vertex[base]->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape), std::get<1>(shape));
+			new (&(trx->data_per_vertex[base]->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(trx->streamlines->_offsets.data(), std::get<0>(shape), std::get<1>(shape));
 			trx->data_per_vertex[base]->_lengths = trx->streamlines->_lengths;
 		}
 
