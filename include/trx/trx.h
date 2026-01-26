@@ -13,10 +13,16 @@
 #include <libgen.h>
 #include <Eigen/Core>
 #include <filesystem>
+#include <limits.h>
+#include <stdlib.h>
+#include <stdexcept>
 
 #include <mio/mmap.hpp>
 #include <mio/shared_mmap.hpp>
 
+#ifndef SPDLOG_FMT_EXTERNAL
+#define SPDLOG_FMT_EXTERNAL
+#endif
 #include "spdlog/spdlog.h"
 
 using namespace Eigen;
@@ -66,10 +72,12 @@ namespace trxmmap
 		std::map<std::string, std::map<std::string, MMappedMatrix<DT> *>> data_per_group;
 		std::string _uncompressed_folder_handle;
 		bool _copy_safe;
+		bool _owns_uncompressed_folder = false;
 
 		// Member Functions()
 		// TrxFile(int nb_vertices = 0, int nb_streamlines = 0);
 		TrxFile(int nb_vertices = 0, int nb_streamlines = 0, const TrxFile<DT> *init_as = NULL, std::string reference = "");
+		~TrxFile();
 
 		/**
 		 * @brief After reading the structure of a zip/folder, create a TrxFile
@@ -103,6 +111,7 @@ namespace trxmmap
 		 *
 		 */
 		void close();
+		void _cleanup_temporary_directory();
 
 	private:
 		/**
@@ -219,7 +228,7 @@ namespace trxmmap
 	// TODO: ADD order??
 	// TODO: change tuple to vector to support ND arrays?
 	// TODO: remove data type as that's done outside of this function
-	mio::shared_mmap_sink _create_memmap(std::string &filename, std::tuple<int, int> &shape, std::string mode = "r", std::string dtype = "float32", long long offset = 0);
+	mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> &shape, std::string mode = "r", std::string dtype = "float32", long long offset = 0);
 
 	template <typename DT>
 	std::string _generate_filename_from_data(const MatrixBase<DT> &arr, const std::string filename);
@@ -289,9 +298,11 @@ namespace trxmmap
 	void copy_dir(const char *src, const char *dst);
 	void copy_file(const char *src, const char *dst);
 	int rm_dir(const char *d);
+	std::string make_temp_dir(const std::string &prefix);
+	std::string extract_zip_to_directory(zip_t *zfolder);
 
 	std::string rm_root(std::string root, const std::string path);
-#include "trx.tpp"
+#include <trx/trx.tpp>
 
 }
 

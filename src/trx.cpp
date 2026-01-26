@@ -1,8 +1,10 @@
-#include "trx.h"
+#include <trx/trx.h>
 #include <fstream>
 #include <typeinfo>
 #include <errno.h>
 #include <algorithm>
+#include <stdexcept>
+#include <vector>
 #define SYSERROR() errno
 
 //#define ZIP_DD_SIG 0x08074b50
@@ -104,6 +106,21 @@ namespace trxmmap
 		}
 		return ext;
 	}
+
+bool _is_path_within(const std::filesystem::path &child, const std::filesystem::path &parent)
+{
+	auto parent_it = parent.begin();
+	auto child_it = child.begin();
+
+	for (; parent_it != parent.end(); ++parent_it, ++child_it)
+	{
+		if (child_it == child.end() || *parent_it != *child_it)
+		{
+			return false;
+		}
+	}
+	return true;
+}
 	// TODO: check if there's a better way
 	int _sizeof_dtype(std::string dtype)
 	{
@@ -159,6 +176,8 @@ namespace trxmmap
 			return "uint32";
 		case 'm':
 			return "uint64";
+		case 'y': // unsigned long long (Itanium ABI)
+			return "uint64";
 		case 'a':
 			return "int8";
 		case 's':
@@ -166,6 +185,8 @@ namespace trxmmap
 		case 'i':
 			return "int32";
 		case 'l':
+			return "int64";
+		case 'x': // long long (Itanium ABI)
 			return "int64";
 		case 'f':
 			return "float32";
@@ -228,8 +249,16 @@ namespace trxmmap
 
 	json load_header(zip_t *zfolder)
 	{
+		if (zfolder == nullptr)
+		{
+			throw std::invalid_argument("Zip archive pointer is null");
+		}
 		// load file
 		zip_file_t *zh = zip_fopen(zfolder, "header.json", ZIP_FL_UNCHANGED);
+		if (zh == nullptr)
+		{
+			throw std::runtime_error("Failed to open header.json in zip archive");
+		}
 
 		// read data from file in chunks of 255 characters until data is fully loaded
 		int buff_len = 255 * sizeof(char);
@@ -245,7 +274,7 @@ namespace trxmmap
 			}
 		}
 
-		free(zh);
+		zip_fclose(zh);
 		free(buffer);
 
 		// convert jstream data into Json.
@@ -269,7 +298,7 @@ namespace trxmmap
 		}
 	}
 
-	mio::shared_mmap_sink _create_memmap(std::string &filename, std::tuple<int, int> &shape, std::string mode, std::string dtype, long long offset)
+mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> &shape, std::string mode, std::string dtype, long long offset)
 	{
 		if (dtype.compare("bool") == 0)
 		{
@@ -282,14 +311,19 @@ namespace trxmmap
 		// if file does not exist, create and allocate it
 
 		struct stat buffer;
-		if (stat(filename.c_str(), &buffer) != 0)
-		{
-			allocate_file(filename, filesize);
-		}
+	if (stat(filename.c_str(), &buffer) != 0)
+	{
+		allocate_file(filename, filesize);
+	}
+
+	if (filesize == 0)
+	{
+		return mio::shared_mmap_sink();
+	}
 
 		// std::error_code error;
 
-		mio::shared_mmap_sink rw_mmap(filename, offset, filesize);
+	mio::shared_mmap_sink rw_mmap(filename, offset, filesize);
 
 		return rw_mmap;
 	}
@@ -446,6 +480,172 @@ namespace trxmmap
 		return rmdir(d);
 	}
 
+	std::string make_temp_dir(const std::string &prefix)
+	{
+	const char *env_tmp = std::getenv("TRX_TMPDIR");
+	std::string base_dir;
+
+	if (env_tmp != nullptr)
+	{
+		std::string val(env_tmp);
+		if (val == "use_working_dir")
+		{
+			base_dir = ".";
+		}
+		else
+		{
+			std::filesystem::path env_path(val);
+			std::error_code ec;
+			if (std::filesystem::exists(env_path, ec) && std::filesystem::is_directory(env_path, ec))
+			{
+				base_dir = env_path.string();
+			}
+		}
+	}
+
+	if (base_dir.empty())
+	{
+		const char *candidates[] = {std::getenv("TMPDIR"), std::getenv("TEMP"), std::getenv("TMP")};
+		for (const char *candidate : candidates)
+		{
+			if (candidate == nullptr || std::string(candidate).empty())
+			{
+				continue;
+			}
+			std::filesystem::path path(candidate);
+			std::error_code ec;
+			if (std::filesystem::exists(path, ec) && std::filesystem::is_directory(path, ec))
+			{
+				base_dir = path.string();
+				break;
+			}
+		}
+	}
+	if (base_dir.empty())
+	{
+		std::error_code ec;
+		auto sys_tmp = std::filesystem::temp_directory_path(ec);
+		if (!ec)
+		{
+			base_dir = sys_tmp.string();
+		}
+	}
+	if (base_dir.empty())
+	{
+		base_dir = "/tmp";
+	}
+
+	std::filesystem::path tmpl = std::filesystem::path(base_dir) / (prefix + "_XXXXXX");
+	std::string tmpl_str = tmpl.string();
+	std::vector<char> buf(tmpl_str.begin(), tmpl_str.end());
+	buf.push_back('\0');
+	char *dirname = mkdtemp(buf.data());
+	if (dirname == nullptr)
+	{
+		throw std::runtime_error("Failed to create temporary directory");
+	}
+	return std::string(dirname);
+	}
+
+	std::string extract_zip_to_directory(zip_t *zfolder)
+	{
+		if (zfolder == nullptr)
+		{
+			throw std::invalid_argument("Zip archive pointer is null");
+		}
+	std::string root_dir = make_temp_dir("trx_zip");
+	std::filesystem::path normalized_root = std::filesystem::path(root_dir).lexically_normal();
+
+	zip_int64_t num_entries = zip_get_num_entries(zfolder, ZIP_FL_UNCHANGED);
+	for (zip_int64_t i = 0; i < num_entries; ++i)
+	{
+		const char *entry_name = zip_get_name(zfolder, i, ZIP_FL_UNCHANGED);
+		if (entry_name == nullptr)
+		{
+			continue;
+		}
+		std::string entry(entry_name);
+
+		std::filesystem::path entry_path(entry);
+		if (entry_path.is_absolute())
+		{
+			throw std::runtime_error("Zip entry has absolute path: " + entry);
+		}
+
+		std::filesystem::path normalized_entry = entry_path.lexically_normal();
+		std::filesystem::path out_path = normalized_root / normalized_entry;
+		std::filesystem::path normalized_out = out_path.lexically_normal();
+
+		if (!_is_path_within(normalized_out, normalized_root))
+		{
+			throw std::runtime_error("Zip entry escapes temporary directory: " + entry);
+		}
+
+		if (!entry.empty() && entry.back() == '/')
+		{
+			std::error_code ec;
+			std::filesystem::create_directories(normalized_out, ec);
+			if (ec)
+			{
+				throw std::runtime_error("Failed to create directory: " + normalized_out.string());
+			}
+			continue;
+		}
+
+		std::error_code ec;
+		std::filesystem::create_directories(normalized_out.parent_path(), ec);
+		if (ec)
+		{
+			throw std::runtime_error("Failed to create parent directory: " + normalized_out.parent_path().string());
+		}
+
+		zip_file_t *zf = zip_fopen_index(zfolder, i, ZIP_FL_UNCHANGED);
+		if (zf == nullptr)
+		{
+			throw std::runtime_error("Failed to open zip entry: " + entry);
+		}
+
+		std::ofstream out(normalized_out, std::ios::binary);
+		if (!out.is_open())
+		{
+			zip_fclose(zf);
+			throw std::runtime_error("Failed to open output file: " + normalized_out.string());
+		}
+
+		char buffer[4096];
+		zip_int64_t nbytes = 0;
+		while ((nbytes = zip_fread(zf, buffer, sizeof(buffer))) > 0)
+		{
+			out.write(buffer, nbytes);
+			if (!out)
+			{
+				out.close();
+				zip_fclose(zf);
+				throw std::runtime_error("Failed to write to output file: " + normalized_out.string());
+			}
+		}
+		if (nbytes < 0)
+		{
+			out.close();
+			zip_fclose(zf);
+			throw std::runtime_error("Failed to read data from zip entry: " + entry);
+		}
+
+		out.flush();
+		if (!out)
+		{
+			out.close();
+			zip_fclose(zf);
+			throw std::runtime_error("Failed to flush output file: " + normalized_out.string());
+		}
+
+		out.close();
+		zip_fclose(zf);
+	}
+
+		return root_dir;
+	}
+
 	void zip_from_folder(zip_t *zf, const std::string root, const std::string directory, zip_uint32_t compression_standard)
 	{
 		DIR *dir;
@@ -478,11 +678,16 @@ namespace trxmmap
 
 				zip_source_t *s;
 
+				zip_int64_t file_idx = -1;
 				if ((s = zip_source_file(zf, fullpath, 0, 0)) == NULL ||
-				    zip_file_add(zf, fn.c_str(), s, ZIP_FL_ENC_UTF_8) < 0)
+				    (file_idx = zip_file_add(zf, fn.c_str(), s, ZIP_FL_ENC_UTF_8)) < 0)
 				{
 					zip_source_free(s);
 					spdlog::error("error adding file {}: {}", fn, zip_strerror(zf));
+				}
+				else if (zip_set_file_compression(zf, file_idx, compression_standard, 0) < 0)
+				{
+					spdlog::error("error setting compression for {}: {}", fn, zip_strerror(zf));
 				}
 			}
 		}

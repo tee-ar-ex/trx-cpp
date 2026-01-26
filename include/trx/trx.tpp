@@ -60,17 +60,11 @@ std::string _generate_filename_from_data(const MatrixBase<DT> &arr, std::string 
 	std::string new_filename;
 	if (n_cols == 1)
 	{
-		int buffsize = filename.size() + dt.size() + 2;
-		char buff[buffsize];
-		snprintf(buff, sizeof(buff), "%s.%s", base.c_str(), dt.c_str());
-		new_filename = buff;
+		new_filename = base + "." + dt;
 	}
 	else
 	{
-		int buffsize = filename.size() + dt.size() + n_cols + 3;
-		char buff[buffsize];
-		snprintf(buff, sizeof(buff), "%s.%i.%s", base.c_str(), n_cols, dt.c_str());
-		new_filename = buff;
+		new_filename = base + "." + std::to_string(n_cols) + "." + dt;
 	}
 
 	return new_filename;
@@ -81,31 +75,17 @@ Matrix<uint32_t, Dynamic, 1> _compute_lengths(const MatrixBase<DT> &offsets, int
 {
 	if (offsets.size() > 1)
 	{
-		int last_elem_pos = _dichotomic_search(offsets);
-		Matrix<uint32_t, Dynamic, 1> lengths;
-
-		if (last_elem_pos == offsets.size() - 1)
+		const auto casted = offsets.template cast<uint64_t>();
+		const Eigen::Index len = offsets.size() - 1;
+		Matrix<uint32_t, Dynamic, 1> lengths(len);
+		for (Eigen::Index i = 0; i < len; ++i)
 		{
-			Matrix<uint32_t, Dynamic, Dynamic> tmp(offsets.template cast<u_int32_t>());
-			ediff1d(lengths, tmp, uint32_t(nb_vertices - offsets(last)));
-		}
-		else
-		{
-			Matrix<uint32_t, Dynamic, Dynamic> tmp(offsets.template cast<u_int32_t>());
-			tmp(last_elem_pos + 1) = uint32_t(nb_vertices);
-			ediff1d(lengths, tmp, 0);
-			lengths(last_elem_pos + 1) = uint32_t(0);
+			lengths(i) = static_cast<uint32_t>(casted(i + 1) - casted(i));
 		}
 		return lengths;
 	}
-	if (offsets.size() == 1)
-	{
-		Matrix<uint32_t, 1, 1, RowMajor> lengths(nb_vertices);
-		return lengths;
-	}
-
-	Matrix<uint32_t, 1, 1, RowMajor> lengths(0);
-	return lengths;
+	// If offsets are empty or only contain the sentinel, there are zero streamlines.
+	return Matrix<uint32_t, Dynamic, 1>(0);
 }
 
 template <typename DT>
@@ -203,7 +183,11 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 		this->data_per_vertex = trx->data_per_vertex;
 		this->data_per_group = trx->data_per_group;
 		this->_uncompressed_folder_handle = trx->_uncompressed_folder_handle;
+		this->_owns_uncompressed_folder = trx->_owns_uncompressed_folder;
 		this->_copy_safe = trx->_copy_safe;
+		trx->_owns_uncompressed_folder = false;
+		trx->_uncompressed_folder_handle.clear();
+		delete trx;
 	}
 	else
 	{
@@ -223,11 +207,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 {
 	TrxFile<DT> *trx = new TrxFile<DT>();
 
-	char *dirname;
-	char t[] = "/tmp/trx_XXXXXX";
-	dirname = mkdtemp(t);
-
-	std::string tmp_dir(dirname);
+	std::string tmp_dir = make_temp_dir("trx");
 
 	spdlog::info("Temporary folder for memmaps: {}", tmp_dir);
 
@@ -282,12 +262,13 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 	std::string offsets_filename(tmp_dir);
 	offsets_filename += "/offsets." + offsets_dtype;
 
-	std::tuple<int, int> shape_off = std::make_tuple(nb_streamlines, 1);
+	std::tuple<int, int> shape_off = std::make_tuple(nb_streamlines + 1, 1);
 
 	trx->streamlines->mmap_off = trxmmap::_create_memmap(offsets_filename, shape_off, "w+", offsets_dtype);
 	new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape_off), std::get<1>(shape_off));
 
 	trx->streamlines->_lengths.resize(nb_streamlines);
+	trx->streamlines->_lengths.setZero();
 
 	if (init_as != NULL)
 	{
@@ -390,6 +371,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 	}
 
 	trx->_uncompressed_folder_handle = tmp_dir;
+	trx->_owns_uncompressed_folder = true;
 
 	return trx;
 }
@@ -481,20 +463,21 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 
 		else if (base.compare("offsets") == 0 && (folder.compare("") == 0 || folder.compare(".") == 0))
 		{
-			if (size != int(trx->header["NB_STREAMLINES"]) || dim != 1)
+			if (size != int(trx->header["NB_STREAMLINES"]) + 1 || dim != 1)
 			{
-
-				throw std::invalid_argument("Wrong offsets size/dimensionality");
+				throw std::invalid_argument("Wrong offsets size/dimensionality: size=" +
+							    std::to_string(size) + " nb_streamlines=" +
+							    std::to_string(int(trx->header["NB_STREAMLINES"])) +
+							    " dim=" + std::to_string(dim) + " filename=" + elem_filename);
 			}
 
-			std::tuple<int, int> shape = std::make_tuple(trx->header["NB_STREAMLINES"], 1);
+			const int nb_str = int(trx->header["NB_STREAMLINES"]);
+			std::tuple<int, int> shape = std::make_tuple(nb_str + 1, 1);
 			trx->streamlines->mmap_off = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
 			new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape), std::get<1>(shape));
 
-			// TODO : adapt compute_lengths to accept a map
-			Matrix<uint64_t, Dynamic, 1> offsets;
-			offsets = trx->streamlines->_offsets;
+			Matrix<uint64_t, Dynamic, 1> offsets = trx->streamlines->_offsets;
 			trx->streamlines->_lengths = _compute_lengths(offsets, int(trx->header["NB_VERTICES"]));
 		}
 
@@ -630,11 +613,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 template <typename DT>
 TrxFile<DT> *TrxFile<DT>::deepcopy()
 {
-	char *dirname;
-	char t[] = "/tmp/trx_XXXXXX";
-	dirname = mkdtemp(t);
-
-	std::string tmp_dir(dirname);
+	std::string tmp_dir = make_temp_dir("trx");
 
 	std::string header = tmp_dir + SEPARATOR + "header.json";
 	std::ofstream out_json(header);
@@ -650,8 +629,13 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 
 	if (!this->_copy_safe)
 	{
-		tmp_header["NB_STREAMLINES"] = to_dump->_offsets.size();
+		tmp_header["NB_STREAMLINES"] = to_dump->_offsets.size() > 0 ? to_dump->_offsets.size() - 1 : 0;
 		tmp_header["NB_VERTICES"] = to_dump->_data.size() / 3;
+	}
+	// Ensure sentinel is correct before persisting
+	if (to_dump->_offsets.size() > 0)
+	{
+		to_dump->_offsets(to_dump->_offsets.size() - 1) = tmp_header["NB_VERTICES"];
 	}
 	if (out_json.is_open())
 	{
@@ -756,6 +740,7 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 
 	TrxFile<DT> *copy_trx = load_from_directory<DT>(tmp_dir);
 	copy_trx->_uncompressed_folder_handle = tmp_dir;
+	copy_trx->_owns_uncompressed_folder = true;
 
 	return copy_trx;
 }
@@ -812,20 +797,27 @@ std::tuple<int, int> TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int 
 	if (curr_pts_len == 0)
 		return std::make_tuple(strs_start, pts_start);
 
-	this->streamlines->_data(seq(pts_start, pts_end - 1), all) = trx->streamlines->_data(seq(0, curr_pts_len - 1), all);
-	this->streamlines->_offsets(seq(strs_start, strs_end - 1), all) = (trx->streamlines->_offsets(seq(0, curr_strs_len - 1), all).array() + pts_start).matrix();
-	this->streamlines->_lengths(seq(strs_start, strs_end - 1), all) = trx->streamlines->_lengths(seq(0, curr_strs_len - 1), all);
+	this->streamlines->_data.block(pts_start, 0, curr_pts_len, this->streamlines->_data.cols()) =
+	    trx->streamlines->_data.block(0, 0, curr_pts_len, trx->streamlines->_data.cols());
+
+	this->streamlines->_offsets.block(strs_start, 0, curr_strs_len + 1, 1) =
+	    (trx->streamlines->_offsets.block(0, 0, curr_strs_len + 1, 1).array() + pts_start).matrix();
+
+	this->streamlines->_lengths.block(strs_start, 0, curr_strs_len, 1) =
+	    trx->streamlines->_lengths.block(0, 0, curr_strs_len, 1);
 
 	for (auto const &x : this->data_per_vertex)
 	{
-		this->data_per_vertex[x.first]->_data(seq(pts_start, pts_end - 1), all) = trx->data_per_vertex[x.first]->_data(seq(0, curr_pts_len - 1), all);
+		this->data_per_vertex[x.first]->_data.block(pts_start, 0, curr_pts_len, this->data_per_vertex[x.first]->_data.cols()) =
+		    trx->data_per_vertex[x.first]->_data.block(0, 0, curr_pts_len, trx->data_per_vertex[x.first]->_data.cols());
 		new (&(this->data_per_vertex[x.first]->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(trx->data_per_vertex[x.first]->_offsets.data(), trx->data_per_vertex[x.first]->_offsets.rows(), trx->data_per_vertex[x.first]->_offsets.cols());
 		this->data_per_vertex[x.first]->_lengths = trx->data_per_vertex[x.first]->_lengths;
 	}
 
 	for (auto const &x : this->data_per_streamline)
 	{
-		this->data_per_streamline[x.first]->_matrix(seq(strs_start, strs_end - 1), all) = trx->data_per_streamline[x.first]->_matrix(seq(0, curr_strs_len - 1), all);
+		this->data_per_streamline[x.first]->_matrix.block(strs_start, 0, curr_strs_len, this->data_per_streamline[x.first]->_matrix.cols()) =
+		    trx->data_per_streamline[x.first]->_matrix.block(0, 0, curr_strs_len, trx->data_per_streamline[x.first]->_matrix.cols());
 	}
 
 	return std::make_tuple(strs_end, pts_end);
@@ -834,13 +826,29 @@ std::tuple<int, int> TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int 
 template <typename DT>
 void TrxFile<DT>::close()
 {
-	if (this->_uncompressed_folder_handle != "")
-	{
-		this->_uncompressed_folder_handle = "";
-	}
-
+	this->_cleanup_temporary_directory();
 	*this = TrxFile<DT>(); // probably dangerous to do
 	spdlog::debug("Deleted memmaps and initialized empty TrxFile.");
+}
+
+template <typename DT>
+TrxFile<DT>::~TrxFile()
+{
+	this->_cleanup_temporary_directory();
+}
+
+template <typename DT>
+void TrxFile<DT>::_cleanup_temporary_directory()
+{
+	if (this->_owns_uncompressed_folder && !this->_uncompressed_folder_handle.empty())
+	{
+		if (rm_dir(this->_uncompressed_folder_handle.c_str()) != 0)
+		{
+			spdlog::warn("Could not remove temporary folder {}", this->_uncompressed_folder_handle);
+		}
+		this->_uncompressed_folder_handle.clear();
+		this->_owns_uncompressed_folder = false;
+	}
 }
 
 template <typename DT>
@@ -863,7 +871,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 
 	if (nb_vertices == -1)
 	{
-		ptrs_end = this->streamlines->_lengths(all, 0).sum();
+		ptrs_end = this->streamlines->_lengths.sum();
 		nb_vertices = ptrs_end;
 	}
 	else if (nb_vertices < ptrs_end)
@@ -886,7 +894,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 	TrxFile<DT> *trx = _initialize_empty_trx(nb_streamlines, nb_vertices, this);
 
 	spdlog::info("Resizing streamlines from size {} to {}", this->streamlines->_lengths.size(), nb_streamlines);
-	spdlog::info("Resizing vertices from size {} to  {}", this->streamlines->_data(all, 0).size(), nb_vertices);
+	spdlog::info("Resizing vertices from size {} to  {}", this->streamlines->_data.rows(), nb_vertices);
 
 	if (nb_streamlines < this->header["NB_STREAMLINES"])
 		trx->_copy_fixed_arrays_from(this, -1, -1, nb_streamlines);
@@ -920,7 +928,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 			{
 				for (int j = 0; j < x.second->_matrix.cols(); ++j)
 				{
-					if (x.second->_matrix(i, j) < strs_end)
+					if (static_cast<int>(x.second->_matrix(i, j)) < strs_end)
 					{
 						keep_rows.push_back(i);
 					}
@@ -1014,87 +1022,31 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 template <typename DT>
 TrxFile<DT> *load_from_zip(std::string filename)
 {
-	// TODO: check error values
-	int *errorp;
-	zip_t *zf = zip_open(filename.c_str(), 0, errorp);
-	json header = load_header(zf);
-
-	std::map<std::string, std::tuple<long long, long long>> file_pointer_size;
-	long long global_pos = 0;
-	long long mem_address = 0;
-
-	int num_entries = zip_get_num_entries(zf, ZIP_FL_UNCHANGED);
-
-	for (int i = 0; i < num_entries; ++i)
+	int errorp = 0;
+	zip_t *zf = zip_open(filename.c_str(), 0, &errorp);
+	if (zf == nullptr)
 	{
-		std::string elem_filename = zip_get_name(zf, i, ZIP_FL_UNCHANGED);
-
-		zip_stat_t sb;
-		zip_file_t *zft;
-
-		if (zip_stat(zf, elem_filename.c_str(), ZIP_FL_UNCHANGED, &sb) != 0)
-		{
-			return NULL;
-		}
-
-		global_pos += 30 + elem_filename.size();
-
-		size_t lastdot = elem_filename.find_last_of(".");
-
-		if (lastdot == std::string::npos)
-		{
-			global_pos += sb.comp_size;
-			continue;
-		}
-		std::string ext = elem_filename.substr(lastdot + 1, std::string::npos);
-
-		// apparently all zip directory names end with a slash. may be a better way
-		if (ext.compare("json") == 0 || elem_filename.rfind("/") == elem_filename.size() - 1)
-		{
-			global_pos += sb.comp_size;
-			continue;
-		}
-
-		if (!_is_dtype_valid(ext))
-		{
-			global_pos += sb.comp_size;
-			continue;
-			// maybe throw error here instead?
-			// throw std::invalid_argument("The dtype is not supported");
-		}
-
-		if (ext.compare("bit") == 0)
-		{
-			ext = "bool";
-		}
-
-		// get file stats
-
-		// std::ifstream file(filename, std::ios::binary);
-		// file.seekg(global_pos);
-
-		// unsigned char signature[4] = {0};
-		// const unsigned char local_sig[4] = {0x50, 0x4b, 0x03, 0x04};
-		// file.read((char *)signature, sizeof(signature));
-
-		// if (memcmp(signature, local_sig, sizeof(signature)) == 0)
-		// {
-		// 	global_pos += 30;
-		// 	// global_pos += sb.comp_size + elem_filename.size();
-		// }
-
-		long long size = sb.size / _sizeof_dtype(ext);
-		mem_address = global_pos;
-		file_pointer_size[elem_filename] = {mem_address, size};
-		global_pos += sb.comp_size;
+		throw std::runtime_error("Could not open zip file: " + filename);
 	}
-	return TrxFile<DT>::_create_trx_from_pointer(header, file_pointer_size, filename);
+
+	std::string temp_dir = extract_zip_to_directory(zf);
+	zip_close(zf);
+
+	TrxFile<DT> *trx = load_from_directory<DT>(temp_dir);
+	trx->_uncompressed_folder_handle = temp_dir;
+	trx->_owns_uncompressed_folder = true;
+	return trx;
 }
 
 template <typename DT>
 TrxFile<DT> *load_from_directory(std::string path)
 {
-	std::string directory = (std::string)canonicalize_file_name(path.c_str());
+	std::string directory = path;
+	char resolved[PATH_MAX];
+	if (realpath(path.c_str(), resolved) != nullptr)
+	{
+		directory = resolved;
+	}
 	std::string header_name = directory + SEPARATOR + "header.json";
 
 	// TODO: add check to verify that it's open
@@ -1144,6 +1096,12 @@ void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression
 	{
 		struct stat sb;
 
+		struct stat tmp_sb;
+		if (stat(tmp_dir_name.c_str(), &tmp_sb) != 0 || !S_ISDIR(tmp_sb.st_mode))
+		{
+			throw std::runtime_error("Temporary TRX directory does not exist: " + tmp_dir_name);
+		}
+
 		if (stat(filename.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode))
 		{
 			if (rm_dir(filename.c_str()) != 0)
@@ -1151,7 +1109,27 @@ void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression
 				spdlog::error("Could not remove existing directory {}", filename);
 			}
 		}
+		std::filesystem::path dest_path(filename);
+		if (dest_path.has_parent_path())
+		{
+			std::error_code ec;
+			std::filesystem::create_directories(dest_path.parent_path(), ec);
+			if (ec)
+			{
+				throw std::runtime_error("Could not create output parent directory: " +
+				                         dest_path.parent_path().string());
+			}
+		}
 		copy_dir(tmp_dir_name.c_str(), filename.c_str());
+		if (stat(filename.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode))
+		{
+			throw std::runtime_error("Failed to create output directory: " + filename);
+		}
+		const std::filesystem::path header_path = dest_path / "header.json";
+		if (!std::filesystem::exists(header_path))
+		{
+			throw std::runtime_error("Missing header.json in output directory: " + header_path.string());
+		}
 		copy_trx->close();
 	}
 }

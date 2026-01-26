@@ -1,0 +1,86 @@
+name: trx-cpp tests
+
+on:
+  push:
+    paths:
+      - "**"
+  pull_request:
+    paths:
+      - "**"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            g++ \
+            zlib1g-dev \
+            libeigen3-dev \
+            nlohmann-json3-dev \
+            libspdlog-dev
+
+      - name: Fetch mio
+        run: |
+          git clone --depth 1 https://github.com/mandreyel/mio.git deps/mio
+
+      - name: Build and install libzip (with tools)
+        run: |
+          git clone --depth 1 https://github.com/nih-at/libzip.git deps/libzip
+          cmake -S deps/libzip -B deps/libzip/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TOOLS=ON \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/deps/libzip/install
+          cmake --build deps/libzip/build --target install
+
+      - name: Build and install GoogleTest
+        run: |
+          git clone --depth 1 https://github.com/google/googletest.git deps/googletest
+          cmake -S deps/googletest -B deps/googletest/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/deps/googletest/install
+          cmake --build deps/googletest/build --target install
+
+      - name: Configure trx-cpp
+        run: |
+          cmake -S . -B build \
+            -DTRX_BUILD_TESTS=ON \
+            -DMIO_INCLUDE_DIR=${GITHUB_WORKSPACE}/deps/mio/include \
+            -DGTest_DIR=${GITHUB_WORKSPACE}/deps/googletest/install/lib/cmake/GTest \
+            -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/deps/libzip/install
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  conan-create:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++
+
+      - name: Install Conan
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install "conan>=2.0,<3.0"
+
+      - name: Conan create (with tests)
+        env:
+          CONAN_HOME: ${{ runner.temp }}/.conan2
+        run: |
+          conan profile detect --force
+          conan create . --build=missing -o with_tests=True -s build_type=Release
