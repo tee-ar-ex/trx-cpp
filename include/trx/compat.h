@@ -30,16 +30,54 @@ inline int trx_rmdir(const char *path)
 	return _rmdir(path);
 }
 
+inline int trx_open(const char *path, int oflag, int pmode = 0)
+{
+	return _open(path, oflag, pmode);
+}
+
+inline int trx_read(int fd, void *buffer, unsigned int count)
+{
+	return _read(fd, buffer, count);
+}
+
+inline int trx_write(int fd, const void *buffer, unsigned int count)
+{
+	return _write(fd, buffer, count);
+}
+
+inline int trx_close(int fd)
+{
+	return _close(fd);
+}
+
 #define mkdir(path, mode) trx_mkdir(path, mode)
 #define unlink(path) trx_unlink(path)
 #define rmdir(path) trx_rmdir(path)
-#define open _open
-#define read _read
-#define write _write
-#define close _close
 
 #else
 #include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+inline int trx_open(const char *path, int oflag, int pmode = 0)
+{
+	return ::open(path, oflag, pmode);
+}
+
+inline int trx_read(int fd, void *buffer, unsigned int count)
+{
+	return ::read(fd, buffer, count);
+}
+
+inline int trx_write(int fd, const void *buffer, unsigned int count)
+{
+	return ::write(fd, buffer, count);
+}
+
+inline int trx_close(int fd)
+{
+	return ::close(fd);
+}
 #endif
 
 #endif
