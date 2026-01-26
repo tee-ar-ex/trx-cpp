@@ -1,9 +1,6 @@
 name: trx-cpp tests
 
 on:
-  push:
-    paths:
-      - "**"
   pull_request:
     paths:
       - "**"
