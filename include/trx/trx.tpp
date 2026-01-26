@@ -1109,11 +1109,11 @@ void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression
 				spdlog::error("Could not remove existing directory {}", filename);
 			}
 		}
-		std::filesystem::path dest_path(filename);
+		trx::fs::path dest_path(filename);
 		if (dest_path.has_parent_path())
 		{
 			std::error_code ec;
-			std::filesystem::create_directories(dest_path.parent_path(), ec);
+			trx::fs::create_directories(dest_path.parent_path(), ec);
 			if (ec)
 			{
 				throw std::runtime_error("Could not create output parent directory: " +
@@ -1125,8 +1125,8 @@ void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression
 		{
 			throw std::runtime_error("Failed to create output directory: " + filename);
 		}
-		const std::filesystem::path header_path = dest_path / "header.json";
-		if (!std::filesystem::exists(header_path))
+		const trx::fs::path header_path = dest_path / "header.json";
+		if (!trx::fs::exists(header_path))
 		{
 			throw std::runtime_error("Missing header.json in output directory: " + header_path.string());
 		}
