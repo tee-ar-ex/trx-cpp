@@ -107,19 +107,20 @@ namespace trxmmap
 		return ext;
 	}
 
-bool _is_path_within(const std::filesystem::path &child, const std::filesystem::path &parent)
+bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent)
 {
-	auto parent_it = parent.begin();
-	auto child_it = child.begin();
-
-	for (; parent_it != parent.end(); ++parent_it, ++child_it)
-	{
-		if (child_it == child.end() || *parent_it != *child_it)
-		{
-			return false;
-		}
-	}
-	return true;
+	std::string parent_str = parent.lexically_normal().string();
+	std::string child_str = child.lexically_normal().string();
+	if (parent_str.empty())
+		return false;
+	if (child_str.size() < parent_str.size())
+		return false;
+	if (child_str.compare(0, parent_str.size(), parent_str) != 0)
+		return false;
+	if (child_str.size() == parent_str.size())
+		return true;
+	char next = child_str[parent_str.size()];
+	return next == '/' || next == '\\';
 }
 	// TODO: check if there's a better way
 	int _sizeof_dtype(std::string dtype)
@@ -494,9 +495,9 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 		}
 		else
 		{
-			std::filesystem::path env_path(val);
+			trx::fs::path env_path(val);
 			std::error_code ec;
-			if (std::filesystem::exists(env_path, ec) && std::filesystem::is_directory(env_path, ec))
+			if (trx::fs::exists(env_path, ec) && trx::fs::is_directory(env_path, ec))
 			{
 				base_dir = env_path.string();
 			}
@@ -512,9 +513,9 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 			{
 				continue;
 			}
-			std::filesystem::path path(candidate);
+			trx::fs::path path(candidate);
 			std::error_code ec;
-			if (std::filesystem::exists(path, ec) && std::filesystem::is_directory(path, ec))
+			if (trx::fs::exists(path, ec) && trx::fs::is_directory(path, ec))
 			{
 				base_dir = path.string();
 				break;
@@ -524,7 +525,7 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 	if (base_dir.empty())
 	{
 		std::error_code ec;
-		auto sys_tmp = std::filesystem::temp_directory_path(ec);
+		auto sys_tmp = trx::fs::temp_directory_path(ec);
 		if (!ec)
 		{
 			base_dir = sys_tmp.string();
@@ -535,7 +536,7 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 		base_dir = "/tmp";
 	}
 
-	std::filesystem::path tmpl = std::filesystem::path(base_dir) / (prefix + "_XXXXXX");
+	trx::fs::path tmpl = trx::fs::path(base_dir) / (prefix + "_XXXXXX");
 	std::string tmpl_str = tmpl.string();
 	std::vector<char> buf(tmpl_str.begin(), tmpl_str.end());
 	buf.push_back('\0');
@@ -554,7 +555,7 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 			throw std::invalid_argument("Zip archive pointer is null");
 		}
 	std::string root_dir = make_temp_dir("trx_zip");
-	std::filesystem::path normalized_root = std::filesystem::path(root_dir).lexically_normal();
+	trx::fs::path normalized_root = trx::fs::path(root_dir).lexically_normal();
 
 	zip_int64_t num_entries = zip_get_num_entries(zfolder, ZIP_FL_UNCHANGED);
 	for (zip_int64_t i = 0; i < num_entries; ++i)
@@ -566,15 +567,15 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 		}
 		std::string entry(entry_name);
 
-		std::filesystem::path entry_path(entry);
+		trx::fs::path entry_path(entry);
 		if (entry_path.is_absolute())
 		{
 			throw std::runtime_error("Zip entry has absolute path: " + entry);
 		}
 
-		std::filesystem::path normalized_entry = entry_path.lexically_normal();
-		std::filesystem::path out_path = normalized_root / normalized_entry;
-		std::filesystem::path normalized_out = out_path.lexically_normal();
+		trx::fs::path normalized_entry = entry_path.lexically_normal();
+		trx::fs::path out_path = normalized_root / normalized_entry;
+		trx::fs::path normalized_out = out_path.lexically_normal();
 
 		if (!_is_path_within(normalized_out, normalized_root))
 		{
@@ -584,7 +585,7 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 		if (!entry.empty() && entry.back() == '/')
 		{
 			std::error_code ec;
-			std::filesystem::create_directories(normalized_out, ec);
+			trx::fs::create_directories(normalized_out, ec);
 			if (ec)
 			{
 				throw std::runtime_error("Failed to create directory: " + normalized_out.string());
@@ -593,7 +594,7 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 		}
 
 		std::error_code ec;
-		std::filesystem::create_directories(normalized_out.parent_path(), ec);
+		trx::fs::create_directories(normalized_out.parent_path(), ec);
 		if (ec)
 		{
 			throw std::runtime_error("Failed to create parent directory: " + normalized_out.parent_path().string());
@@ -605,7 +606,7 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 			throw std::runtime_error("Failed to open zip entry: " + entry);
 		}
 
-		std::ofstream out(normalized_out, std::ios::binary);
+		std::ofstream out(normalized_out.string(), std::ios::binary);
 		if (!out.is_open())
 		{
 			zip_fclose(zf);

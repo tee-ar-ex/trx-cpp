@@ -4,18 +4,19 @@
 #include <stdexcept>
 #include <sys/stat.h>
 #include <iomanip>
-#include <filesystem>
+#include <trx/filesystem.h>
 #include <random>
 #include <system_error>
 
 using namespace Eigen;
 using namespace trxmmap;
+namespace fs = trx::fs;
 
 namespace
 {
 	struct TestTrxFixture
 	{
-		std::filesystem::path root_dir;
+		fs::path root_dir;
 		std::string path;
 		std::string dir_path;
 		json expected_header;
@@ -27,7 +28,7 @@ namespace
 			std::error_code ec;
 			if (!root_dir.empty())
 			{
-				std::filesystem::remove_all(root_dir, ec);
+				fs::remove_all(root_dir, ec);
 				if (ec)
 				{
 					std::cerr << "Failed to clean up test directory " << root_dir.string()
@@ -38,10 +39,10 @@ namespace
 		}
 	};
 
-	std::filesystem::path make_temp_test_dir(const std::string &prefix)
+	fs::path make_temp_test_dir(const std::string &prefix)
 	{
 		std::error_code ec;
-		auto base = std::filesystem::temp_directory_path(ec);
+		auto base = fs::temp_directory_path(ec);
 		if (ec)
 		{
 			throw std::runtime_error("Failed to get temp directory: " + ec.message());
@@ -52,9 +53,9 @@ namespace
 
 		for (int attempt = 0; attempt < 100; ++attempt)
 		{
-			std::filesystem::path candidate = base / (prefix + "_" + std::to_string(dist(rng)));
+			fs::path candidate = base / (prefix + "_" + std::to_string(dist(rng)));
 			std::error_code dir_ec;
-			if (std::filesystem::create_directory(candidate, dir_ec))
+			if (fs::create_directory(candidate, dir_ec))
 			{
 				return candidate;
 			}
@@ -70,10 +71,10 @@ namespace
 	{
 
 		TestTrxFixture fixture;
-		std::filesystem::path root_dir = make_temp_test_dir("trx_test");
-		std::filesystem::path trx_dir = root_dir / "trx_data";
+		fs::path root_dir = make_temp_test_dir("trx_test");
+		fs::path trx_dir = root_dir / "trx_data";
 		std::error_code ec;
-		if (!std::filesystem::create_directory(trx_dir, ec) && ec)
+		if (!fs::create_directory(trx_dir, ec) && ec)
 		{
 			throw std::runtime_error("Failed to create trx data directory: " + ec.message());
 		}
@@ -93,8 +94,8 @@ namespace
 							    {0.0, 0.0, 0.0, 1.0}};
 
 		// Write header.json
-		std::filesystem::path header_path = trx_dir / "header.json";
-		std::ofstream header_out(header_path);
+		fs::path header_path = trx_dir / "header.json";
+		std::ofstream header_out(header_path.string());
 		if (!header_out.is_open())
 		{
 			throw std::runtime_error("Failed to write header.json");
@@ -105,7 +106,7 @@ namespace
 		// Write positions (float16)
 		Matrix<half, Dynamic, Dynamic, RowMajor> positions(fixture.nb_vertices, 3);
 		positions.setZero();
-		std::filesystem::path positions_path = trx_dir / "positions.3.float16";
+		fs::path positions_path = trx_dir / "positions.3.float16";
 		trxmmap::write_binary(positions_path.c_str(), positions);
 		struct stat sb;
 		if (stat(positions_path.c_str(), &sb) != 0)
@@ -126,7 +127,7 @@ namespace
 		}
 		offsets(fixture.nb_streamlines, 0) = static_cast<uint64_t>(fixture.nb_vertices);
 
-		std::filesystem::path offsets_path = trx_dir / "offsets.uint64";
+		fs::path offsets_path = trx_dir / "offsets.uint64";
 		trxmmap::write_binary(offsets_path.c_str(), offsets);
 		if (stat(offsets_path.c_str(), &sb) != 0)
 		{
@@ -349,8 +350,8 @@ TEST(TrxFileMemmap, __dichotomic_search)
 TEST(TrxFileMemmap, __create_memmap)
 {
 
-	std::filesystem::path dir = make_temp_test_dir("trx_memmap");
-        std::filesystem::path path = dir / "offsets.int16";
+	fs::path dir = make_temp_test_dir("trx_memmap");
+        fs::path path = dir / "offsets.int16";
 
 	std::tuple<int, int> shape = std::make_tuple(3, 4);
 
@@ -375,13 +376,13 @@ TEST(TrxFileMemmap, __create_memmap)
 	EXPECT_EQ(expected_m, real_m);
 
 	std::error_code ec;
-	std::filesystem::remove_all(dir, ec);
+	fs::remove_all(dir, ec);
 }
 
 TEST(TrxFileMemmap, __create_memmap_empty)
 {
-	std::filesystem::path dir = make_temp_test_dir("trx_memmap_empty");
-        std::filesystem::path path = dir / "empty.float32";
+	fs::path dir = make_temp_test_dir("trx_memmap_empty");
+        fs::path path = dir / "empty.float32";
 
 	std::tuple<int, int> shape = std::make_tuple(0, 1);
         mio::shared_mmap_sink empty_mmap = trxmmap::_create_memmap(path.string(), shape);
@@ -392,7 +393,7 @@ TEST(TrxFileMemmap, __create_memmap_empty)
 	EXPECT_EQ(empty_mmap.size(), 0u);
 
 	std::error_code ec;
-	std::filesystem::remove_all(dir, ec);
+	fs::remove_all(dir, ec);
 }
 
 TEST(TrxFileMemmap, load_header)

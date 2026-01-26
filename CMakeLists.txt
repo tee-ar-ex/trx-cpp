@@ -7,12 +7,13 @@ project(trx VERSION 0.1.0)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 11)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
 
 option(TRX_USE_CONAN "Should Conan package manager be used?" ON)
+option(TRX_USE_BOOST_FILESYSTEM "Use Boost filesystem if available" ON)
 option(TRX_BUILD_TESTS "Build trx tests" ON)
 
 find_package(libzip REQUIRED)
@@ -39,6 +40,9 @@ if (NOT TARGET Eigen3::Eigen AND EXISTS "${EIGEN3_INCLUDE_DIR}")
 endif()
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+if(TRX_USE_BOOST_FILESYSTEM)
+    find_package(Boost QUIET COMPONENTS filesystem system)
+endif()
 find_package(mio CONFIG QUIET)
 if(TARGET mio::mio)
     set(TRX_HAVE_MIO_TARGET ON)
@@ -76,6 +80,15 @@ TARGET_LINK_LIBRARIES(trx
         spdlog::spdlog
         $<$<BOOL:${TRX_HAVE_MIO_TARGET}>:mio::mio>
 )
+if(TRX_USE_BOOST_FILESYSTEM AND Boost_FOUND)
+    target_compile_definitions(trx PUBLIC TRX_USE_BOOST_FILESYSTEM)
+    if(TARGET Boost::filesystem)
+        target_link_libraries(trx PUBLIC Boost::filesystem Boost::system)
+    else()
+        target_include_directories(trx PUBLIC ${Boost_INCLUDE_DIRS})
+        target_link_libraries(trx PUBLIC ${Boost_FILESYSTEM_LIBRARY} ${Boost_SYSTEM_LIBRARY})
+    endif()
+endif()
 target_include_directories(trx
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
