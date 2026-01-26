@@ -544,12 +544,24 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 	std::string tmpl_str = tmpl.string();
 	std::vector<char> buf(tmpl_str.begin(), tmpl_str.end());
 	buf.push_back('\0');
+#if defined(_WIN32) || defined(_WIN64)
+	if (_mktemp_s(buf.data(), buf.size()) != 0)
+	{
+		throw std::runtime_error("Failed to create temporary directory");
+	}
+	if (_mkdir(buf.data()) != 0)
+	{
+		throw std::runtime_error("Failed to create temporary directory");
+	}
+	return std::string(buf.data());
+#else
 	char *dirname = mkdtemp(buf.data());
 	if (dirname == nullptr)
 	{
 		throw std::runtime_error("Failed to create temporary directory");
 	}
 	return std::string(dirname);
+#endif
 	}
 
 	std::string extract_zip_to_directory(zip_t *zfolder)

@@ -399,7 +399,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			filename = elem_filename;
 		}
 
-		std::string folder = std::string(dirname(const_cast<char *>(strdup(elem_filename.c_str()))));
+		std::string folder = path_dirname(elem_filename);
 
 		// _split_ext_with_dimensionality
 		std::tuple<std::string, int, std::string> base_tuple = _split_ext_with_dimensionality(elem_filename);
@@ -575,8 +575,8 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 				shape = std::make_tuple(1, size);
 			}
 
-			std::string data_name = std::string(basename(const_cast<char *>(base.c_str())));
-			std::string sub_folder = std::string(basename(const_cast<char *>(folder.c_str())));
+			std::string data_name = path_basename(base);
+			std::string sub_folder = path_basename(folder);
 
 			trx->data_per_group[sub_folder][data_name] = new MMappedMatrix<DT>();
 			trx->data_per_group[sub_folder][data_name]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);

@@ -6,13 +6,12 @@
 #include <zip.h>
 #include <string.h>
 #include <vector>
-#include <dirent.h>
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <variant>
 #include <math.h>
-#include <libgen.h>
 #include <Eigen/Core>
+#include <trx/compat.h>
 #include <trx/filesystem.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -31,6 +30,37 @@ using json = nlohmann::json;
 
 namespace trxmmap
 {
+	inline std::string path_basename(const std::string &path)
+	{
+		if (path.empty())
+			return "";
+		size_t end = path.find_last_not_of("/\\");
+		if (end == std::string::npos)
+			return "";
+		size_t start = path.find_last_of("/\\", end);
+		if (start == std::string::npos)
+			return path.substr(0, end + 1);
+		return path.substr(start + 1, end - start);
+	}
+
+	inline std::string path_dirname(const std::string &path)
+	{
+		if (path.empty())
+			return ".";
+		size_t end = path.find_last_not_of("/\\");
+		if (end == std::string::npos)
+			return ".";
+		size_t sep = path.find_last_of("/\\", end);
+		if (sep == std::string::npos)
+			return ".";
+		if (sep == 0)
+			return std::string(1, path[0]);
+#if defined(_WIN32) || defined(_WIN64)
+		if (sep == 2 && path.size() >= 3 && path[1] == ':')
+			return path.substr(0, 3);
+#endif
+		return path.substr(0, sep);
+	}
 
 	const std::string SEPARATOR = "/";
 	const std::vector<std::string> dtypes({"float16", "bit", "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "float32", "float64"});
