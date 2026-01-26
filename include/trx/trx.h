@@ -8,7 +8,7 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 #include <algorithm>
-#include <variant>
+#include <cstdint>
 #include <math.h>
 #include <Eigen/Core>
 #include <trx/compat.h>
@@ -96,7 +96,7 @@ namespace trxmmap
 		json header;
 		ArraySequence<DT> *streamlines;
 
-		std::map<std::string, MMappedMatrix<uint> *> groups; // vector of indices
+		std::map<std::string, MMappedMatrix<uint32_t> *> groups; // vector of indices
 
 		// int or float --check python floa<t precision (singletons)
 		std::map<std::string, MMappedMatrix<DT> *> data_per_streamline;

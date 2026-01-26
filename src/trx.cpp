@@ -78,7 +78,7 @@ namespace trxmmap
 				}
 				else
 				{
-					std::invalid_argument("Wrong size of datatype");
+					throw std::invalid_argument("Wrong size of datatype");
 				}
 			}
 		}
@@ -134,7 +134,7 @@ bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent)
 		int index = 0;
 		if (it != dtypes.end())
 		{
-			index = std::distance(dtypes.begin(), it);
+			index = static_cast<int>(std::distance(dtypes.begin(), it));
 		}
 
 		switch (index)
@@ -210,7 +210,7 @@ bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent)
 		size_t num_splits = std::count(base.begin(), base.end(), '.');
 		int dim;
 
-		if (num_splits != 1 and num_splits != 2)
+		if (num_splits != 1 && num_splits != 2)
 		{
 			throw std::invalid_argument("Invalid filename");
 		}
