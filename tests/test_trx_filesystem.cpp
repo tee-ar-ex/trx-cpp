@@ -9,6 +9,13 @@ namespace fs = trx::fs;
 
 namespace
 {
+	std::string normalize_path(const std::string &path)
+	{
+		std::string out = path;
+		std::replace(out.begin(), out.end(), '\\', '/');
+		return out;
+	}
+
 	fs::path make_temp_test_dir(const std::string &prefix)
 	{
 		std::error_code ec;
@@ -55,10 +62,10 @@ TEST(TrxFilesystem, PathBasics)
 	fs::path base("/tmp");
 	fs::path child = base / "trx" / "file.txt";
 	EXPECT_FALSE(child.empty());
-	EXPECT_EQ(child.parent_path().string(), "/tmp/trx");
+	EXPECT_EQ(normalize_path(child.parent_path().lexically_normal().string()), "/tmp/trx");
 
 	fs::path normalized = fs::path("/tmp/../tmp/./trx//file.txt").lexically_normal();
-	EXPECT_EQ(normalized.string(), "/tmp/trx/file.txt");
+	EXPECT_EQ(normalize_path(normalized.string()), "/tmp/trx/file.txt");
 }
 
 // Exercises exists/is_directory/create_directories behavior.
