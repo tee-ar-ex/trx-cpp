@@ -10,10 +10,6 @@ set(TRX_TEST_DATA_TAG "v0.1.0" CACHE STRING "Release tag for test data archives.
 option(TRX_DOWNLOAD_TEST_DATA "Download test data archives at configure time." ON)
 set(_trx_default_archives "memmap_test_data.zip;trx_from_scratch.zip;gold_standard.zip")
 set(TRX_TEST_DATA_ARCHIVES "${_trx_default_archives}" CACHE STRING "Semicolon-separated release archive names.")
-# Ensure new archives are picked up even when cache already exists.
-if(NOT TRX_TEST_DATA_ARCHIVES STREQUAL _trx_default_archives)
-    set(TRX_TEST_DATA_ARCHIVES "${_trx_default_archives}" CACHE STRING "Semicolon-separated release archive names." FORCE)
-endif()
 set(TRX_TEST_DATA_DIR "${CMAKE_BINARY_DIR}/_trx_test_data" CACHE PATH "Local test data directory.")
 set(TRX_TEST_DATA_ARCHIVE_DIR "${CMAKE_BINARY_DIR}/_trx_test_data_archives" CACHE PATH "Local test data archive directory.")
 
