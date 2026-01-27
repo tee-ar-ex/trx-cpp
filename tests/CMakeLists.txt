@@ -51,6 +51,14 @@ add_executable(test_streamlines_ops test_trx_streamlines_ops.cpp)
 target_link_libraries(test_streamlines_ops PRIVATE trx GTest::gtest_main)
 target_compile_features(test_streamlines_ops PRIVATE cxx_std_14)
 
+add_executable(test_filesystem test_trx_filesystem.cpp)
+target_link_libraries(test_filesystem PRIVATE trx GTest::gtest_main)
+target_compile_features(test_filesystem PRIVATE cxx_std_14)
+
+add_executable(test_trxfile test_trx_trxfile.cpp)
+target_link_libraries(test_trxfile PRIVATE trx GTest::gtest_main)
+target_compile_features(test_trxfile PRIVATE cxx_std_14)
+
 include(GoogleTest)
 gtest_discover_tests(test_mmap PROPERTIES
     ENVIRONMENT "TRX_TEST_DATA_DIR=${TRX_TEST_DATA_DIR}"
@@ -61,3 +69,9 @@ gtest_discover_tests(test_io PROPERTIES
 )
 
 gtest_discover_tests(test_streamlines_ops)
+
+gtest_discover_tests(test_filesystem)
+
+gtest_discover_tests(test_trxfile PROPERTIES
+    ENVIRONMENT "TRX_TEST_DATA_DIR=${TRX_TEST_DATA_DIR}"
+)

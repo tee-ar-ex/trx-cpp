@@ -65,6 +65,7 @@ class StreamlinesOpsIntersectionTest : public ::testing::TestWithParam<std::tupl
 {
 };
 
+// Intersection keeps only streamlines shared between lists at given precision.
 TEST_P(StreamlinesOpsIntersectionTest, Intersection)
 {
 	const auto [precision, noise, expected] = GetParam();
@@ -96,6 +97,7 @@ class StreamlinesOpsUnionTest : public ::testing::TestWithParam<std::tuple<int, 
 {
 };
 
+// Union keeps all streamlines across lists at given precision.
 TEST_P(StreamlinesOpsUnionTest, Union)
 {
 	const auto [precision, noise, expected] = GetParam();
@@ -126,6 +128,7 @@ class StreamlinesOpsDifferenceTest : public ::testing::TestWithParam<std::tuple<
 {
 };
 
+// Difference removes streamlines from the second list at given precision.
 TEST_P(StreamlinesOpsDifferenceTest, Difference)
 {
 	const auto [precision, noise, expected] = GetParam();
