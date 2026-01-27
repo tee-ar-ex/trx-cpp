@@ -56,6 +56,79 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  coverage:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    strategy:
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            g++ \
+            lcov \
+            zlib1g-dev \
+            libeigen3-dev \
+            nlohmann-json3-dev \
+            libspdlog-dev
+
+      - name: Build and install libzip (with tools)
+        run: |
+          git clone --depth 1 https://github.com/nih-at/libzip.git deps/libzip
+          cmake -S deps/libzip -B deps/libzip/build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_TOOLS=ON \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/deps/libzip/install
+          cmake --build deps/libzip/build --target install
+
+      - name: Build and install GoogleTest
+        run: |
+          git clone --depth 1 https://github.com/google/googletest.git deps/googletest
+          cmake -S deps/googletest -B deps/googletest/build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/deps/googletest/install
+          cmake --build deps/googletest/build --target install
+
+      - name: Configure trx-cpp (coverage)
+        run: |
+          cmake -S . -B build-coverage \
+            -DTRX_BUILD_TESTS=ON \
+            -DGTest_DIR=${GITHUB_WORKSPACE}/deps/googletest/install/lib/cmake/GTest \
+            -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/deps/libzip/install \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="--coverage" \
+            -DCMAKE_CXX_FLAGS="--coverage"
+
+      - name: Build (coverage)
+        run: cmake --build build-coverage
+
+      - name: Test (coverage)
+        run: ctest --test-dir build-coverage --output-on-failure
+
+      - name: Generate coverage summary
+        run: |
+          lcov --capture --directory build-coverage --output-file coverage.info
+          lcov --summary coverage.info
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.info
+          flags: linux
+          fail_ci_if_error: true
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trx-cpp-coverage
+          path: coverage.info
+
   conan-create:
     runs-on: ubuntu-latest
     strategy:
