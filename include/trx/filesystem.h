@@ -12,13 +12,14 @@
 #include <stdexcept>
 #include <sys/stat.h>
 #include <trx/dirent.h>
-#include <unistd.h>
 #if defined(_WIN32) || defined(_WIN64)
 #include <direct.h>
 #include <windows.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <io.h>
+#else
+#include <unistd.h>
 #endif
 
 namespace trx
