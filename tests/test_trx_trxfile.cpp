@@ -151,7 +151,12 @@ namespace
 TEST(TrxFileTpp, DeepcopyEmpty)
 {
 	trxmmap::TrxFile<half> empty;
-	EXPECT_THROW({ empty.deepcopy(); }, std::exception);
+	trxmmap::TrxFile<half> *copy = empty.deepcopy();
+	EXPECT_EQ(copy->header, empty.header);
+	EXPECT_EQ(copy->streamlines->_data.size(), 0);
+	EXPECT_EQ(copy->streamlines->_offsets.size(), 0);
+	EXPECT_EQ(copy->streamlines->_lengths.size(), 0);
+	delete copy;
 }
 
 // Deepcopy preserves streamlines, dpv/dps, groups, and dpg shapes/content.
