@@ -160,6 +160,7 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 		spdlog::debug("Initializing empty TrxFile.");
 		// will remove as completely unecessary. using as placeholders
 		this->header = {};
+		this->streamlines = nullptr;
 
 		// TODO: maybe create a matrix to map to of specified DT. Do we need this??
 		// set default datatype to half
@@ -625,6 +626,13 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 template <typename DT>
 TrxFile<DT> *TrxFile<DT>::deepcopy()
 {
+	if (this->streamlines == nullptr || this->streamlines->_data.size() == 0 ||
+	    this->streamlines->_offsets.size() == 0)
+	{
+		trxmmap::TrxFile<DT> *empty_copy = new trxmmap::TrxFile<DT>();
+		empty_copy->header = json::parse(this->header.dump());
+		return empty_copy;
+	}
 	std::string tmp_dir = make_temp_dir("trx");
 
 	std::string header = tmp_dir + SEPARATOR + "header.json";
