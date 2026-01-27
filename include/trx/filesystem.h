@@ -11,6 +11,32 @@
 #include <cctype>
 #include <stdexcept>
 
+namespace trx
+{
+  namespace fs
+  {
+    enum class perms : unsigned
+    {
+      none = 0,
+      owner_read = 0400,
+      owner_write = 0200,
+      owner_exec = 0100,
+      group_read = 0040,
+      group_write = 0020,
+      group_exec = 0010,
+      others_read = 0004,
+      others_write = 0002,
+      others_exec = 0001,
+      all = 0777
+    };
+
+    inline unsigned _perm_mask(perms p)
+    {
+      return static_cast<unsigned>(p);
+    }
+  } // namespace fs
+} // namespace trx
+
 #if defined(TRX_USE_BOOST_FILESYSTEM)
 #include <boost/filesystem.hpp>
 #include <boost/system/error_code.hpp>
@@ -85,6 +111,74 @@ namespace trx
       _assign_error(ec, bec);
       return count;
     }
+
+    inline std::uintmax_t file_size(const path &p, std::error_code &ec)
+    {
+      boost::system::error_code bec;
+      std::uintmax_t size = boost::filesystem::file_size(p, bec);
+      _assign_error(ec, bec);
+      return size;
+    }
+
+    inline std::uintmax_t file_size(const path &p)
+    {
+      boost::system::error_code bec;
+      std::uintmax_t size = boost::filesystem::file_size(p, bec);
+      if (bec)
+        throw std::runtime_error(bec.message());
+      return size;
+    }
+
+    inline bool is_symlink(const path &p, std::error_code &ec)
+    {
+      boost::system::error_code bec;
+      bool ok = boost::filesystem::is_symlink(p, bec);
+      _assign_error(ec, bec);
+      return ok;
+    }
+
+    inline bool is_symlink(const path &p)
+    {
+      boost::system::error_code bec;
+      bool ok = boost::filesystem::is_symlink(p, bec);
+      if (bec)
+        throw std::runtime_error(bec.message());
+      return ok;
+    }
+
+    inline bool create_symlink(const path &target, const path &link, std::error_code &ec)
+    {
+      boost::system::error_code bec;
+      boost::filesystem::create_symlink(target, link, bec);
+      _assign_error(ec, bec);
+      return !ec;
+    }
+
+    inline void permissions(const path &p, perms prms, std::error_code &ec)
+    {
+      boost::system::error_code bec;
+      boost::filesystem::permissions(p, static_cast<boost::filesystem::perms>(_perm_mask(prms)), bec);
+      _assign_error(ec, bec);
+    }
+
+    inline perms permissions(const path &p, std::error_code &ec)
+    {
+      boost::system::error_code bec;
+      boost::filesystem::file_status status = boost::filesystem::status(p, bec);
+      _assign_error(ec, bec);
+      if (ec)
+        return perms::none;
+      return static_cast<perms>(status.permissions() & boost::filesystem::perms::all_all);
+    }
+
+    inline perms permissions(const path &p)
+    {
+      boost::system::error_code bec;
+      boost::filesystem::file_status status = boost::filesystem::status(p, bec);
+      if (bec)
+        throw std::runtime_error(bec.message());
+      return static_cast<perms>(status.permissions() & boost::filesystem::perms::all_all);
+    }
   } // namespace fs
 } // namespace trx
 
@@ -95,6 +189,10 @@ namespace trx
 #include <unistd.h>
 #if defined(_WIN32) || defined(_WIN64)
 #include <direct.h>
+#include <windows.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <io.h>
 #endif
 
 namespace trx
@@ -470,6 +568,156 @@ namespace trx
 
       ec.clear();
       return count;
+    }
+
+    inline std::uintmax_t file_size(const path &p, std::error_code &ec)
+    {
+#if defined(_WIN32) || defined(_WIN64)
+      struct _stat buf;
+      if (_stat(p.c_str(), &buf) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return static_cast<std::uintmax_t>(-1);
+      }
+#else
+      struct stat buf;
+      if (stat(p.c_str(), &buf) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return static_cast<std::uintmax_t>(-1);
+      }
+#endif
+      if (!S_ISREG(buf.st_mode))
+      {
+        if (S_ISDIR(buf.st_mode))
+          ec = std::make_error_code(std::errc::is_a_directory);
+        else
+          ec = std::make_error_code(std::errc::invalid_argument);
+        return static_cast<std::uintmax_t>(-1);
+      }
+      ec.clear();
+      return static_cast<std::uintmax_t>(buf.st_size);
+    }
+
+    inline std::uintmax_t file_size(const path &p)
+    {
+      std::error_code ec;
+      std::uintmax_t size = file_size(p, ec);
+      if (ec)
+        throw std::runtime_error(ec.message());
+      return size;
+    }
+
+    inline bool is_symlink(const path &p, std::error_code &ec)
+    {
+#if defined(_WIN32) || defined(_WIN64)
+      DWORD attrs = GetFileAttributesA(p.c_str());
+      if (attrs == INVALID_FILE_ATTRIBUTES)
+      {
+        ec = std::error_code(GetLastError(), std::system_category());
+        return false;
+      }
+      ec.clear();
+      return (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+#else
+      struct stat buf;
+      if (lstat(p.c_str(), &buf) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+      }
+      ec.clear();
+      return S_ISLNK(buf.st_mode);
+#endif
+    }
+
+    inline bool is_symlink(const path &p)
+    {
+      std::error_code ec;
+      bool ok = is_symlink(p, ec);
+      if (ec)
+        throw std::runtime_error(ec.message());
+      return ok;
+    }
+
+    inline bool create_symlink(const path &target, const path &link, std::error_code &ec)
+    {
+#if defined(_WIN32) || defined(_WIN64)
+      DWORD flags = 0;
+      struct _stat buf;
+      if (_stat(target.c_str(), &buf) == 0 && (buf.st_mode & _S_IFDIR))
+        flags |= SYMBOLIC_LINK_FLAG_DIRECTORY;
+      if (CreateSymbolicLinkA(link.c_str(), target.c_str(), flags) == 0)
+      {
+        ec = std::error_code(GetLastError(), std::system_category());
+        return false;
+      }
+      ec.clear();
+      return true;
+#else
+      if (symlink(target.c_str(), link.c_str()) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+      }
+      ec.clear();
+      return true;
+#endif
+    }
+
+    inline void permissions(const path &p, perms prms, std::error_code &ec)
+    {
+#if defined(_WIN32) || defined(_WIN64)
+      int mode = _S_IREAD;
+      if ((_perm_mask(prms) & _perm_mask(perms::owner_write)) != 0)
+        mode |= _S_IWRITE;
+      if (_chmod(p.c_str(), mode) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return;
+      }
+      ec.clear();
+#else
+      mode_t mode = static_cast<mode_t>(_perm_mask(prms) & _perm_mask(perms::all));
+      if (chmod(p.c_str(), mode) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return;
+      }
+      ec.clear();
+#endif
+    }
+
+    inline perms permissions(const path &p, std::error_code &ec)
+    {
+#if defined(_WIN32) || defined(_WIN64)
+      struct _stat buf;
+      if (_stat(p.c_str(), &buf) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return perms::none;
+      }
+      ec.clear();
+      return static_cast<perms>(buf.st_mode & 0777);
+#else
+      struct stat buf;
+      if (stat(p.c_str(), &buf) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return perms::none;
+      }
+      ec.clear();
+      return static_cast<perms>(buf.st_mode & 0777);
+#endif
+    }
+
+    inline perms permissions(const path &p)
+    {
+      std::error_code ec;
+      perms out = permissions(p, ec);
+      if (ec)
+        throw std::runtime_error(ec.message());
+      return out;
     }
   } // namespace fs
 } // namespace trx
