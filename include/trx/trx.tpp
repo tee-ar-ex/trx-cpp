@@ -160,6 +160,7 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 		spdlog::debug("Initializing empty TrxFile.");
 		// will remove as completely unecessary. using as placeholders
 		this->header = {};
+		this->streamlines = nullptr;
 
 		// TODO: maybe create a matrix to map to of specified DT. Do we need this??
 		// set default datatype to half
