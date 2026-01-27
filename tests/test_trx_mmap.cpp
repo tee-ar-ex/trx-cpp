@@ -107,9 +107,9 @@ namespace
 		Matrix<half, Dynamic, Dynamic, RowMajor> positions(fixture.nb_vertices, 3);
 		positions.setZero();
 		fs::path positions_path = trx_dir / "positions.3.float16";
-		trxmmap::write_binary(positions_path.c_str(), positions);
+		trxmmap::write_binary(positions_path.string().c_str(), positions);
 		struct stat sb;
-		if (stat(positions_path.c_str(), &sb) != 0)
+		if (stat(positions_path.string().c_str(), &sb) != 0)
 		{
 			throw std::runtime_error("Failed to stat positions file");
 		}
@@ -128,8 +128,8 @@ namespace
 		offsets(fixture.nb_streamlines, 0) = static_cast<uint64_t>(fixture.nb_vertices);
 
 		fs::path offsets_path = trx_dir / "offsets.uint64";
-		trxmmap::write_binary(offsets_path.c_str(), offsets);
-		if (stat(offsets_path.c_str(), &sb) != 0)
+		trxmmap::write_binary(offsets_path.string().c_str(), offsets);
+		if (stat(offsets_path.string().c_str(), &sb) != 0)
 		{
 			throw std::runtime_error("Failed to stat offsets file");
 		}
@@ -388,7 +388,7 @@ TEST(TrxFileMemmap, __create_memmap_empty)
         mio::shared_mmap_sink empty_mmap = trxmmap::_create_memmap(path.string(), shape);
 
 	struct stat sb;
-	ASSERT_EQ(stat(path.c_str(), &sb), 0);
+	ASSERT_EQ(stat(path.string().c_str(), &sb), 0);
 	EXPECT_EQ(sb.st_size, 0);
 	EXPECT_EQ(empty_mmap.size(), 0u);
 

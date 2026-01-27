@@ -16,6 +16,10 @@ option(TRX_USE_CONAN "Should Conan package manager be used?" ON)
 option(TRX_USE_BOOST_FILESYSTEM "Use Boost filesystem if available" ON)
 option(TRX_BUILD_TESTS "Build trx tests" ON)
 
+if(MSVC)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+endif()
+
 find_package(libzip REQUIRED)
 set(TRX_LIBZIP_TARGET "")
 if(TARGET libzip::libzip)
