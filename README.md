@@ -11,7 +11,6 @@ Required:
 - nlohmann::json
 - Eigen3
 - spdlog
-- mio (header-only memory-mapped IO, vendored in `third_party/mio`)
 
 Optional:
 - GTest (for building tests)
@@ -53,16 +52,8 @@ cmake -S . -B build -DMIO_INCLUDE_DIR=/path/to/mio/include
 
 ### Filesystem shim
 
-By default, the build will try to use Boost.Filesystem if it is available. You
-can force this behavior:
-
-```
-# Prefer Boost if available (default)
-cmake -S . -B build -DTRX_USE_BOOST_FILESYSTEM=ON
-
-# Force the built-in lightweight shim
-cmake -S . -B build -DTRX_USE_BOOST_FILESYSTEM=OFF
-```
+The project relies on the built-in lightweight filesystem shim and does not
+depend on Boost.
 
 ## Usage Examples
 

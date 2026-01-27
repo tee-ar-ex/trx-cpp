@@ -10,6 +10,16 @@
 #include <cstdint>
 #include <cctype>
 #include <stdexcept>
+#include <sys/stat.h>
+#include <trx/dirent.h>
+#include <unistd.h>
+#if defined(_WIN32) || defined(_WIN64)
+#include <direct.h>
+#include <windows.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <io.h>
+#endif
 
 namespace trx
 {
@@ -36,164 +46,6 @@ namespace trx
     }
   } // namespace fs
 } // namespace trx
-
-#if defined(TRX_USE_BOOST_FILESYSTEM)
-#include <boost/filesystem.hpp>
-#include <boost/system/error_code.hpp>
-
-namespace trx
-{
-  namespace fs
-  {
-    using boost::filesystem::path;
-
-    inline void _assign_error(std::error_code &out, const boost::system::error_code &in)
-    {
-      if (in)
-        out = std::error_code(in.value(), std::generic_category());
-      else
-        out.clear();
-    }
-
-    inline bool exists(const path &p, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      bool ok = boost::filesystem::exists(p, bec);
-      _assign_error(ec, bec);
-      return ok;
-    }
-
-    inline bool exists(const path &p)
-    {
-      boost::system::error_code bec;
-      bool ok = boost::filesystem::exists(p, bec);
-      if (bec)
-        throw std::runtime_error(bec.message());
-      return ok;
-    }
-
-    inline bool is_directory(const path &p, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      bool ok = boost::filesystem::is_directory(p, bec);
-      _assign_error(ec, bec);
-      return ok;
-    }
-
-    inline bool create_directory(const path &p, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      bool ok = boost::filesystem::create_directory(p, bec);
-      _assign_error(ec, bec);
-      return ok;
-    }
-
-    inline bool create_directories(const path &p, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      bool ok = boost::filesystem::create_directories(p, bec);
-      _assign_error(ec, bec);
-      return ok;
-    }
-
-    inline path temp_directory_path(std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      path p = boost::filesystem::temp_directory_path(bec);
-      _assign_error(ec, bec);
-      return p;
-    }
-
-    inline std::uintmax_t remove_all(const path &p, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      std::uintmax_t count = boost::filesystem::remove_all(p, bec);
-      _assign_error(ec, bec);
-      return count;
-    }
-
-    inline std::uintmax_t file_size(const path &p, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      std::uintmax_t size = boost::filesystem::file_size(p, bec);
-      _assign_error(ec, bec);
-      return size;
-    }
-
-    inline std::uintmax_t file_size(const path &p)
-    {
-      boost::system::error_code bec;
-      std::uintmax_t size = boost::filesystem::file_size(p, bec);
-      if (bec)
-        throw std::runtime_error(bec.message());
-      return size;
-    }
-
-    inline bool is_symlink(const path &p, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      bool ok = boost::filesystem::is_symlink(p, bec);
-      _assign_error(ec, bec);
-      return ok;
-    }
-
-    inline bool is_symlink(const path &p)
-    {
-      boost::system::error_code bec;
-      bool ok = boost::filesystem::is_symlink(p, bec);
-      if (bec)
-        throw std::runtime_error(bec.message());
-      return ok;
-    }
-
-    inline bool create_symlink(const path &target, const path &link, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      boost::filesystem::create_symlink(target, link, bec);
-      _assign_error(ec, bec);
-      return !ec;
-    }
-
-    inline void permissions(const path &p, perms prms, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      boost::filesystem::permissions(p, static_cast<boost::filesystem::perms>(_perm_mask(prms)), bec);
-      _assign_error(ec, bec);
-    }
-
-    inline perms permissions(const path &p, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      boost::filesystem::file_status status = boost::filesystem::status(p, bec);
-      _assign_error(ec, bec);
-      if (ec)
-        return perms::none;
-      return static_cast<perms>(status.permissions() & boost::filesystem::perms::all_all);
-    }
-
-    inline perms permissions(const path &p)
-    {
-      boost::system::error_code bec;
-      boost::filesystem::file_status status = boost::filesystem::status(p, bec);
-      if (bec)
-        throw std::runtime_error(bec.message());
-      return static_cast<perms>(status.permissions() & boost::filesystem::perms::all_all);
-    }
-  } // namespace fs
-} // namespace trx
-
-#else
-
-#include <sys/stat.h>
-#include <trx/dirent.h>
-#include <unistd.h>
-#if defined(_WIN32) || defined(_WIN64)
-#include <direct.h>
-#include <windows.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <io.h>
-#endif
 
 namespace trx
 {
@@ -721,7 +573,5 @@ namespace trx
     }
   } // namespace fs
 } // namespace trx
-
-#endif
 
 #endif

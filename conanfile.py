@@ -8,7 +8,7 @@ class TrxCppConan(ConanFile):
     name = "trx-cpp"
     version = "0.1.0"
     package_type = "library"
-    license = "MIT"  # Update if the project adopts a different license.
+    license = "BSD-2-Clause"
     url = "https://github.com/tractdata/trx-cpp"
     homepage = "https://github.com/tractdata/trx-cpp"
     description = "C++ library for reading and writing the TRX tractography format."
@@ -18,13 +18,11 @@ class TrxCppConan(ConanFile):
         "shared": [True, False],
         "fPIC": [True, False],
         "with_tests": [True, False],
-        "with_boost": [True, False],
     }
     default_options = {
         "shared": False,
         "fPIC": True,
         "with_tests": False,
-        "with_boost": True,
     }
     generators = ("CMakeDeps",)
     exports_sources = (
@@ -44,8 +42,6 @@ class TrxCppConan(ConanFile):
         self.requires("nlohmann_json/3.11.3")
         self.requires("eigen/3.4.0")
         self.requires("spdlog/1.12.0")
-        if self.options.with_boost:
-            self.requires("boost/1.83.0")
 
     def build_requirements(self):
         if self.options.with_tests:
@@ -72,7 +68,6 @@ class TrxCppConan(ConanFile):
         tc.variables["CMAKE_CXX_STANDARD"] = 11
         tc.variables["CMAKE_CXX_STANDARD_REQUIRED"] = "ON"
         tc.variables["CMAKE_CXX_EXTENSIONS"] = "OFF"
-        tc.variables["TRX_USE_BOOST_FILESYSTEM"] = "ON" if self.options.with_boost else "OFF"
         tc.generate()
 
     def build(self):
@@ -127,11 +122,6 @@ class TrxCppConan(ConanFile):
             "nlohmann_json::nlohmann_json",
             "eigen::Eigen3::Eigen",
         ]
-        if self.options.with_boost:
-            self.cpp_info.components["trx"].requires.extend([
-                "boost::filesystem",
-                "boost::system",
-            ])
         extra_includes = []
         for dep_name in ("nlohmann_json", "eigen"):
             dep = self.dependencies.get(dep_name)
