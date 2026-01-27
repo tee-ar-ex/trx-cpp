@@ -1,3 +1,7 @@
+#include <any>
+#include <sstream>
+#include <nlohmann/json.hpp>
+
 #define private public
 #include <trx/trx.h>
 #undef private
