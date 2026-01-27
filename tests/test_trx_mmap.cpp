@@ -14,6 +14,27 @@ namespace fs = trx::fs;
 
 namespace
 {
+	std::string get_test_data_root()
+	{
+		const char *env = std::getenv("TRX_TEST_DATA_DIR");
+		if (env == nullptr || std::string(env).empty())
+		{
+			return {};
+		}
+		return std::string(env);
+	}
+
+	fs::path resolve_memmap_test_data_dir(const std::string &root_dir)
+	{
+		fs::path root(root_dir);
+		fs::path memmap_dir = root / "memmap_test_data";
+		if (fs::exists(memmap_dir))
+		{
+			return memmap_dir;
+		}
+		return root;
+	}
+
 	struct TestTrxFixture
 	{
 		fs::path root_dir;
@@ -186,6 +207,7 @@ namespace
 
 // TODO: Test null filenames. Maybe use MatrixBase instead of ArrayBase
 // TODO: try to update test case to use GTest parameterization
+// Mirrors trx/tests/test_memmap.py::test__generate_filename_from_data.
 TEST(TrxFileMemmap, __generate_filename_from_data)
 {
 	std::string filename = "mean_fa.bit";
@@ -213,6 +235,7 @@ TEST(TrxFileMemmap, __generate_filename_from_data)
 	output_fn.clear();
 }
 
+// Mirrors trx/tests/test_memmap.py::test__split_ext_with_dimensionality.
 TEST(TrxFileMemmap, __split_ext_with_dimensionality)
 {
 	std::tuple<std::string, int, std::string> output;
@@ -270,6 +293,7 @@ TEST(TrxFileMemmap, __split_ext_with_dimensionality)
 		     std::invalid_argument);
 }
 
+// Mirrors trx/tests/test_memmap.py::test__compute_lengths.
 TEST(TrxFileMemmap, __compute_lengths)
 {
 	Matrix<uint64_t, 5, 1> offsets{uint64_t(0), uint64_t(1), uint64_t(2), uint64_t(3), uint64_t(4)};
@@ -300,8 +324,19 @@ TEST(TrxFileMemmap, __compute_lengths)
 	Matrix<uint64_t, 0, 0> offsets5;
 	Matrix<uint32_t, 0, 1> lengths5(trxmmap::_compute_lengths(offsets5, 2));
 	EXPECT_EQ(lengths5.size(), 0);
+
+	Matrix<int16_t, 5, 1> offsets6{int16_t(0), int16_t(1), int16_t(2), int16_t(3), int16_t(4)};
+	Matrix<uint32_t, 4, 1> lengths6(trxmmap::_compute_lengths(offsets6, 4));
+	Matrix<uint32_t, 4, 1> result6{uint32_t(1), uint32_t(1), uint32_t(1), uint32_t(1)};
+	EXPECT_EQ(lengths6, result6);
+
+	Matrix<int32_t, 5, 1> offsets7{int32_t(0), int32_t(1), int32_t(1), int32_t(3), int32_t(4)};
+	Matrix<uint32_t, 4, 1> lengths7(trxmmap::_compute_lengths(offsets7, 4));
+	Matrix<uint32_t, 4, 1> result7{uint32_t(1), uint32_t(0), uint32_t(2), uint32_t(1)};
+	EXPECT_EQ(lengths7, result7);
 }
 
+// Mirrors trx/tests/test_memmap.py::test__is_dtype_valid.
 TEST(TrxFileMemmap, __is_dtype_valid)
 {
 	std::string ext = "bit";
@@ -316,10 +351,21 @@ TEST(TrxFileMemmap, __is_dtype_valid)
 	std::string ext4 = "uint8";
 	EXPECT_TRUE(_is_dtype_valid(ext4));
 
-	std::string ext5 = "txt";
-	EXPECT_FALSE(_is_dtype_valid(ext5));
+	std::string ext5 = "ushort";
+	EXPECT_TRUE(_is_dtype_valid(ext5));
+
+	std::string ext6 = "txt";
+	EXPECT_FALSE(_is_dtype_valid(ext6));
 }
 
+// asserts C++ dtype alias behavior.
+TEST(TrxFileMemmap, __sizeof_dtype_ushort_alias)
+{
+	EXPECT_EQ(trxmmap::_sizeof_dtype("ushort"), sizeof(uint16_t));
+	EXPECT_EQ(trxmmap::_sizeof_dtype("ushort"), trxmmap::_sizeof_dtype("uint16"));
+}
+
+// Mirrors trx/tests/test_memmap.py::test__dichotomic_search.
 TEST(TrxFileMemmap, __dichotomic_search)
 {
 	Matrix<int, 1, 5> m{0, 1, 2, 3, 4};
@@ -347,6 +393,7 @@ TEST(TrxFileMemmap, __dichotomic_search)
 	EXPECT_EQ(result6, -1);
 }
 
+// Mirrors trx/tests/test_memmap.py::test__create_memmap (create path).
 TEST(TrxFileMemmap, __create_memmap)
 {
 
@@ -379,6 +426,7 @@ TEST(TrxFileMemmap, __create_memmap)
 	fs::remove_all(dir, ec);
 }
 
+// Mirrors trx/tests/test_memmap.py::test__create_memmap (non-create path).
 TEST(TrxFileMemmap, __create_memmap_empty)
 {
 	fs::path dir = make_temp_test_dir("trx_memmap_empty");
@@ -396,6 +444,7 @@ TEST(TrxFileMemmap, __create_memmap_empty)
 	fs::remove_all(dir, ec);
 }
 
+// validates header.json parsing in C++.
 TEST(TrxFileMemmap, load_header)
 {
 	const auto &fixture = get_fixture();
@@ -425,6 +474,7 @@ TEST(TrxFileMemmap, load_header)
 // {
 // }
 
+// Mirrors trx/tests/test_memmap.py::test_load (small.trx via zip path).
 TEST(TrxFileMemmap, load_zip)
 {
 	const auto &fixture = get_fixture();
@@ -433,6 +483,30 @@ TEST(TrxFileMemmap, load_zip)
 	delete trx;
 }
 
+// Mirrors trx/tests/test_memmap.py::test_load for small.trx and small_compressed.trx.
+TEST(TrxFileMemmap, load_zip_test_data)
+{
+	const auto root = get_test_data_root();
+	if (root.empty())
+	{
+		GTEST_SKIP() << "TRX_TEST_DATA_DIR not set";
+	}
+	const auto memmap_dir = resolve_memmap_test_data_dir(root);
+
+	const fs::path small_trx = memmap_dir / "small.trx";
+	ASSERT_TRUE(fs::exists(small_trx));
+	trxmmap::TrxFile<half> *trx_small = trxmmap::load_from_zip<half>(small_trx.string());
+	EXPECT_GT(trx_small->streamlines->_data.size(), 0);
+	delete trx_small;
+
+	const fs::path small_compressed = memmap_dir / "small_compressed.trx";
+	ASSERT_TRUE(fs::exists(small_compressed));
+	trxmmap::TrxFile<half> *trx_compressed = trxmmap::load_from_zip<half>(small_compressed.string());
+	EXPECT_GT(trx_compressed->streamlines->_data.size(), 0);
+	delete trx_compressed;
+}
+
+// Mirrors trx/tests/test_memmap.py::test_load (small_fldr.trx via directory path).
 TEST(TrxFileMemmap, load_directory)
 {
 	const auto &fixture = get_fixture();
@@ -441,6 +515,38 @@ TEST(TrxFileMemmap, load_directory)
 	delete trx;
 }
 
+// Mirrors trx/tests/test_memmap.py::test_load_directory.
+TEST(TrxFileMemmap, load_directory_test_data)
+{
+	const auto root = get_test_data_root();
+	if (root.empty())
+	{
+		GTEST_SKIP() << "TRX_TEST_DATA_DIR not set";
+	}
+	const auto memmap_dir = resolve_memmap_test_data_dir(root);
+
+	const fs::path small_dir = memmap_dir / "small_fldr.trx";
+	ASSERT_TRUE(fs::exists(small_dir));
+	trxmmap::TrxFile<half> *trx = trxmmap::load_from_directory<half>(small_dir.string());
+	EXPECT_GT(trx->streamlines->_data.size(), 0);
+	delete trx;
+}
+
+// Mirrors trx/tests/test_memmap.py::test_load with missing path raising.
+TEST(TrxFileMemmap, load_missing_trx_throws)
+{
+	const auto root = get_test_data_root();
+	if (root.empty())
+	{
+		GTEST_SKIP() << "TRX_TEST_DATA_DIR not set";
+	}
+	const auto memmap_dir = resolve_memmap_test_data_dir(root);
+
+	const fs::path missing_trx = memmap_dir / "dontexist.trx";
+	EXPECT_THROW(trxmmap::load_from_zip<half>(missing_trx.string()), std::runtime_error);
+}
+
+// validates C++ TrxFile initialization.
 TEST(TrxFileMemmap, TrxFile)
 {
 	trxmmap::TrxFile<half> *trx = new TrxFile<half>();
@@ -488,6 +594,7 @@ TEST(TrxFileMemmap, TrxFile)
 	delete trx_init;
 }
 
+// validates C++ deepcopy.
 TEST(TrxFileMemmap, deepcopy)
 {
 	const auto &fixture = get_fixture();
@@ -502,6 +609,7 @@ TEST(TrxFileMemmap, deepcopy)
 	delete copy;
 }
 
+// Mirrors trx/tests/test_memmap.py::test_resize.
 TEST(TrxFileMemmap, resize)
 {
 	const auto &fixture = get_fixture();
@@ -510,6 +618,7 @@ TEST(TrxFileMemmap, resize)
 	trx->resize(10);
 	delete trx;
 }
+// exercises save paths in C++.
 TEST(TrxFileMemmap, save)
 {
 	const auto &fixture = get_fixture();

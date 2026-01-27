@@ -188,7 +188,7 @@ namespace trxmmap
 	}
 
 	const std::string SEPARATOR = "/";
-	const std::vector<std::string> dtypes({"float16", "bit", "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "float32", "float64"});
+	const std::vector<std::string> dtypes({"float16", "bit", "uint8", "uint16", "ushort", "uint32", "uint64", "int8", "int16", "int32", "int64", "float32", "float64"});
 
 	template <typename DT>
 	struct ArraySequence

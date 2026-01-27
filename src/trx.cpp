@@ -129,41 +129,30 @@ bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent)
 	// TODO: check if there's a better way
 	int _sizeof_dtype(std::string dtype)
 	{
-		// TODO: make dtypes enum??
-		auto it = std::find(dtypes.begin(), dtypes.end(), dtype);
-		int index = 0;
-		if (it != dtypes.end())
-		{
-			index = static_cast<int>(std::distance(dtypes.begin(), it));
-		}
-
-		switch (index)
-		{
-		case 1:
+		if (dtype == "bit")
 			return 1;
-		case 2:
+		if (dtype == "uint8")
 			return sizeof(uint8_t);
-		case 3:
+	// Treat "ushort" as an alias of uint16 for cross-platform consistency.
+	if (dtype == "uint16" || dtype == "ushort")
 			return sizeof(uint16_t);
-		case 4:
+		if (dtype == "uint32")
 			return sizeof(uint32_t);
-		case 5:
+		if (dtype == "uint64")
 			return sizeof(uint64_t);
-		case 6:
+		if (dtype == "int8")
 			return sizeof(int8_t);
-		case 7:
+		if (dtype == "int16")
 			return sizeof(int16_t);
-		case 8:
+		if (dtype == "int32")
 			return sizeof(int32_t);
-		case 9:
+		if (dtype == "int64")
 			return sizeof(int64_t);
-		case 10:
+		if (dtype == "float32")
 			return sizeof(float);
-		case 11:
+		if (dtype == "float64")
 			return sizeof(double);
-		default:
-			return sizeof(half); // setting this as default for now but a better solution is needed
-		}
+		return sizeof(half); // setting this as default for now but a better solution is needed
 	}
 
 	std::string _get_dtype(std::string dtype)
