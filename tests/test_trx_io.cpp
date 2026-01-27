@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
-#include <filesystem>
 #include <fstream>
 #include <random>
 #include <set>
@@ -249,6 +248,16 @@ TEST(TrxFileIo, load_rasmm)
 		trx->close();
 		delete trx;
 	}
+
+	std::string get_current_working_dir()
+	{
+		char buffer[PATH_MAX];
+		if (getcwd(buffer, sizeof(buffer)) == nullptr)
+		{
+			throw std::runtime_error("Failed to get current working directory");
+		}
+		return std::string(buffer);
+	}
 }
 
 TEST(TrxFileIo, multi_load_save_rasmm)
@@ -263,7 +272,7 @@ TEST(TrxFileIo, multi_load_save_rasmm)
 		fs::path tmp_dir = make_temp_test_dir("trx_gs");
 
 		trxmmap::TrxFile<float> *trx = load_trx<float>(input);
-		const std::string input_str = input.string();
+		const std::string input_str = normalize_path(input.string());
 		const std::string basename = trxmmap::get_base("/", input_str);
 		const std::string ext = trxmmap::get_ext(input_str);
 		const std::string basename_no_ext =
@@ -380,7 +389,7 @@ TEST(TrxFileIo, change_tmp_dir)
 		trxmmap::TrxFile<float> *trx = load_trx<float>(input);
 		fs::path tmp_dir = trx->_uncompressed_folder_handle;
 		fs::path parent = tmp_dir.parent_path();
-		fs::path expected = fs::path(std::filesystem::current_path().string());
+		fs::path expected = fs::path(get_current_working_dir());
 		std::string parent_norm = normalize_path(parent.lexically_normal());
 		if (parent_norm == ".")
 		{
