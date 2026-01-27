@@ -231,6 +231,16 @@ namespace
 		bool had_value_ = false;
 		std::string previous_;
 	};
+
+	std::string get_current_working_dir()
+	{
+		char buffer[PATH_MAX];
+		if (getcwd(buffer, sizeof(buffer)) == nullptr)
+		{
+			throw std::runtime_error("Failed to get current working directory");
+		}
+		return std::string(buffer);
+	}
 }
 
 TEST(TrxFileIo, load_rasmm)
@@ -247,16 +257,6 @@ TEST(TrxFileIo, load_rasmm)
 		expect_allclose(actual, coords);
 		trx->close();
 		delete trx;
-	}
-
-	std::string get_current_working_dir()
-	{
-		char buffer[PATH_MAX];
-		if (getcwd(buffer, sizeof(buffer)) == nullptr)
-		{
-			throw std::runtime_error("Failed to get current working directory");
-		}
-		return std::string(buffer);
 	}
 }
 
