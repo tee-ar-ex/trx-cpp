@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <trx/filesystem.h>
 
+#include <algorithm>
 #include <fstream>
 #include <random>
 #include <string>

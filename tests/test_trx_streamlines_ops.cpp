@@ -68,7 +68,10 @@ class StreamlinesOpsIntersectionTest : public ::testing::TestWithParam<std::tupl
 // Intersection keeps only streamlines shared between lists at given precision.
 TEST_P(StreamlinesOpsIntersectionTest, Intersection)
 {
-	const auto [precision, noise, expected] = GetParam();
+	const auto params = GetParam();
+	const int precision = std::get<0>(params);
+	const float noise = std::get<1>(params);
+	const std::vector<uint32_t> expected = std::get<2>(params);
 	const Streamline s1 = make_streamline_ones();
 	const Streamline s2 = make_streamline_arange();
 	const std::vector<Streamline> streamlines_ori = {s1, s2};
@@ -100,7 +103,10 @@ class StreamlinesOpsUnionTest : public ::testing::TestWithParam<std::tuple<int, 
 // Union keeps all streamlines across lists at given precision.
 TEST_P(StreamlinesOpsUnionTest, Union)
 {
-	const auto [precision, noise, expected] = GetParam();
+	const auto params = GetParam();
+	const int precision = std::get<0>(params);
+	const float noise = std::get<1>(params);
+	const size_t expected = std::get<2>(params);
 	const Streamline s1 = make_streamline_ones();
 	const Streamline s2 = make_streamline_arange();
 	const std::vector<Streamline> streamlines_ori = {s1, s2};
@@ -131,7 +137,10 @@ class StreamlinesOpsDifferenceTest : public ::testing::TestWithParam<std::tuple<
 // Difference removes streamlines from the second list at given precision.
 TEST_P(StreamlinesOpsDifferenceTest, Difference)
 {
-	const auto [precision, noise, expected] = GetParam();
+	const auto params = GetParam();
+	const int precision = std::get<0>(params);
+	const float noise = std::get<1>(params);
+	const size_t expected = std::get<2>(params);
 	const Streamline s1 = make_streamline_ones();
 	const Streamline s2 = make_streamline_arange();
 	const std::vector<Streamline> streamlines_ori = {s1, s2};
