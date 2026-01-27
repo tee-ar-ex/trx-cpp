@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  pull_request:
+    paths:
+      - "**"
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install libzip nlohmann-json eigen spdlog googletest
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          git clone https://github.com/microsoft/vcpkg "$env:GITHUB_WORKSPACE\vcpkg"
+          & "$env:GITHUB_WORKSPACE\vcpkg\bootstrap-vcpkg.bat"
+          & "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe" install `
+            libzip `
+            nlohmann-json `
+            eigen3 `
+            spdlog `
+            gtest `
+            --triplet x64-windows
+
+      - name: Configure (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          BREW_PREFIX="$(brew --prefix)"
+          cmake -S . -B build \
+            -DTRX_USE_CONAN=OFF \
+            -DTRX_BUILD_TESTS=ON \
+            -DCMAKE_PREFIX_PATH="${BREW_PREFIX}"
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: >
+          cmake -S . -B build
+          -DTRX_USE_CONAN=OFF
+          -DTRX_BUILD_TESTS=ON
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -C Release

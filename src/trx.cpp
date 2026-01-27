@@ -78,7 +78,7 @@ namespace trxmmap
 				}
 				else
 				{
-					std::invalid_argument("Wrong size of datatype");
+					throw std::invalid_argument("Wrong size of datatype");
 				}
 			}
 		}
@@ -134,7 +134,7 @@ bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent)
 		int index = 0;
 		if (it != dtypes.end())
 		{
-			index = std::distance(dtypes.begin(), it);
+			index = static_cast<int>(std::distance(dtypes.begin(), it));
 		}
 
 		switch (index)
@@ -210,7 +210,7 @@ bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent)
 		size_t num_splits = std::count(base.begin(), base.end(), '.');
 		int dim;
 
-		if (num_splits != 1 and num_splits != 2)
+		if (num_splits != 1 && num_splits != 2)
 		{
 			throw std::invalid_argument("Invalid filename");
 		}
@@ -225,7 +225,7 @@ bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent)
 		}
 		else
 		{
-			int pos = base.find_last_of(".");
+			size_t pos = base.find_last_of(".");
 			dim = std::stoi(base.substr(pos + 1, base.size()));
 			base = base.substr(0, pos);
 		}
@@ -292,7 +292,7 @@ bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent)
 		std::ofstream file(path);
 		if (file.is_open())
 		{
-			std::string s(size, float(0));
+			std::string s(size, '\0');
 			file << s;
 			file.flush();
 			file.close();
@@ -425,12 +425,12 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 		int src_fd, dst_fd, n, err;
 		unsigned char buffer[4096];
 
-		src_fd = open(src, O_RDONLY);
-		dst_fd = open(dst, O_CREAT | O_WRONLY, 0666); // maybe keep original permissions?
+		src_fd = trx_open(src, O_RDONLY);
+		dst_fd = trx_open(dst, O_CREAT | O_WRONLY, 0666); // maybe keep original permissions?
 
 		while (1)
 		{
-			err = read(src_fd, buffer, 4096);
+			err = trx_read(src_fd, buffer, 4096);
 			if (err == -1)
 			{
 				printf("Error reading file.\n");
@@ -441,15 +441,15 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 			if (n == 0)
 				break;
 
-			err = write(dst_fd, buffer, n);
+			err = trx_write(dst_fd, buffer, n);
 			if (err == -1)
 			{
 				printf("Error writing to file.\n");
 				exit(1);
 			}
 		}
-		close(src_fd);
-		close(dst_fd);
+		trx_close(src_fd);
+		trx_close(dst_fd);
 	}
 	int rm_dir(const char *d)
 	{
@@ -544,12 +544,24 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 	std::string tmpl_str = tmpl.string();
 	std::vector<char> buf(tmpl_str.begin(), tmpl_str.end());
 	buf.push_back('\0');
+#if defined(_WIN32) || defined(_WIN64)
+	if (_mktemp_s(buf.data(), buf.size()) != 0)
+	{
+		throw std::runtime_error("Failed to create temporary directory");
+	}
+	if (_mkdir(buf.data()) != 0)
+	{
+		throw std::runtime_error("Failed to create temporary directory");
+	}
+	return std::string(buf.data());
+#else
 	char *dirname = mkdtemp(buf.data());
 	if (dirname == nullptr)
 	{
 		throw std::runtime_error("Failed to create temporary directory");
 	}
 	return std::string(dirname);
+#endif
 	}
 
 	std::string extract_zip_to_directory(zip_t *zfolder)

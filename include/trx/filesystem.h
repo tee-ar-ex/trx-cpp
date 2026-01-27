@@ -10,92 +10,49 @@
 #include <cstdint>
 #include <cctype>
 #include <stdexcept>
-
-#if defined(TRX_USE_BOOST_FILESYSTEM)
-#include <boost/filesystem.hpp>
-#include <boost/system/error_code.hpp>
+#include <sys/stat.h>
+#include <trx/dirent.h>
+#if defined(_WIN32) || defined(_WIN64)
+#include <direct.h>
+#include <windows.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <io.h>
+#ifndef S_ISREG
+#define S_ISREG(m) (((m)&_S_IFREG) == _S_IFREG)
+#endif
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m)&_S_IFDIR) == _S_IFDIR)
+#endif
+#else
+#include <unistd.h>
+#endif
 
 namespace trx
 {
   namespace fs
   {
-    using boost::filesystem::path;
-
-    inline void _assign_error(std::error_code &out, const boost::system::error_code &in)
+    enum class perms : unsigned
     {
-      if (in)
-        out = std::error_code(in.value(), std::generic_category());
-      else
-        out.clear();
-    }
+      none = 0,
+      owner_read = 0400,
+      owner_write = 0200,
+      owner_exec = 0100,
+      group_read = 0040,
+      group_write = 0020,
+      group_exec = 0010,
+      others_read = 0004,
+      others_write = 0002,
+      others_exec = 0001,
+      all = 0777
+    };
 
-    inline bool exists(const path &p, std::error_code &ec)
+    inline unsigned _perm_mask(perms p)
     {
-      boost::system::error_code bec;
-      bool ok = boost::filesystem::exists(p, bec);
-      _assign_error(ec, bec);
-      return ok;
-    }
-
-    inline bool exists(const path &p)
-    {
-      boost::system::error_code bec;
-      bool ok = boost::filesystem::exists(p, bec);
-      if (bec)
-        throw std::runtime_error(bec.message());
-      return ok;
-    }
-
-    inline bool is_directory(const path &p, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      bool ok = boost::filesystem::is_directory(p, bec);
-      _assign_error(ec, bec);
-      return ok;
-    }
-
-    inline bool create_directory(const path &p, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      bool ok = boost::filesystem::create_directory(p, bec);
-      _assign_error(ec, bec);
-      return ok;
-    }
-
-    inline bool create_directories(const path &p, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      bool ok = boost::filesystem::create_directories(p, bec);
-      _assign_error(ec, bec);
-      return ok;
-    }
-
-    inline path temp_directory_path(std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      path p = boost::filesystem::temp_directory_path(bec);
-      _assign_error(ec, bec);
-      return p;
-    }
-
-    inline std::uintmax_t remove_all(const path &p, std::error_code &ec)
-    {
-      boost::system::error_code bec;
-      std::uintmax_t count = boost::filesystem::remove_all(p, bec);
-      _assign_error(ec, bec);
-      return count;
+      return static_cast<unsigned>(p);
     }
   } // namespace fs
 } // namespace trx
-
-#else
-
-#include <sys/stat.h>
-#include <dirent.h>
-#include <unistd.h>
-#if defined(_WIN32) || defined(_WIN64)
-#include <direct.h>
-#endif
 
 namespace trx
 {
@@ -471,9 +428,157 @@ namespace trx
       ec.clear();
       return count;
     }
+
+    inline std::uintmax_t file_size(const path &p, std::error_code &ec)
+    {
+#if defined(_WIN32) || defined(_WIN64)
+      struct _stat buf;
+      if (_stat(p.c_str(), &buf) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return static_cast<std::uintmax_t>(-1);
+      }
+#else
+      struct stat buf;
+      if (stat(p.c_str(), &buf) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return static_cast<std::uintmax_t>(-1);
+      }
+#endif
+      if (!S_ISREG(buf.st_mode))
+      {
+        if (S_ISDIR(buf.st_mode))
+          ec = std::make_error_code(std::errc::is_a_directory);
+        else
+          ec = std::make_error_code(std::errc::invalid_argument);
+        return static_cast<std::uintmax_t>(-1);
+      }
+      ec.clear();
+      return static_cast<std::uintmax_t>(buf.st_size);
+    }
+
+    inline std::uintmax_t file_size(const path &p)
+    {
+      std::error_code ec;
+      std::uintmax_t size = file_size(p, ec);
+      if (ec)
+        throw std::runtime_error(ec.message());
+      return size;
+    }
+
+    inline bool is_symlink(const path &p, std::error_code &ec)
+    {
+#if defined(_WIN32) || defined(_WIN64)
+      DWORD attrs = GetFileAttributesA(p.c_str());
+      if (attrs == INVALID_FILE_ATTRIBUTES)
+      {
+        ec = std::error_code(GetLastError(), std::system_category());
+        return false;
+      }
+      ec.clear();
+      return (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+#else
+      struct stat buf;
+      if (lstat(p.c_str(), &buf) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+      }
+      ec.clear();
+      return S_ISLNK(buf.st_mode);
+#endif
+    }
+
+    inline bool is_symlink(const path &p)
+    {
+      std::error_code ec;
+      bool ok = is_symlink(p, ec);
+      if (ec)
+        throw std::runtime_error(ec.message());
+      return ok;
+    }
+
+    inline bool create_symlink(const path &target, const path &link, std::error_code &ec)
+    {
+#if defined(_WIN32) || defined(_WIN64)
+      DWORD flags = 0;
+      struct _stat buf;
+      if (_stat(target.c_str(), &buf) == 0 && (buf.st_mode & _S_IFDIR))
+        flags |= SYMBOLIC_LINK_FLAG_DIRECTORY;
+      if (CreateSymbolicLinkA(link.c_str(), target.c_str(), flags) == 0)
+      {
+        ec = std::error_code(GetLastError(), std::system_category());
+        return false;
+      }
+      ec.clear();
+      return true;
+#else
+      if (symlink(target.c_str(), link.c_str()) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+      }
+      ec.clear();
+      return true;
+#endif
+    }
+
+    inline void permissions(const path &p, perms prms, std::error_code &ec)
+    {
+#if defined(_WIN32) || defined(_WIN64)
+      int mode = _S_IREAD;
+      if ((_perm_mask(prms) & _perm_mask(perms::owner_write)) != 0)
+        mode |= _S_IWRITE;
+      if (_chmod(p.c_str(), mode) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return;
+      }
+      ec.clear();
+#else
+      mode_t mode = static_cast<mode_t>(_perm_mask(prms) & _perm_mask(perms::all));
+      if (chmod(p.c_str(), mode) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return;
+      }
+      ec.clear();
+#endif
+    }
+
+    inline perms permissions(const path &p, std::error_code &ec)
+    {
+#if defined(_WIN32) || defined(_WIN64)
+      struct _stat buf;
+      if (_stat(p.c_str(), &buf) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return perms::none;
+      }
+      ec.clear();
+      return static_cast<perms>(buf.st_mode & 0777);
+#else
+      struct stat buf;
+      if (stat(p.c_str(), &buf) != 0)
+      {
+        ec = std::error_code(errno, std::generic_category());
+        return perms::none;
+      }
+      ec.clear();
+      return static_cast<perms>(buf.st_mode & 0777);
+#endif
+    }
+
+    inline perms permissions(const path &p)
+    {
+      std::error_code ec;
+      perms out = permissions(p, ec);
+      if (ec)
+        throw std::runtime_error(ec.message());
+      return out;
+    }
   } // namespace fs
 } // namespace trx
-
-#endif
 
 #endif

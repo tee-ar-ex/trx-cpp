@@ -6,13 +6,13 @@
 #include <zip.h>
 #include <string.h>
 #include <vector>
-#include <dirent.h>
 #include <nlohmann/json.hpp>
 #include <algorithm>
-#include <variant>
+#include <cstdint>
+#include <type_traits>
 #include <math.h>
-#include <libgen.h>
 #include <Eigen/Core>
+#include <trx/compat.h>
 #include <trx/filesystem.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -31,6 +31,161 @@ using json = nlohmann::json;
 
 namespace trxmmap
 {
+	inline std::string path_basename(const std::string &path)
+	{
+		if (path.empty())
+			return "";
+		size_t end = path.find_last_not_of("/\\");
+		if (end == std::string::npos)
+			return "";
+		size_t start = path.find_last_of("/\\", end);
+		if (start == std::string::npos)
+			return path.substr(0, end + 1);
+		return path.substr(start + 1, end - start);
+	}
+
+	inline std::string path_dirname(const std::string &path)
+	{
+		if (path.empty())
+			return ".";
+		size_t end = path.find_last_not_of("/\\");
+		if (end == std::string::npos)
+			return ".";
+		size_t sep = path.find_last_of("/\\", end);
+		if (sep == std::string::npos)
+			return ".";
+		if (sep == 0)
+			return std::string(1, path[0]);
+#if defined(_WIN32) || defined(_WIN64)
+		if (sep == 2 && path.size() >= 3 && path[1] == ':')
+			return path.substr(0, 3);
+#endif
+		return path.substr(0, sep);
+	}
+
+	template <typename T>
+	struct DTypeName
+	{
+		static const char *value()
+		{
+			return "float16";
+		}
+	};
+
+	template <>
+	struct DTypeName<Eigen::half>
+	{
+		static const char *value()
+		{
+			return "float16";
+		}
+	};
+
+	template <>
+	struct DTypeName<float>
+	{
+		static const char *value()
+		{
+			return "float32";
+		}
+	};
+
+	template <>
+	struct DTypeName<double>
+	{
+		static const char *value()
+		{
+			return "float64";
+		}
+	};
+
+	template <>
+	struct DTypeName<int8_t>
+	{
+		static const char *value()
+		{
+			return "int8";
+		}
+	};
+
+	template <>
+	struct DTypeName<int16_t>
+	{
+		static const char *value()
+		{
+			return "int16";
+		}
+	};
+
+	template <>
+	struct DTypeName<int32_t>
+	{
+		static const char *value()
+		{
+			return "int32";
+		}
+	};
+
+	template <>
+	struct DTypeName<int64_t>
+	{
+		static const char *value()
+		{
+			return "int64";
+		}
+	};
+
+	template <>
+	struct DTypeName<uint8_t>
+	{
+		static const char *value()
+		{
+			return "uint8";
+		}
+	};
+
+	template <>
+	struct DTypeName<uint16_t>
+	{
+		static const char *value()
+		{
+			return "uint16";
+		}
+	};
+
+	template <>
+	struct DTypeName<uint32_t>
+	{
+		static const char *value()
+		{
+			return "uint32";
+		}
+	};
+
+	template <>
+	struct DTypeName<uint64_t>
+	{
+		static const char *value()
+		{
+			return "uint64";
+		}
+	};
+
+	template <>
+	struct DTypeName<bool>
+	{
+		static const char *value()
+		{
+			return "bit";
+		}
+	};
+
+	template <typename T>
+	inline std::string dtype_from_scalar()
+	{
+		typedef typename std::remove_cv<typename std::remove_reference<T>::type>::type CleanT;
+		return DTypeName<CleanT>::value();
+	}
 
 	const std::string SEPARATOR = "/";
 	const std::vector<std::string> dtypes({"float16", "bit", "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "float32", "float64"});
@@ -66,7 +221,7 @@ namespace trxmmap
 		json header;
 		ArraySequence<DT> *streamlines;
 
-		std::map<std::string, MMappedMatrix<uint> *> groups; // vector of indices
+		std::map<std::string, MMappedMatrix<uint32_t> *> groups; // vector of indices
 
 		// int or float --check python floa<t precision (singletons)
 		std::map<std::string, MMappedMatrix<DT> *> data_per_streamline;

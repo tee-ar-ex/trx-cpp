@@ -50,12 +50,9 @@ std::string _generate_filename_from_data(const MatrixBase<DT> &arr, std::string 
 		base = base.substr(0, base.length() - ext.length() - 1);
 	}
 
-	// A very backwards way of getting the datatype
-	std::string eigen_dt = typeid(arr.array().matrix().data()).name();
-	std::string dt = _get_dtype(eigen_dt);
+	std::string dt = dtype_from_scalar<typename DT::Scalar>();
 
-	int n_rows = arr.rows();
-	int n_cols = arr.cols();
+	Eigen::Index n_cols = arr.cols();
 
 	std::string new_filename;
 	if (n_cols == 1)
@@ -64,7 +61,7 @@ std::string _generate_filename_from_data(const MatrixBase<DT> &arr, std::string 
 	}
 	else
 	{
-		new_filename = base + "." + std::to_string(n_cols) + "." + dt;
+		new_filename = base + "." + std::to_string(static_cast<long long>(n_cols)) + "." + dt;
 	}
 
 	return new_filename;
@@ -94,7 +91,7 @@ int _dichotomic_search(const MatrixBase<DT> &x, int l_bound, int r_bound)
 	if (l_bound == -1 && r_bound == -1)
 	{
 		l_bound = 0;
-		r_bound = x.size() - 1;
+		r_bound = static_cast<int>(x.size()) - 1;
 	}
 
 	if (l_bound == r_bound)
@@ -222,15 +219,15 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 	{
 		trx->header["VOXEL_TO_RASMM"] = init_as->header["VOXEL_TO_RASMM"];
 		trx->header["DIMENSIONS"] = init_as->header["DIMENSIONS"];
-		positions_dtype = _get_dtype(typeid(init_as->streamlines->_data).name());
-		offsets_dtype = _get_dtype(typeid(init_as->streamlines->_offsets).name());
-		lengths_dtype = _get_dtype(typeid(init_as->streamlines->_lengths).name());
+		positions_dtype = dtype_from_scalar<DT>();
+		offsets_dtype = dtype_from_scalar<uint64_t>();
+		lengths_dtype = dtype_from_scalar<uint32_t>();
 	}
 	else
 	{
-		positions_dtype = _get_dtype(typeid(half).name());
-		offsets_dtype = _get_dtype(typeid(uint64_t).name());
-		lengths_dtype = _get_dtype(typeid(uint32_t).name());
+		positions_dtype = dtype_from_scalar<half>();
+		offsets_dtype = dtype_from_scalar<uint64_t>();
+		lengths_dtype = dtype_from_scalar<uint32_t>();
 	}
 	spdlog::debug("Initializing positions with dtype: {}", positions_dtype);
 	spdlog::debug("Initializing offsets with dtype: {}", offsets_dtype);
@@ -288,7 +285,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 		for (auto const &x : init_as->data_per_vertex)
 		{
 			int rows, cols;
-			std::string dpv_dtype = _get_dtype(typeid(init_as->data_per_vertex.find(x.first)->second->_data).name());
+			std::string dpv_dtype = dtype_from_scalar<DT>();
 			Map<Matrix<DT, Dynamic, Dynamic, RowMajor>> tmp_as = init_as->data_per_vertex.find(x.first)->second->_data;
 
 			std::string dpv_filename;
@@ -330,7 +327,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 
 		for (auto const &x : init_as->data_per_streamline)
 		{
-			std::string dps_dtype = _get_dtype(typeid(init_as->data_per_streamline.find(x.first)->second->_matrix).name());
+			std::string dps_dtype = dtype_from_scalar<DT>();
 			int rows, cols;
 			Map<Matrix<DT, Dynamic, Dynamic>> tmp_as = init_as->data_per_streamline.find(x.first)->second->_matrix;
 
@@ -399,7 +396,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			filename = elem_filename;
 		}
 
-		std::string folder = std::string(dirname(const_cast<char *>(strdup(elem_filename.c_str()))));
+		std::string folder = path_dirname(elem_filename);
 
 		// _split_ext_with_dimensionality
 		std::tuple<std::string, int, std::string> base_tuple = _split_ext_with_dimensionality(elem_filename);
@@ -575,8 +572,8 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 				shape = std::make_tuple(1, size);
 			}
 
-			std::string data_name = std::string(basename(const_cast<char *>(base.c_str())));
-			std::string sub_folder = std::string(basename(const_cast<char *>(folder.c_str())));
+			std::string data_name = path_basename(base);
+			std::string sub_folder = path_basename(folder);
 
 			trx->data_per_group[sub_folder][data_name] = new MMappedMatrix<DT>();
 			trx->data_per_group[sub_folder][data_name]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
@@ -930,7 +927,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 
 		for (auto const &x : this->groups)
 		{
-			std::string group_dtype = _get_dtype(typeid(x.second->_matrix).name());
+			std::string group_dtype = dtype_from_scalar<uint32_t>();
 			std::string group_name = group_dir + x.first + "." + group_dtype;
 
 			int ori_length = this->groups[x.first]->_matrix.size();
@@ -1006,7 +1003,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 
 			for (auto const &y : this->data_per_group[x.first])
 			{
-				std::string dpg_dtype = _get_dtype(typeid(this->data_per_group[x.first][y.first]->_matrix).name());
+				std::string dpg_dtype = dtype_from_scalar<DT>();
 				std::string dpg_filename = dpg_subdir + SEPARATOR + y.first;
 				dpg_filename = _generate_filename_from_data(this->data_per_group[x.first][y.first]->_matrix, dpg_filename);
 
