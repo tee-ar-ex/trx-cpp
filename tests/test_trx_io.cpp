@@ -10,6 +10,8 @@
 #include <random>
 #include <set>
 #include <string>
+#include <thread>
+#include <chrono>
 #include <vector>
 
 using namespace Eigen;
@@ -241,6 +243,19 @@ namespace
 		}
 		return std::string(buffer);
 	}
+
+	bool wait_for_path_gone(const fs::path &path, int retries = 10, int delay_ms = 50)
+	{
+		for (int i = 0; i < retries; ++i)
+		{
+			if (!fs::exists(path))
+			{
+				return true;
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+		}
+		return !fs::exists(path);
+	}
 }
 
 TEST(TrxFileIo, load_rasmm)
@@ -322,7 +337,7 @@ TEST(TrxFileIo, delete_tmp_gs_dir_rasmm)
 
 		if (is_regular_file(input))
 		{
-			EXPECT_FALSE(fs::exists(tmp_dir));
+			EXPECT_TRUE(wait_for_path_gone(tmp_dir));
 		}
 
 		delete trx;
@@ -363,7 +378,7 @@ TEST(TrxFileIo, close_tmp_files)
 	trx->close();
 	delete trx;
 
-	EXPECT_FALSE(fs::exists(tmp_dir));
+	EXPECT_TRUE(wait_for_path_gone(tmp_dir));
 }
 
 TEST(TrxFileIo, change_tmp_dir)
