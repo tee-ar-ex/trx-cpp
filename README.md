@@ -36,13 +36,7 @@ ctest --test-dir build --output-on-failure
 
 ### mio include path
 
-`mio` is vendored under `third_party/mio` and headers are copied into
-`include/mio` for downstream builds. If you want to use a system-provided `mio`,
-point CMake at it:
-
-```
-cmake -S . -B build -DMIO_INCLUDE_DIR=/path/to/mio/include
-```
+`mio` is vendored under `third_party/mio/include` and used directly from there.
 
 ## Third-party notices
 

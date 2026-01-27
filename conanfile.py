@@ -29,6 +29,7 @@ class TrxCppConan(ConanFile):
         "CMakeLists.txt",
         "src/*",
         "include/*",
+        "third_party/*",
         "cmake/*",
         "tests/*",
     )
@@ -51,20 +52,8 @@ class TrxCppConan(ConanFile):
     def layout(self):
         cmake_layout(self)
 
-    def source(self):
-        # Fetch header-only mio directly to avoid external package availability issues.
-        # Using the upstream main branch archive to ensure availability.
-        get(
-            self,
-            url="https://github.com/mandreyel/mio/archive/refs/heads/master.zip",
-            strip_root=True,
-            destination="mio",
-        )
-
     def generate(self):
         tc = CMakeToolchain(self)
-        mio_include = os.path.join(self.source_folder, "mio", "include")
-        tc.variables["MIO_INCLUDE_DIR"] = mio_include
         tc.variables["CMAKE_CXX_STANDARD"] = 11
         tc.variables["CMAKE_CXX_STANDARD_REQUIRED"] = "ON"
         tc.variables["CMAKE_CXX_EXTENSIONS"] = "OFF"
@@ -97,7 +86,7 @@ class TrxCppConan(ConanFile):
             eigen_include = os.path.join(eigen_dep.package_folder, "include", "eigen3")
             copy(self, "Eigen/*", src=eigen_include, dst=os.path.join(self.package_folder, "include"))
 
-        mio_include = os.path.join(self.source_folder, "mio", "include")
+        mio_include = os.path.join(self.source_folder, "third_party", "mio", "include")
         copy(self, "mio/*", src=mio_include, dst=os.path.join(self.package_folder, "include"))
 
         spdlog_dep = self.dependencies.get("spdlog")

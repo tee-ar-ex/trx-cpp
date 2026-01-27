@@ -116,6 +116,7 @@ install(TARGETS trx
 )
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY third_party/mio/include/mio DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 install(EXPORT trx-cppTargets
     FILE trx-cppTargets.cmake
