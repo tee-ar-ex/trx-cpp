@@ -13,7 +13,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(TRX_USE_CONAN "Should Conan package manager be used?" ON)
-option(TRX_BUILD_TESTS "Build trx tests" ON)
+option(TRX_BUILD_TESTS "Build trx tests" OFF)
 
 if(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
