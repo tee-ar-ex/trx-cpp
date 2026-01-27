@@ -54,8 +54,8 @@ std::string _generate_filename_from_data(const MatrixBase<DT> &arr, std::string 
 	std::string eigen_dt = typeid(arr.array().matrix().data()).name();
 	std::string dt = _get_dtype(eigen_dt);
 
-	int n_rows = arr.rows();
-	int n_cols = arr.cols();
+	Eigen::Index n_rows = arr.rows();
+	Eigen::Index n_cols = arr.cols();
 
 	std::string new_filename;
 	if (n_cols == 1)
@@ -64,7 +64,7 @@ std::string _generate_filename_from_data(const MatrixBase<DT> &arr, std::string 
 	}
 	else
 	{
-		new_filename = base + "." + std::to_string(n_cols) + "." + dt;
+		new_filename = base + "." + std::to_string(static_cast<long long>(n_cols)) + "." + dt;
 	}
 
 	return new_filename;
@@ -94,7 +94,7 @@ int _dichotomic_search(const MatrixBase<DT> &x, int l_bound, int r_bound)
 	if (l_bound == -1 && r_bound == -1)
 	{
 		l_bound = 0;
-		r_bound = x.size() - 1;
+		r_bound = static_cast<int>(x.size()) - 1;
 	}
 
 	if (l_bound == r_bound)

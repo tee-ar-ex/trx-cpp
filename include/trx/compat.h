@@ -9,10 +9,17 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <limits.h>
 #include <trx/dirent.h>
 
 #ifndef S_IRWXU
 #define S_IRWXU (_S_IREAD | _S_IWRITE)
+#endif
+#ifndef PATH_MAX
+#define PATH_MAX MAX_PATH
+#endif
+#ifndef S_ISDIR
+#define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
 #endif
 
 inline int trx_mkdir(const char *path, int)
@@ -50,9 +57,15 @@ inline int trx_close(int fd)
 	return _close(fd);
 }
 
+inline char *trx_realpath(const char *path, char *resolved)
+{
+	return _fullpath(resolved, path, PATH_MAX);
+}
+
 #define mkdir(path, mode) trx_mkdir(path, mode)
 #define unlink(path) trx_unlink(path)
 #define rmdir(path) trx_rmdir(path)
+#define realpath(path, resolved) trx_realpath(path, resolved)
 
 #else
 #include <dirent.h>
