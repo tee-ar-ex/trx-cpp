@@ -50,7 +50,7 @@ std::string _generate_filename_from_data(const MatrixBase<DT> &arr, std::string 
 		base = base.substr(0, base.length() - ext.length() - 1);
 	}
 
-	std::string dt = dtype_from_scalar<typename Derived::Scalar>();
+	std::string dt = dtype_from_scalar<typename DT::Scalar>();
 
 	Eigen::Index n_cols = arr.cols();
 
