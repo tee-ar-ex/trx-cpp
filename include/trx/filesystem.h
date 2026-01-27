@@ -18,6 +18,12 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <io.h>
+#ifndef S_ISREG
+#define S_ISREG(m) (((m)&_S_IFREG) == _S_IFREG)
+#endif
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m)&_S_IFDIR) == _S_IFDIR)
+#endif
 #else
 #include <unistd.h>
 #endif
