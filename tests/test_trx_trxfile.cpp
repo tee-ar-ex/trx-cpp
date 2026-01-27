@@ -20,38 +20,6 @@ namespace fs = trx::fs;
 
 namespace
 {
-	std::string get_test_data_root()
-	{
-		const char *env = std::getenv("TRX_TEST_DATA_DIR");
-		if (env == nullptr || std::string(env).empty())
-		{
-			throw std::runtime_error("TRX_TEST_DATA_DIR not set");
-		}
-		return std::string(env);
-	}
-
-	fs::path resolve_memmap_test_data_dir(const std::string &root_dir)
-	{
-		fs::path root(root_dir);
-		fs::path memmap_dir = root / "memmap_test_data";
-		if (fs::exists(memmap_dir))
-		{
-			return memmap_dir;
-		}
-		return root;
-	}
-
-	fs::path resolve_gold_standard_dir(const std::string &root_dir)
-	{
-		fs::path root(root_dir);
-		fs::path gs_dir = root / "gold_standard";
-		if (fs::exists(gs_dir))
-		{
-			return gs_dir;
-		}
-		return root;
-	}
-
 	template <typename DT>
 	trxmmap::TrxFile<DT> *load_trx_dir(const fs::path &path)
 	{
