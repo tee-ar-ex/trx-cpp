@@ -60,10 +60,6 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        boost:
-          - "True"
-          - "False"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -78,9 +74,9 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install "conan>=2.0,<3.0"
 
-      - name: Conan create (with tests, Boost ${{ matrix.boost }})
+      - name: Conan create (with tests)
         env:
           CONAN_HOME: ${{ runner.temp }}/.conan2
         run: |
           conan profile detect --force
-          conan create . --build=missing -o with_tests=True -o with_boost=${{ matrix.boost }} -s build_type=Release
+          conan create . --build=missing -o with_tests=True -s build_type=Release
