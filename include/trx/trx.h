@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cstdint>
+#include <type_traits>
 #include <math.h>
 #include <Eigen/Core>
 #include <trx/compat.h>
@@ -60,6 +61,130 @@ namespace trxmmap
 			return path.substr(0, 3);
 #endif
 		return path.substr(0, sep);
+	}
+
+	template <typename T>
+	struct DTypeName
+	{
+		static const char *value()
+		{
+			return "float16";
+		}
+	};
+
+	template <>
+	struct DTypeName<Eigen::half>
+	{
+		static const char *value()
+		{
+			return "float16";
+		}
+	};
+
+	template <>
+	struct DTypeName<float>
+	{
+		static const char *value()
+		{
+			return "float32";
+		}
+	};
+
+	template <>
+	struct DTypeName<double>
+	{
+		static const char *value()
+		{
+			return "float64";
+		}
+	};
+
+	template <>
+	struct DTypeName<int8_t>
+	{
+		static const char *value()
+		{
+			return "int8";
+		}
+	};
+
+	template <>
+	struct DTypeName<int16_t>
+	{
+		static const char *value()
+		{
+			return "int16";
+		}
+	};
+
+	template <>
+	struct DTypeName<int32_t>
+	{
+		static const char *value()
+		{
+			return "int32";
+		}
+	};
+
+	template <>
+	struct DTypeName<int64_t>
+	{
+		static const char *value()
+		{
+			return "int64";
+		}
+	};
+
+	template <>
+	struct DTypeName<uint8_t>
+	{
+		static const char *value()
+		{
+			return "uint8";
+		}
+	};
+
+	template <>
+	struct DTypeName<uint16_t>
+	{
+		static const char *value()
+		{
+			return "uint16";
+		}
+	};
+
+	template <>
+	struct DTypeName<uint32_t>
+	{
+		static const char *value()
+		{
+			return "uint32";
+		}
+	};
+
+	template <>
+	struct DTypeName<uint64_t>
+	{
+		static const char *value()
+		{
+			return "uint64";
+		}
+	};
+
+	template <>
+	struct DTypeName<bool>
+	{
+		static const char *value()
+		{
+			return "bit";
+		}
+	};
+
+	template <typename T>
+	inline std::string dtype_from_scalar()
+	{
+		typedef typename std::remove_cv<typename std::remove_reference<T>::type>::type CleanT;
+		return DTypeName<CleanT>::value();
 	}
 
 	const std::string SEPARATOR = "/";
