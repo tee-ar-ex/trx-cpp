@@ -14,7 +14,6 @@ Required:
 
 Optional:
 - GTest (for building tests)
-- Boost.Filesystem + Boost.System (optional filesystem shim)
 
 ## Build and Install
 
