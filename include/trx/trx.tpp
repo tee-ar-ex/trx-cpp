@@ -625,7 +625,8 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 template <typename DT>
 TrxFile<DT> *TrxFile<DT>::deepcopy()
 {
-	if (this->streamlines->_data.size() == 0 || this->streamlines->_offsets.size() == 0)
+	if (this->streamlines == nullptr || this->streamlines->_data.size() == 0 ||
+	    this->streamlines->_offsets.size() == 0)
 	{
 		trxmmap::TrxFile<DT> *empty_copy = new trxmmap::TrxFile<DT>();
 		empty_copy->header = json::parse(this->header.dump());
