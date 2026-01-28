@@ -16,7 +16,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install clang tooling
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y wget gnupg lsb-release software-properties-common
@@ -25,8 +25,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             clang-format-${LLVM_VERSION} \
-            clang-tidy-${LLVM_VERSION} \
-            clang-tools-${LLVM_VERSION} \
             cmake \
             g++ \
             libeigen3-dev \
@@ -56,10 +54,18 @@ jobs:
           clang-format-${LLVM_VERSION} --dry-run --Werror
           $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
 
-      - name: Run clang-tidy
-        run: >
-          run-clang-tidy-${LLVM_VERSION} -p build
-          $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
+      - uses: ZedThree/clang-tidy-review@v0.21.0
+        id: review
+        if: github.event_name == 'pull_request'
+        with:
+          apt_packages: g++,libeigen3-dev,zlib1g-dev
+          build_dir: build
+          config_file: .clang-tidy
+          clang_tidy_version: 17
+
+      - uses: ZedThree/clang-tidy-review/upload@v0.21.0
+        id: upload-review
+        if: github.event_name == 'pull_request'
 
   build:
     name: ${{ matrix.os }}
