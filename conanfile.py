@@ -59,7 +59,12 @@ class TrxCppConan(ConanFile):
 
     def build(self):
         cmake = CMake(self)
-        cmake.configure(variables={"TRX_BUILD_TESTS": self.options.with_tests})
+        cmake.configure(
+            variables={
+                "TRX_BUILD_TESTS": self.options.with_tests,
+                "TRX_BUILD_EXAMPLES": False,
+            }
+        )
         cmake.build()
         if self.options.with_tests:
             cmake.ctest()
