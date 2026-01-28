@@ -19,7 +19,7 @@ jobs:
           g++ \
           libeigen3-dev \
           libzip-dev \
-          libzip-tools \
+          zipcmp \
           zlib1g-dev \
           ninja-build
 
