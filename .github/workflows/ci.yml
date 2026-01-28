@@ -10,6 +10,8 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      LLVM_VERSION: "18"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,10 +19,14 @@ jobs:
       - name: Install clang tooling
         run: |
           sudo apt-get update
+          sudo apt-get install -y wget gnupg lsb-release software-properties-common
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository "deb http://apt.llvm.org/$(lsb_release -sc)/ llvm-toolchain-$(lsb_release -sc)-${LLVM_VERSION} main"
+          sudo apt-get update
           sudo apt-get install -y \
-            clang-format \
-            clang-tidy \
-            clang-tools \
+            clang-format-${LLVM_VERSION} \
+            clang-tidy-${LLVM_VERSION} \
+            clang-tools-${LLVM_VERSION} \
             cmake \
             g++ \
             libeigen3-dev \
@@ -47,12 +53,12 @@ jobs:
 
       - name: Check formatting
         run: >
-          clang-format --dry-run --Werror
+          clang-format-${LLVM_VERSION} --dry-run --Werror
           $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
 
       - name: Run clang-tidy
         run: >
-          run-clang-tidy -p build
+          run-clang-tidy-${LLVM_VERSION} -p build
           $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
 
   build:
