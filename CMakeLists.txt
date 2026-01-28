@@ -6,6 +6,7 @@ project(trx VERSION 0.1.0)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
+include(FetchContent)
 
 set(CMAKE_CXX_STANDARD 11)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -14,6 +15,7 @@ endif()
 
 option(TRX_USE_CONAN "Should Conan package manager be used?" ON)
 option(TRX_BUILD_TESTS "Build trx tests" OFF)
+option(TRX_BUILD_EXAMPLES "Build trx example commandline programs" ON)
 
 if(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
@@ -104,6 +106,16 @@ if(TRX_BUILD_TESTS)
     else()
         message(STATUS "GTest not found; skipping tests. Set GTest_DIR to a config path to enable.")
     endif()
+endif()
+
+if(TRX_BUILD_EXAMPLES)
+    FetchContent_Declare(
+        CLI11
+        GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+        GIT_TAG v2.4.2
+    )
+    FetchContent_MakeAvailable(CLI11)
+    add_subdirectory(examples)
 endif()
 
 # Installation and package config

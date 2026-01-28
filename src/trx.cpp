@@ -14,6 +14,111 @@ using namespace std;
 
 namespace trxmmap
 {
+	namespace
+	{
+		std::string normalize_slashes(std::string path)
+		{
+			std::replace(path.begin(), path.end(), '\\', '/');
+			return path;
+		}
+
+		bool parse_positions_dtype(const std::string &filename, std::string &out_dtype)
+		{
+			std::string normalized = normalize_slashes(filename);
+			try
+			{
+				const auto tuple = trxmmap::_split_ext_with_dimensionality(normalized);
+				const std::string &base = std::get<0>(tuple);
+				if (base == "positions")
+				{
+					out_dtype = std::get<2>(tuple);
+					return true;
+				}
+			}
+			catch (const std::exception &)
+			{
+			}
+			return false;
+		}
+	} // namespace
+
+	std::string detect_positions_dtype(const std::string &path)
+	{
+		trx::fs::path input(path);
+		if (!trx::fs::exists(input))
+		{
+			throw std::runtime_error("Input path does not exist: " + path);
+		}
+
+		std::error_code ec;
+		if (trx::fs::is_directory(input, ec) && !ec)
+		{
+			std::map<std::string, std::tuple<long long, long long>> files;
+			trxmmap::populate_fps(path.c_str(), files);
+			for (const auto &kv : files)
+			{
+				std::string dtype;
+				if (parse_positions_dtype(kv.first, dtype))
+				{
+					return dtype;
+				}
+			}
+			return "";
+		}
+
+		int err = 0;
+		zip_t *zf = zip_open(path.c_str(), 0, &err);
+		if (zf == nullptr)
+		{
+			throw std::runtime_error("Could not open zip file: " + path);
+		}
+		std::string dtype;
+		const zip_int64_t count = zip_get_num_entries(zf, 0);
+		for (zip_int64_t i = 0; i < count; ++i)
+		{
+			const char *name = zip_get_name(zf, i, 0);
+			if (!name)
+			{
+				continue;
+			}
+			if (parse_positions_dtype(name, dtype))
+			{
+				break;
+			}
+		}
+		zip_close(zf);
+		return dtype;
+	}
+
+	TrxScalarType detect_positions_scalar_type(const std::string &path, TrxScalarType fallback)
+	{
+		const std::string dtype = detect_positions_dtype(path);
+		if (dtype == "float16")
+		{
+			return TrxScalarType::Float16;
+		}
+		if (dtype == "float64")
+		{
+			return TrxScalarType::Float64;
+		}
+		if (dtype == "float32")
+		{
+			return TrxScalarType::Float32;
+		}
+		return fallback;
+	}
+
+	bool is_trx_directory(const std::string &path)
+	{
+		trx::fs::path input(path);
+		if (!trx::fs::exists(input))
+		{
+			throw std::runtime_error("Input path does not exist: " + path);
+		}
+		std::error_code ec;
+		return trx::fs::is_directory(input, ec) && !ec;
+	}
+
 	void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size)
 	{
 		DIR *dir;

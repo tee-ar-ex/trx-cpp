@@ -20,7 +20,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install libzip nlohmann-json eigen spdlog googletest
+          brew install libzip eigen googletest
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -30,9 +30,7 @@ jobs:
           & "$env:GITHUB_WORKSPACE\vcpkg\bootstrap-vcpkg.bat"
           & "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe" install `
             libzip `
-            nlohmann-json `
             eigen3 `
-            spdlog `
             gtest `
             --triplet x64-windows
 
@@ -43,6 +41,7 @@ jobs:
           cmake -S . -B build \
             -DTRX_USE_CONAN=OFF \
             -DTRX_BUILD_TESTS=ON \
+            -DTRX_BUILD_EXAMPLES=ON \
             -DCMAKE_PREFIX_PATH="${BREW_PREFIX}"
 
       - name: Configure (Windows)

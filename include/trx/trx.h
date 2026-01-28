@@ -17,6 +17,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <stdexcept>
+#include <utility>
 
 #include <mio/mmap.hpp>
 #include <mio/shared_mmap.hpp>
@@ -365,6 +366,107 @@ namespace trxmmap
 	 */
 	template <typename DT>
 	TrxFile<DT> *load_from_directory(std::string path);
+
+	/**
+	 * @brief Detect the dtype of the positions array for a TRX path.
+	 *
+	 * @param path Path to a TRX zip archive or directory.
+	 * @return std::string dtype (e.g., float16/float32/float64) or empty if unknown.
+	 */
+	std::string detect_positions_dtype(const std::string &path);
+
+	enum class TrxScalarType
+	{
+		Float16,
+		Float32,
+		Float64
+	};
+
+	/**
+	 * @brief Return the canonical string name for a TrxScalarType.
+	 *
+	 * @param dtype Scalar type enum value.
+	 * @return std::string dtype (e.g., float16/float32/float64).
+	 */
+	inline std::string scalar_type_name(TrxScalarType dtype)
+	{
+		switch (dtype)
+		{
+		case TrxScalarType::Float16:
+			return "float16";
+		case TrxScalarType::Float32:
+			return "float32";
+		case TrxScalarType::Float64:
+			return "float64";
+		default:
+			return "float32";
+		}
+	}
+
+	/**
+	 * @brief Detect the positions scalar type for a TRX path.
+	 *
+	 * @param path Path to a TRX zip archive or directory.
+	 * @param fallback Fallback type when dtype is unknown.
+	 * @return TrxScalarType
+	 */
+	TrxScalarType detect_positions_scalar_type(const std::string &path,
+	                                           TrxScalarType fallback = TrxScalarType::Float32);
+
+	/**
+	 * @brief Return true if the TRX path is a directory.
+	 *
+	 * @param path Path to a TRX zip archive or directory.
+	 * @return bool
+	 */
+	bool is_trx_directory(const std::string &path);
+
+	/**
+	 * @brief Load a TRX file from either a zip archive or directory.
+	 *
+	 * @tparam DT
+	 * @param path Path to TRX archive or directory
+	 * @return TrxFile<DT>* TrxFile representing the read data
+	 */
+	template <typename DT>
+	TrxFile<DT> *load(std::string path);
+
+	/**
+	 * @brief RAII wrapper for loading TRX files from a path.
+	 *
+	 * @tparam DT
+	 */
+	template <typename DT>
+	class TrxReader
+	{
+	public:
+		explicit TrxReader(const std::string &path);
+		~TrxReader();
+
+		TrxReader(const TrxReader &) = delete;
+		TrxReader &operator=(const TrxReader &) = delete;
+		TrxReader(TrxReader &&other) noexcept;
+		TrxReader &operator=(TrxReader &&other) noexcept;
+
+		TrxFile<DT> *get() const { return trx_; }
+		TrxFile<DT> &operator*() const { return *trx_; }
+		TrxFile<DT> *operator->() const { return trx_; }
+
+	private:
+		TrxFile<DT> *trx_ = nullptr;
+	};
+
+	/**
+	 * @brief Load a TRX reader based on detected positions dtype.
+	 *
+	 * @tparam Fn Callable invoked with (TrxReader<T>&, TrxScalarType).
+	 * @param path Path to TRX archive or directory.
+	 * @param fn Callable for the loaded reader.
+	 * @return The return value of fn.
+	 */
+	template <typename Fn>
+	auto with_trx_reader(const std::string &path, Fn &&fn)
+	    -> decltype(fn(std::declval<TrxReader<float> &>(), TrxScalarType::Float32));
 
 	/**
 	 * Get affine and dimensions from a Nifti or Trk file (Adapted from dipy)

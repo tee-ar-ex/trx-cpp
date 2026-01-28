@@ -1081,6 +1081,87 @@ TrxFile<DT> *load_from_directory(std::string path)
 }
 
 template <typename DT>
+TrxFile<DT> *load(std::string path)
+{
+	trx::fs::path input(path);
+	if (!trx::fs::exists(input))
+	{
+		throw std::runtime_error("Input path does not exist: " + path);
+	}
+	std::error_code ec;
+	if (trx::fs::is_directory(input, ec) && !ec)
+	{
+		return load_from_directory<DT>(path);
+	}
+	return load_from_zip<DT>(path);
+}
+
+template <typename DT>
+TrxReader<DT>::TrxReader(const std::string &path)
+{
+	trx_ = load<DT>(path);
+}
+
+template <typename DT>
+TrxReader<DT>::~TrxReader()
+{
+	if (trx_ != nullptr)
+	{
+		trx_->close();
+		delete trx_;
+		trx_ = nullptr;
+	}
+}
+
+template <typename DT>
+TrxReader<DT>::TrxReader(TrxReader &&other) noexcept : trx_(other.trx_)
+{
+	other.trx_ = nullptr;
+}
+
+template <typename DT>
+TrxReader<DT> &TrxReader<DT>::operator=(TrxReader &&other) noexcept
+{
+	if (this != &other)
+	{
+		if (trx_ != nullptr)
+		{
+			trx_->close();
+			delete trx_;
+		}
+		trx_ = other.trx_;
+		other.trx_ = nullptr;
+	}
+	return *this;
+}
+
+template <typename Fn>
+auto with_trx_reader(const std::string &path, Fn &&fn)
+    -> decltype(fn(std::declval<TrxReader<float> &>(), TrxScalarType::Float32))
+{
+	const TrxScalarType dtype = detect_positions_scalar_type(path, TrxScalarType::Float32);
+	switch (dtype)
+	{
+	case TrxScalarType::Float16:
+	{
+		TrxReader<Eigen::half> reader(path);
+		return fn(reader, dtype);
+	}
+	case TrxScalarType::Float64:
+	{
+		TrxReader<double> reader(path);
+		return fn(reader, dtype);
+	}
+	case TrxScalarType::Float32:
+	default:
+	{
+		TrxReader<float> reader(path);
+		return fn(reader, dtype);
+	}
+	}
+}
+
+template <typename DT>
 void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression_standard)
 {
 	std::string ext = get_ext(filename);

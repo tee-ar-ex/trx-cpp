@@ -22,9 +22,7 @@ jobs:
             g++ \
             lcov \
             zlib1g-dev \
-            libeigen3-dev \
-            nlohmann-json3-dev \
-            libspdlog-dev
+            libeigen3-dev
 
       - name: Build and install libzip (with tools)
         run: |
@@ -48,6 +46,7 @@ jobs:
         run: |
           cmake -S . -B build \
             -DTRX_BUILD_TESTS=ON \
+            -DTRX_BUILD_EXAMPLES=ON \
             -DGTest_DIR=${GITHUB_WORKSPACE}/deps/googletest/install/lib/cmake/GTest \
             -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/deps/libzip/install \
             -DCMAKE_BUILD_TYPE=Debug \
