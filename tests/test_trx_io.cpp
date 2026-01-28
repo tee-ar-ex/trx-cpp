@@ -20,7 +20,7 @@ namespace fs = std::filesystem;
 
 namespace {
 std::string get_test_data_root() {
-  const char *env = std::getenv("TRX_TEST_DATA_DIR");
+  const auto *env = std::getenv("TRX_TEST_DATA_DIR");
   if (env == nullptr || std::string(env).empty()) {
     return {};
   }
@@ -150,7 +150,7 @@ template <typename DT> trxmmap::TrxFile<DT> *load_trx(const fs::path &path) {
 class ScopedEnvVar {
 public:
   ScopedEnvVar(const std::string &name, const std::string &value) : name_(name) {
-    const char *existing = std::getenv(name_.c_str());
+    const auto *existing = std::getenv(name_.c_str());
     if (existing != nullptr) {
       had_value_ = true;
       previous_ = existing;
@@ -332,7 +332,7 @@ TEST(TrxFileIo, change_tmp_dir) {
   const fs::path input = gs_dir / "gs.trx";
   ASSERT_TRUE(fs::exists(input));
 
-  const char *home_env = std::getenv("HOME");
+  const auto *home_env = std::getenv("HOME");
 #if defined(_WIN32) || defined(_WIN64)
   if (home_env == nullptr || std::string(home_env).empty()) {
     home_env = std::getenv("USERPROFILE");
@@ -427,7 +427,7 @@ TEST(TrxFileIo, complete_zip_from_trx) {
   std::set<std::string> zip_file_list;
   zip_int64_t num_entries = zip_get_num_entries(zf, ZIP_FL_UNCHANGED);
   for (zip_int64_t i = 0; i < num_entries; ++i) {
-    const char *entry_name = zip_get_name(zf, i, ZIP_FL_UNCHANGED);
+    const auto *entry_name = zip_get_name(zf, i, ZIP_FL_UNCHANGED);
     if (entry_name == nullptr) {
       continue;
     }

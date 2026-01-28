@@ -172,7 +172,7 @@ struct ReaderPrinter {
 
 } // namespace
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv) { // check_syntax off
   std::string help_text;
   try {
     std::string path;

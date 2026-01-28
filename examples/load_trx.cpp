@@ -1,7 +1,7 @@
 #include "../src/trx.h"
 
 using namespace trxmmap;
-int main(int argc, char **argv) {
+int main(int argc, char **argv) { // check_syntax off
   trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(argv[1]);
 
   std::cout << "Vertices: " << trx->streamlines->_data.size() / 3 << "\n";

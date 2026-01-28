@@ -29,14 +29,23 @@
 // #define ZIP_DD_SIG 0x08074b50
 // #define ZIP_CD_SIG 0x06054b50
 using namespace Eigen;
-using namespace std;
+using std::array;
+using std::ifstream;
+using std::map;
+using std::mt19937_64;
+using std::ofstream;
+using std::string;
+using std::tuple;
+using std::uniform_int_distribution;
+using std::vector;
 
 namespace trxmmap {
 namespace {
 inline int sys_error() { return errno; }
 
-inline const char *get_env(const char *name) {
-  return std::getenv(name); // NOLINT(concurrency-mt-unsafe)
+inline string get_env(const string &name) {
+  const auto *value = std::getenv(name.c_str()); // NOLINT(concurrency-mt-unsafe)
+  return value == nullptr ? string() : string(value);
 }
 
 std::string normalize_slashes(std::string path) {
@@ -89,7 +98,7 @@ std::string detect_positions_dtype(const std::string &path) {
   std::error_code ec;
   if (trx::fs::is_directory(input, ec) && !ec) {
     std::map<std::string, std::tuple<long long, long long>> files;
-    trxmmap::populate_fps(path.c_str(), files);
+    trxmmap::populate_fps(path, files);
     for (const auto &kv : files) {
       std::string dtype;
       if (parse_positions_dtype(kv.first, dtype)) {
@@ -107,7 +116,7 @@ std::string detect_positions_dtype(const std::string &path) {
   std::string dtype;
   const zip_int64_t count = zip_get_num_entries(zf, 0);
   for (zip_int64_t i = 0; i < count; ++i) {
-    const char *name = zip_get_name(zf, i, 0);
+    const auto *name = zip_get_name(zf, i, 0);
     if (name == nullptr) {
       continue;
     }
@@ -142,7 +151,7 @@ bool is_trx_directory(const std::string &path) {
   return trx::fs::is_directory(input, ec) && !ec;
 }
 
-void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size) {
+void populate_fps(const string &name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size) {
   const trx::fs::path root(name);
   std::error_code ec;
   if (!trx::fs::exists(root, ec) || !trx::fs::is_directory(root, ec)) {
@@ -176,7 +185,7 @@ void populate_fps(const char *name, std::map<std::string, std::tuple<long long, 
     const std::string elem_filename = entry_path.string();
     std::string ext = get_ext(elem_filename);
 
-    if (strcmp(ext.c_str(), "json") == 0) {
+    if (ext == "json") {
       continue;
     }
 
@@ -184,7 +193,7 @@ void populate_fps(const char *name, std::map<std::string, std::tuple<long long, 
       throw std::invalid_argument(std::string("The dtype of ") + elem_filename + std::string(" is not supported"));
     }
 
-    if (strcmp(ext.c_str(), "bit") == 0) {
+    if (ext == "bit") {
       ext = "bool";
     }
 
@@ -449,7 +458,7 @@ void get_reference_info(const std::string &reference,
   throw std::runtime_error("Trk reference not implemented");
 }
 
-void copy_dir(const char *src, const char *dst) {
+void copy_dir(const string &src, const string &dst) {
   const trx::fs::path src_path(src);
   const trx::fs::path dst_path(dst);
   std::error_code ec;
@@ -480,11 +489,11 @@ void copy_dir(const char *src, const char *dst) {
     if (!it->is_regular_file(entry_ec)) {
       continue;
     }
-    copy_file(current.string().c_str(), target.string().c_str());
+    copy_file(current.string(), target.string());
   }
 }
 
-void copy_file(const char *src, const char *dst) {
+void copy_file(const string &src, const string &dst) {
   std::ifstream in(src, std::ios::binary);
   if (!in.is_open()) {
     throw std::runtime_error(std::string("Failed to open source file ") + src);
@@ -509,22 +518,21 @@ void copy_file(const char *src, const char *dst) {
     throw std::runtime_error(std::string("Error reading file ") + src);
   }
 }
-int rm_dir(const char *d) {
+int rm_dir(const string &d) {
   std::error_code ec;
   trx::fs::remove_all(d, ec);
   return ec ? -1 : 0;
 }
 
 std::string make_temp_dir(const std::string &prefix) {
-  const char *env_tmp = get_env("TRX_TMPDIR");
+  const string env_tmp = get_env("TRX_TMPDIR");
   std::string base_dir;
 
-  if (env_tmp != nullptr) {
-    const std::string val(env_tmp);
-    if (val == "use_working_dir") {
+  if (!env_tmp.empty()) {
+    if (env_tmp == "use_working_dir") {
       base_dir = ".";
     } else {
-      const trx::fs::path env_path(val);
+      const trx::fs::path env_path(env_tmp);
       std::error_code ec;
       if (trx::fs::exists(env_path, ec) && trx::fs::is_directory(env_path, ec)) {
         base_dir = env_path.string();
@@ -533,9 +541,9 @@ std::string make_temp_dir(const std::string &prefix) {
   }
 
   if (base_dir.empty()) {
-    const std::array<const char *, 3> candidates{get_env("TMPDIR"), get_env("TEMP"), get_env("TMP")};
-    for (const char *candidate : candidates) {
-      if (candidate == nullptr || std::string(candidate).empty()) {
+    const std::array<string, 3> candidates{get_env("TMPDIR"), get_env("TEMP"), get_env("TMP")};
+    for (const auto &candidate : candidates) {
+      if (candidate.empty()) {
         continue;
       }
       const trx::fs::path path(candidate);
@@ -595,7 +603,7 @@ std::string extract_zip_to_directory(zip_t *zfolder) {
 
   const zip_int64_t num_entries = zip_get_num_entries(zfolder, ZIP_FL_UNCHANGED);
   for (zip_int64_t i = 0; i < num_entries; ++i) {
-    const char *entry_name = zip_get_name(zfolder, i, ZIP_FL_UNCHANGED);
+    const auto *entry_name = zip_get_name(zfolder, i, ZIP_FL_UNCHANGED);
     if (entry_name == nullptr) {
       continue;
     }

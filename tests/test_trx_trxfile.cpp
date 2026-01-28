@@ -69,36 +69,36 @@ fs::path create_float_trx_dir() {
 
   Matrix<float, Dynamic, Dynamic, RowMajor> positions(4, 3);
   positions << 0.0f, 0.1f, 0.2f, 1.0f, 1.1f, 1.2f, 2.0f, 2.1f, 2.2f, 3.0f, 3.1f, 3.2f;
-  trxmmap::write_binary((root / "positions.3.float32").string().c_str(), positions);
+  trxmmap::write_binary((root / "positions.3.float32").string(), positions);
 
   Matrix<uint32_t, Dynamic, Dynamic, RowMajor> offsets(3, 1);
   offsets << 0, 2, 4;
-  trxmmap::write_binary((root / "offsets.uint32").string().c_str(), offsets);
+  trxmmap::write_binary((root / "offsets.uint32").string(), offsets);
 
   fs::path dpv_dir = root / "dpv";
   std::error_code ec;
   fs::create_directories(dpv_dir, ec);
   Matrix<float, Dynamic, Dynamic, RowMajor> dpv(4, 1);
   dpv << 0.0f, 0.3f, 0.6f, 0.9f;
-  trxmmap::write_binary((dpv_dir / "color.float32").string().c_str(), dpv);
+  trxmmap::write_binary((dpv_dir / "color.float32").string(), dpv);
 
   fs::path dps_dir = root / "dps";
   fs::create_directories(dps_dir, ec);
   Matrix<float, Dynamic, Dynamic, RowMajor> dps(2, 1);
   dps << 0.25f, 0.75f;
-  trxmmap::write_binary((dps_dir / "weight.float32").string().c_str(), dps);
+  trxmmap::write_binary((dps_dir / "weight.float32").string(), dps);
 
   fs::path groups_dir = root / "groups";
   fs::create_directories(groups_dir, ec);
   Matrix<uint32_t, Dynamic, Dynamic, RowMajor> group_vals(2, 1);
   group_vals << 0, 1;
-  trxmmap::write_binary((groups_dir / "GroupA.uint32").string().c_str(), group_vals);
+  trxmmap::write_binary((groups_dir / "GroupA.uint32").string(), group_vals);
 
   fs::path dpg_dir = root / "dpg" / "GroupA";
   fs::create_directories(dpg_dir, ec);
   Matrix<float, Dynamic, Dynamic, RowMajor> dpg(1, 1);
   dpg << 1.0f;
-  trxmmap::write_binary((dpg_dir / "mean.float32").string().c_str(), dpg);
+  trxmmap::write_binary((dpg_dir / "mean.float32").string(), dpg);
 
   return root;
 }

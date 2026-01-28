@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <stdlib.h>
 #include <string.h>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -73,60 +74,60 @@ inline std::string path_dirname(const std::string &path) {
 }
 
 template <typename T> struct DTypeName {
-  static const char *value() { return "float16"; }
+  static constexpr std::string_view value() { return "float16"; }
 };
 
 template <> struct DTypeName<Eigen::half> {
-  static const char *value() { return "float16"; }
+  static constexpr std::string_view value() { return "float16"; }
 };
 
 template <> struct DTypeName<float> {
-  static const char *value() { return "float32"; }
+  static constexpr std::string_view value() { return "float32"; }
 };
 
 template <> struct DTypeName<double> {
-  static const char *value() { return "float64"; }
+  static constexpr std::string_view value() { return "float64"; }
 };
 
 template <> struct DTypeName<int8_t> {
-  static const char *value() { return "int8"; }
+  static constexpr std::string_view value() { return "int8"; }
 };
 
 template <> struct DTypeName<int16_t> {
-  static const char *value() { return "int16"; }
+  static constexpr std::string_view value() { return "int16"; }
 };
 
 template <> struct DTypeName<int32_t> {
-  static const char *value() { return "int32"; }
+  static constexpr std::string_view value() { return "int32"; }
 };
 
 template <> struct DTypeName<int64_t> {
-  static const char *value() { return "int64"; }
+  static constexpr std::string_view value() { return "int64"; }
 };
 
 template <> struct DTypeName<uint8_t> {
-  static const char *value() { return "uint8"; }
+  static constexpr std::string_view value() { return "uint8"; }
 };
 
 template <> struct DTypeName<uint16_t> {
-  static const char *value() { return "uint16"; }
+  static constexpr std::string_view value() { return "uint16"; }
 };
 
 template <> struct DTypeName<uint32_t> {
-  static const char *value() { return "uint32"; }
+  static constexpr std::string_view value() { return "uint32"; }
 };
 
 template <> struct DTypeName<uint64_t> {
-  static const char *value() { return "uint64"; }
+  static constexpr std::string_view value() { return "uint64"; }
 };
 
 template <> struct DTypeName<bool> {
-  static const char *value() { return "bit"; }
+  static constexpr std::string_view value() { return "bit"; }
 };
 
 template <typename T> inline std::string dtype_from_scalar() {
   typedef typename std::remove_cv<typename std::remove_reference<T>::type>::type CleanT;
-  return DTypeName<CleanT>::value();
+  return std::string(DTypeName<CleanT>::value());
 }
 
 const std::string SEPARATOR = "/";
@@ -152,14 +153,14 @@ template <typename DT> struct ArraySequence {
   mio::shared_mmap_sink mmap_pos;
   mio::shared_mmap_sink mmap_off;
 
-  ArraySequence() : _data(NULL, 1, 1), _offsets(NULL, 1, 1) {}
+  ArraySequence() : _data(nullptr, 1, 1), _offsets(nullptr, 1, 1) {}
 };
 
 template <typename DT> struct MMappedMatrix {
   Map<Matrix<DT, Dynamic, Dynamic>> _matrix;
   mio::shared_mmap_sink mmap;
 
-  MMappedMatrix() : _matrix(NULL, 1, 1) {}
+  MMappedMatrix() : _matrix(nullptr, 1, 1) {}
 };
 
 template <typename DT> class TrxFile {
@@ -181,7 +182,10 @@ public:
 
   // Member Functions()
   // TrxFile(int nb_vertices = 0, int nb_streamlines = 0);
-  TrxFile(int nb_vertices = 0, int nb_streamlines = 0, const TrxFile<DT> *init_as = NULL, std::string reference = "");
+  TrxFile(int nb_vertices = 0,
+          int nb_streamlines = 0,
+          const TrxFile<DT> *init_as = nullptr,
+          std::string reference = "");
   ~TrxFile();
 
   /**
@@ -287,7 +291,7 @@ bool _is_dtype_valid(const std::string &ext);
  * stored within a Zip archive
  *
  * @param[in] zfolder a pointer to an opened zip archive
- * @param[out] header the JSONCpp root of the header. NULL on error.
+ * @param[out] header the JSONCpp root of the header. nullptr on error.
  *
  * */
 json load_header(zip_t *zfolder);
@@ -467,7 +471,7 @@ template <typename DT> int _dichotomic_search(const MatrixBase<DT> &x, int l_bou
  * @return TrxFile<DT> An empty TrxFile preallocated with a certain size
  */
 template <typename DT>
-TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const TrxFile<DT> *init_as = NULL);
+TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const TrxFile<DT> *init_as = nullptr);
 
 template <typename DT>
 void ediff1d(Matrix<DT, Dynamic, 1> &lengths, const Matrix<DT, Dynamic, Dynamic> &tmp, uint32_t to_end);
@@ -498,11 +502,11 @@ void zip_from_folder(zip_t *zf,
 
 std::string get_base(const std::string &delimiter, const std::string &str);
 std::string get_ext(const std::string &str);
-void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size);
+void populate_fps(const std::string &name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size);
 
-void copy_dir(const char *src, const char *dst);
-void copy_file(const char *src, const char *dst);
-int rm_dir(const char *d);
+void copy_dir(const std::string &src, const std::string &dst);
+void copy_file(const std::string &src, const std::string &dst);
+int rm_dir(const std::string &d);
 std::string make_temp_dir(const std::string &prefix);
 std::string extract_zip_to_directory(zip_t *zfolder);
 

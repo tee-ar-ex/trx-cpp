@@ -1,19 +1,23 @@
 // Taken from: https://stackoverflow.com/a/25389481
-template <class Matrix> void write_binary(const char *filename, const Matrix &matrix) {
+template <class Matrix> void write_binary(const std::string &filename, const Matrix &matrix) {
   std::ofstream out(filename, std::ios::out | std::ios::binary | std::ios::trunc);
   typename Matrix::Index rows = matrix.rows(), cols = matrix.cols();
   // out.write((char *)(&rows), sizeof(typename Matrix::Index));
   // out.write((char *)(&cols), sizeof(typename Matrix::Index));
-  out.write((char *)matrix.data(), rows * cols * sizeof(typename Matrix::Scalar));
+  const auto *data = reinterpret_cast<const char *>(matrix.data()); // check_syntax off
+  out.write(data, rows * cols * sizeof(typename Matrix::Scalar));
   out.close();
 }
-template <class Matrix> void read_binary(const char *filename, Matrix &matrix) {
+template <class Matrix> void read_binary(const std::string &filename, Matrix &matrix) {
   std::ifstream in(filename, std::ios::in | std::ios::binary);
   typename Matrix::Index rows = 0, cols = 0;
-  in.read((char *)(&rows), sizeof(typename Matrix::Index));
-  in.read((char *)(&cols), sizeof(typename Matrix::Index));
+  auto *rows_ptr = reinterpret_cast<char *>(&rows); // check_syntax off
+  auto *cols_ptr = reinterpret_cast<char *>(&cols); // check_syntax off
+  in.read(rows_ptr, sizeof(typename Matrix::Index));
+  in.read(cols_ptr, sizeof(typename Matrix::Index));
   matrix.resize(rows, cols);
-  in.read((char *)matrix.data(), rows * cols * sizeof(typename Matrix::Scalar));
+  auto *matrix_ptr = reinterpret_cast<char *>(matrix.data()); // check_syntax off
+  in.read(matrix_ptr, rows * cols * sizeof(typename Matrix::Scalar));
   in.close();
 }
 
@@ -99,16 +103,16 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
   std::vector<uint16_t> dimensions(3);
 
   // TODO: check if there's a more efficient way to do this with Eigen
-  if (init_as != NULL) {
+  if (init_as != nullptr) {
     for (int i = 0; i < 4; i++) {
       affine[i] = {0, 0, 0, 0};
       for (int j = 0; j < 4; j++) {
-        affine[i][j] = float(init_as->header["VOXEL_TO_RASMM"][i][j].number_value());
+        affine[i][j] = static_cast<float>(init_as->header["VOXEL_TO_RASMM"][i][j].number_value());
       }
     }
 
     for (int i = 0; i < 3; i++) {
-      dimensions[i] = uint16_t(init_as->header["DIMENSIONS"][i].int_value());
+      dimensions[i] = static_cast<uint16_t>(init_as->header["DIMENSIONS"][i].int_value());
     }
   }
   // TODO: add else if for get_reference_info
@@ -122,7 +126,7 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
   }
 
   if (nb_vertices == 0 && nb_streamlines == 0) {
-    if (init_as != NULL) {
+    if (init_as != nullptr) {
       // raise error here
       throw std::invalid_argument("Can't us init_as without declaring nb_vertices and nb_streamlines");
     }
@@ -173,7 +177,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
   std::string tmp_dir = make_temp_dir("trx");
 
   json header = json::object();
-  if (init_as != NULL) {
+  if (init_as != nullptr) {
     header = init_as->header;
   }
   header = _json_set(header, "NB_VERTICES", nb_vertices);
@@ -183,7 +187,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
   std::string offsets_dtype;
   std::string lengths_dtype;
 
-  if (init_as != NULL) {
+  if (init_as != nullptr) {
     header = _json_set(header, "VOXEL_TO_RASMM", init_as->header["VOXEL_TO_RASMM"]);
     header = _json_set(header, "DIMENSIONS", init_as->header["DIMENSIONS"]);
     positions_dtype = dtype_from_scalar<DT>();
@@ -227,7 +231,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
   trx->streamlines->_lengths.resize(nb_streamlines);
   trx->streamlines->_lengths.setZero();
 
-  if (init_as != NULL) {
+  if (init_as != nullptr) {
     std::string dpv_dirname;
     std::string dps_dirname;
     if (init_as->data_per_vertex.size() > 0) {
@@ -423,7 +427,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
         trx->streamlines->_offsets_owned.resize(std::get<0>(shape));
         auto *src = reinterpret_cast<const uint32_t *>(trx->streamlines->mmap_off.data());
         for (int i = 0; i < std::get<0>(shape); ++i)
-          trx->streamlines->_offsets_owned[size_t(i)] = uint64_t(src[i]);
+          trx->streamlines->_offsets_owned[static_cast<size_t>(i)] = static_cast<uint64_t>(src[i]);
         new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(
             trx->streamlines->_offsets_owned.data(), std::get<0>(shape), std::get<1>(shape));
       } else {
@@ -597,12 +601,12 @@ template <typename DT> TrxFile<DT> *TrxFile<DT>::deepcopy() {
   std::string pos_rootfn = tmp_dir + SEPARATOR + "positions";
   std::string positions_filename = _generate_filename_from_data(to_dump->_data, pos_rootfn);
 
-  write_binary(positions_filename.c_str(), to_dump->_data);
+  write_binary(positions_filename, to_dump->_data);
 
   std::string off_rootfn = tmp_dir + SEPARATOR + "offsets";
   std::string offsets_filename = _generate_filename_from_data(to_dump->_offsets, off_rootfn);
 
-  write_binary(offsets_filename.c_str(), to_dump->_offsets);
+  write_binary(offsets_filename, to_dump->_offsets);
 
   if (this->data_per_vertex.size() > 0) {
     std::string dpv_dirname = tmp_dir + SEPARATOR + "dpv" + SEPARATOR;
@@ -618,7 +622,7 @@ template <typename DT> TrxFile<DT> *TrxFile<DT>::deepcopy() {
       std::string dpv_filename = dpv_dirname + x.first;
       dpv_filename = _generate_filename_from_data(dpv_todump, dpv_filename);
 
-      write_binary(dpv_filename.c_str(), dpv_todump);
+      write_binary(dpv_filename, dpv_todump);
     }
   }
 
@@ -636,7 +640,7 @@ template <typename DT> TrxFile<DT> *TrxFile<DT>::deepcopy() {
       std::string dps_filename = dps_dirname + x.first;
       dps_filename = _generate_filename_from_data(dps_todump, dps_filename);
 
-      write_binary(dps_filename.c_str(), dps_todump);
+      write_binary(dps_filename, dps_todump);
     }
   }
 
@@ -655,7 +659,7 @@ template <typename DT> TrxFile<DT> *TrxFile<DT>::deepcopy() {
       std::string group_filename = groups_dirname + x.first;
       group_filename = _generate_filename_from_data(group_todump, group_filename);
 
-      write_binary(group_filename.c_str(), group_todump);
+      write_binary(group_filename, group_todump);
 
       if (this->data_per_group.find(x.first) == this->data_per_group.end()) {
         continue;
@@ -685,7 +689,7 @@ template <typename DT> TrxFile<DT> *TrxFile<DT>::deepcopy() {
         std::string dpg_filename = dpg_subdirname + SEPARATOR + y.first;
         dpg_filename = _generate_filename_from_data(dpg_todump, dpg_filename);
 
-        write_binary(dpg_filename.c_str(), dpg_todump);
+        write_binary(dpg_filename, dpg_todump);
       }
     }
   }
@@ -783,7 +787,7 @@ template <typename DT>
 // Caveat: cleanup is best-effort; filesystem errors are ignored.
 void TrxFile<DT>::_cleanup_temporary_directory() {
   if (this->_owns_uncompressed_folder && !this->_uncompressed_folder_handle.empty()) {
-    if (rm_dir(this->_uncompressed_folder_handle.c_str()) != 0) {
+    if (rm_dir(this->_uncompressed_folder_handle) != 0) {
     }
     this->_uncompressed_folder_handle.clear();
     this->_owns_uncompressed_folder = false;
@@ -982,7 +986,7 @@ template <typename DT> TrxFile<DT> *load_from_directory(std::string path) {
   }
 
   std::map<std::string, std::tuple<long long, long long>> files_pointer_size;
-  populate_fps(directory.c_str(), files_pointer_size);
+  populate_fps(directory, files_pointer_size);
 
   return TrxFile<DT>::_create_trx_from_pointer(header, files_pointer_size, "", directory);
 }
@@ -1047,7 +1051,7 @@ auto with_trx_reader(const std::string &path, Fn &&fn)
 template <typename DT> void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression_standard) {
   std::string ext = get_ext(filename);
 
-  if (ext.size() > 0 && (strcmp(ext.c_str(), "zip") != 0 && strcmp(ext.c_str(), "trx") != 0)) {
+  if (ext.size() > 0 && (ext != "zip" && ext != "trx")) {
     throw std::invalid_argument("Unsupported extension." + ext);
   }
 
@@ -1055,10 +1059,10 @@ template <typename DT> void save(TrxFile<DT> &trx, const std::string filename, z
   copy_trx->resize();
   std::string tmp_dir_name = copy_trx->_uncompressed_folder_handle;
 
-  if (ext.size() > 0 && (strcmp(ext.c_str(), "zip") == 0 || strcmp(ext.c_str(), "trx") == 0)) {
+  if (ext.size() > 0 && (ext == "zip" || ext == "trx")) {
     int errorp;
     zip_t *zf;
-    if ((zf = zip_open(filename.c_str(), ZIP_CREATE + ZIP_TRUNCATE, &errorp)) == NULL) {
+    if ((zf = zip_open(filename.c_str(), ZIP_CREATE + ZIP_TRUNCATE, &errorp)) == nullptr) {
       throw std::runtime_error("Could not open archive " + filename + ": " + strerror(errorp));
     } else {
       zip_from_folder(zf, tmp_dir_name, tmp_dir_name, compression_standard);
@@ -1072,7 +1076,7 @@ template <typename DT> void save(TrxFile<DT> &trx, const std::string filename, z
       throw std::runtime_error("Temporary TRX directory does not exist: " + tmp_dir_name);
     }
     if (trx::fs::exists(filename, ec) && trx::fs::is_directory(filename, ec)) {
-      if (rm_dir(filename.c_str()) != 0) {
+      if (rm_dir(filename) != 0) {
         throw std::runtime_error("Could not remove existing directory " + filename);
       }
     }
@@ -1084,7 +1088,7 @@ template <typename DT> void save(TrxFile<DT> &trx, const std::string filename, z
         throw std::runtime_error("Could not create output parent directory: " + dest_path.parent_path().string());
       }
     }
-    copy_dir(tmp_dir_name.c_str(), filename.c_str());
+    copy_dir(tmp_dir_name, filename);
     ec.clear();
     if (!trx::fs::exists(filename, ec) || !trx::fs::is_directory(filename, ec)) {
       throw std::runtime_error("Failed to create output directory: " + filename);

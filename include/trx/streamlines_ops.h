@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <numeric>
 #include <string>
@@ -48,7 +49,11 @@ inline std::string get_streamline_key(const Eigen::Matrix<float, Eigen::Dynamic,
     }
   }
 
-  std::string key(reinterpret_cast<const char *>(key_data.data()), key_data.size() * sizeof(float));
+  std::string key;
+  key.resize(key_data.size() * sizeof(float));
+  if (!key.empty()) {
+    std::memcpy(key.data(), key_data.data(), key.size());
+  }
   return key;
 }
 

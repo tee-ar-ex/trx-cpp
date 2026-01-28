@@ -2,6 +2,7 @@
 #define TRX_EXAMPLES_CLI_COLORS_H
 
 #include <string>
+#include <string_view>
 
 #if defined(_WIN32) || defined(_WIN64)
 #include <io.h>
@@ -13,12 +14,12 @@
 namespace trx_cli {
 struct Colors {
   bool enabled = false;
-  const char *reset = "\033[0m";
-  const char *bold = "\033[1m";
-  const char *cyan = "\033[36m";
-  const char *green = "\033[32m";
-  const char *yellow = "\033[33m";
-  const char *magenta = "\033[35m";
+  std::string_view reset = "\033[0m";
+  std::string_view bold = "\033[1m";
+  std::string_view cyan = "\033[36m";
+  std::string_view green = "\033[32m";
+  std::string_view yellow = "\033[33m";
+  std::string_view magenta = "\033[35m";
 };
 
 inline bool stdout_supports_color() {
@@ -34,11 +35,11 @@ inline bool stdout_supports_color() {
 #endif
 }
 
-inline std::string colorize(const Colors &colors, const char *code, const std::string &text) {
+inline std::string colorize(const Colors &colors, std::string_view code, const std::string &text) {
   if (!colors.enabled) {
     return text;
   }
-  return std::string(code) + text + colors.reset;
+  return std::string(code) + text + std::string(colors.reset);
 }
 } // namespace trx_cli
 

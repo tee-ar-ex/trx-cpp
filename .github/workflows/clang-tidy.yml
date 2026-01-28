@@ -16,6 +16,8 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y \
           cmake \
+          clang-18 \
+          clang-tidy-18 \
           g++ \
           libeigen3-dev \
           libzip-dev \
@@ -26,13 +28,11 @@ jobs:
           ninja-build
 
     - name: Run CMake
-      run: cmake . -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+      run: |
+        cmake -S . -B build -DTRX_ENABLE_CLANG_TIDY=ON \
+          -DCMAKE_C_COMPILER=clang-18 \
+          -DCMAKE_CXX_COMPILER=clang++-18
 
-    - uses: ZedThree/clang-tidy-review@v0.21.0
-      id: review
-      with:
-        config_file: .clang-tidy
-        clang_tidy_version: 17
-
-    - uses: ZedThree/clang-tidy-review/upload@v0.21.0
-      id: upload-review
+    - name: Run clang-tidy
+      run: |
+        run-clang-tidy-18 -p build src examples

@@ -13,7 +13,7 @@ namespace fs = std::filesystem;
 
 namespace {
 std::string get_test_data_root() {
-  const char *env = std::getenv("TRX_TEST_DATA_DIR");
+  const auto *env = std::getenv("TRX_TEST_DATA_DIR");
   if (env == nullptr || std::string(env).empty()) {
     return {};
   }
@@ -113,7 +113,7 @@ TestTrxFixture create_fixture() {
   Matrix<half, Dynamic, Dynamic, RowMajor> positions(fixture.nb_vertices, 3);
   positions.setZero();
   fs::path positions_path = trx_dir / "positions.3.float16";
-  trxmmap::write_binary(positions_path.string().c_str(), positions);
+  trxmmap::write_binary(positions_path.string(), positions);
   struct stat sb;
   if (stat(positions_path.string().c_str(), &sb) != 0) {
     throw std::runtime_error("Failed to stat positions file");
@@ -131,7 +131,7 @@ TestTrxFixture create_fixture() {
   offsets(fixture.nb_streamlines, 0) = static_cast<uint64_t>(fixture.nb_vertices);
 
   fs::path offsets_path = trx_dir / "offsets.uint64";
-  trxmmap::write_binary(offsets_path.string().c_str(), offsets);
+  trxmmap::write_binary(offsets_path.string(), offsets);
   if (stat(offsets_path.string().c_str(), &sb) != 0) {
     throw std::runtime_error("Failed to stat offsets file");
   }
@@ -262,28 +262,28 @@ TEST(TrxFileMemmap, __split_ext_with_dimensionality) {
 
 // Mirrors trx/tests/test_memmap.py::test__compute_lengths.
 TEST(TrxFileMemmap, __compute_lengths) {
-  Matrix<uint64_t, 5, 1> offsets{uint64_t(0), uint64_t(1), uint64_t(2), uint64_t(3), uint64_t(4)};
+  Matrix<uint64_t, 5, 1> offsets{uint64_t{0}, uint64_t{1}, uint64_t{2}, uint64_t{3}, uint64_t{4}};
   Matrix<uint32_t, 4, 1> lengths(trxmmap::_compute_lengths(offsets, 4));
-  Matrix<uint32_t, 4, 1> result{uint32_t(1), uint32_t(1), uint32_t(1), uint32_t(1)};
+  Matrix<uint32_t, 4, 1> result{uint32_t{1}, uint32_t{1}, uint32_t{1}, uint32_t{1}};
 
   EXPECT_EQ(lengths, result);
 
-  Matrix<uint64_t, 5, 1> offsets2{uint64_t(0), uint64_t(1), uint64_t(1), uint64_t(3), uint64_t(4)};
+  Matrix<uint64_t, 5, 1> offsets2{uint64_t{0}, uint64_t{1}, uint64_t{1}, uint64_t{3}, uint64_t{4}};
   Matrix<uint32_t, 4, 1> lengths2(trxmmap::_compute_lengths(offsets2, 4));
-  Matrix<uint32_t, 4, 1> result2{uint32_t(1), uint32_t(0), uint32_t(2), uint32_t(1)};
+  Matrix<uint32_t, 4, 1> result2{uint32_t{1}, uint32_t{0}, uint32_t{2}, uint32_t{1}};
 
   EXPECT_EQ(lengths2, result2);
 
-  Matrix<uint64_t, 4, 1> offsets3{uint64_t(0), uint64_t(1), uint64_t(2), uint64_t(4)};
+  Matrix<uint64_t, 4, 1> offsets3{uint64_t{0}, uint64_t{1}, uint64_t{2}, uint64_t{4}};
   Matrix<uint32_t, 3, 1> lengths3(trxmmap::_compute_lengths(offsets3, 4));
-  Matrix<uint32_t, 3, 1> result3{uint32_t(1), uint32_t(1), uint32_t(2)};
+  Matrix<uint32_t, 3, 1> result3{uint32_t{1}, uint32_t{1}, uint32_t{2}};
 
   EXPECT_EQ(lengths3, result3);
 
   Matrix<uint64_t, 2, 1> offsets4;
-  offsets4 << uint64_t(0), uint64_t(2);
+  offsets4 << uint64_t{0}, uint64_t{2};
   Matrix<uint32_t, 1, 1> lengths4(trxmmap::_compute_lengths(offsets4, 2));
-  Matrix<uint32_t, 1, 1> result4(uint32_t(2));
+  Matrix<uint32_t, 1, 1> result4(uint32_t{2});
 
   EXPECT_EQ(lengths4, result4);
 
@@ -293,12 +293,12 @@ TEST(TrxFileMemmap, __compute_lengths) {
 
   Matrix<int16_t, 5, 1> offsets6{int16_t(0), int16_t(1), int16_t(2), int16_t(3), int16_t(4)};
   Matrix<uint32_t, 4, 1> lengths6(trxmmap::_compute_lengths(offsets6, 4));
-  Matrix<uint32_t, 4, 1> result6{uint32_t(1), uint32_t(1), uint32_t(1), uint32_t(1)};
+  Matrix<uint32_t, 4, 1> result6{uint32_t{1}, uint32_t{1}, uint32_t{1}, uint32_t{1}};
   EXPECT_EQ(lengths6, result6);
 
   Matrix<int32_t, 5, 1> offsets7{int32_t(0), int32_t(1), int32_t(1), int32_t(3), int32_t(4)};
   Matrix<uint32_t, 4, 1> lengths7(trxmmap::_compute_lengths(offsets7, 4));
-  Matrix<uint32_t, 4, 1> result7{uint32_t(1), uint32_t(0), uint32_t(2), uint32_t(1)};
+  Matrix<uint32_t, 4, 1> result7{uint32_t{1}, uint32_t{0}, uint32_t{2}, uint32_t{1}};
   EXPECT_EQ(lengths7, result7);
 }
 
@@ -583,7 +583,7 @@ TEST(TrxFileMemmap, save) {
   //  trx->data_per_vertex["color_x.float16"]->_data);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv) { // check_syntax off
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

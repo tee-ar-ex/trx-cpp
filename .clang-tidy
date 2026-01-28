@@ -18,9 +18,5 @@ Checks: >
   -readability-function-cognitive-complexity,
   -readability-magic-numbers,
 HeaderFilterRegex: '^(include|src|tests|examples)/'
+ExcludeHeaderFilterRegex: '.*(third_party|cmake-build-|.pixi|.venv|.git|-bld|-BLD).*'
 FormatStyle: file
-CheckOptions:
-  - key: readability-identifier-naming.IgnoredRegexp
-    value: '^[A-Z0-9_]+$'
-  - key: modernize-use-trailing-return-type.IgnoreMacros
-    value: '1'
