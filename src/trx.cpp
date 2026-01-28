@@ -16,8 +16,8 @@
 #include <random>
 #include <stdexcept>
 #include <string>
-#include <system_error>
 #include <sys/stat.h>
+#include <system_error>
 #include <tuple>
 #include <vector>
 #include <zip.h>
@@ -33,9 +33,7 @@ using namespace std;
 
 namespace trxmmap {
 namespace {
-inline int sys_error() {
-  return errno;
-}
+inline int sys_error() { return errno; }
 
 inline const char *get_env(const char *name) {
   return std::getenv(name); // NOLINT(concurrency-mt-unsafe)
@@ -109,8 +107,8 @@ std::string detect_positions_dtype(const std::string &path) {
   std::string dtype;
   const zip_int64_t count = zip_get_num_entries(zf, 0);
   for (zip_int64_t i = 0; i < count; ++i) {
-  const char *name = zip_get_name(zf, i, 0);
-  if (name == nullptr) {
+    const char *name = zip_get_name(zf, i, 0);
+    if (name == nullptr) {
       continue;
     }
     if (parse_positions_dtype(name, dtype)) {
@@ -373,8 +371,11 @@ void allocate_file(const std::string &path, std::size_t size) {
   }
 }
 
-mio::shared_mmap_sink _create_memmap(
-    std::string filename, std::tuple<int, int> &shape, const std::string &mode, const std::string &dtype, long long offset) {
+mio::shared_mmap_sink _create_memmap(std::string filename,
+                                     std::tuple<int, int> &shape,
+                                     const std::string &mode,
+                                     const std::string &dtype,
+                                     long long offset) {
   static_cast<void>(mode);
   if (dtype == "bool") {
     const std::string ext = "bit";
@@ -387,7 +388,7 @@ mio::shared_mmap_sink _create_memmap(
                                static_cast<std::size_t>(_sizeof_dtype(dtype));
   // if file does not exist, create and allocate it
 
-  struct stat buffer {};
+  struct stat buffer{};
   if (stat(filename.c_str(), &buffer) != 0) {
     allocate_file(filename, filesize);
   }
@@ -493,7 +494,7 @@ void copy_file(const char *src, const char *dst) {
     throw std::runtime_error(std::string("Failed to open destination file ") + dst);
   }
 
-  std::array<char, 4096> buffer {};
+  std::array<char, 4096> buffer{};
   while (in) {
     in.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
     const std::streamsize n = in.gcount();
@@ -639,7 +640,7 @@ std::string extract_zip_to_directory(zip_t *zfolder) {
       throw std::runtime_error("Failed to open output file: " + normalized_out.string());
     }
 
-    std::array<char, 4096> buffer {};
+    std::array<char, 4096> buffer{};
     zip_int64_t nbytes = 0;
     while ((nbytes = zip_fread(zf, buffer.data(), buffer.size())) > 0) {
       out.write(buffer.data(), nbytes);

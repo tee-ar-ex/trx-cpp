@@ -43,11 +43,15 @@ This repo includes `.clang-tidy` and `.clang-format` at the root.
 
 ### clang-tidy
 
-Generate a build with compile commands, then run clang-tidy:
+Generate a build with compile commands, then run clang-tidy (matches CI):
 
 ```
-cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-clang-tidy -p build src/trx.cpp
+cmake -S . -B build \
+  -DTRX_USE_CONAN=OFF \
+  -DTRX_BUILD_TESTS=ON \
+  -DTRX_BUILD_EXAMPLES=ON \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+run-clang-tidy -p build $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
 ```
 
 To run clang-tidy automatically during builds:
@@ -57,18 +61,15 @@ cmake -S . -B build -DTRX_ENABLE_CLANG_TIDY=ON
 cmake --build build
 ```
 
-If you have `run-clang-tidy` installed (LLVM extras), you can lint everything:
-
-```
-run-clang-tidy -p build
-```
+If you have `run-clang-tidy` installed (LLVM extras), you can lint everything
+tracked by the repo (excluding `third_party`), which matches CI.
 
 ### clang-format
 
-Format files in place using the repo config:
+Check formatting using the repo config (matches CI):
 
 ```
-clang-format -i src/*.cpp include/trx/*.h include/trx/*.tpp tests/*.cpp examples/*.cpp
+clang-format --dry-run --Werror $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
 ```
 
 ## Third-party notices

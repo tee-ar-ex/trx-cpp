@@ -48,10 +48,12 @@ jobs:
       - name: Check formatting
         run: >
           clang-format --dry-run --Werror
-          $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp')
+          $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
 
       - name: Run clang-tidy
-        run: run-clang-tidy -p build
+        run: >
+          run-clang-tidy -p build
+          $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
 
   build:
     name: ${{ matrix.os }}
