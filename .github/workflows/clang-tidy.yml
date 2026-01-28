@@ -11,13 +11,14 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y software-properties-common
+        sudo apt-get install -y software-properties-common curl
         sudo add-apt-repository universe
+        curl -fsSL https://apt.llvm.org/llvm.sh | sudo bash -s -- 19
         sudo apt-get update
         sudo apt-get install -y \
           cmake \
-          clang-18 \
-          clang-tidy-18 \
+          clang-19 \
+          clang-tidy-19 \
           g++ \
           libeigen3-dev \
           libzip-dev \
@@ -30,9 +31,9 @@ jobs:
     - name: Run CMake
       run: |
         cmake -S . -B build -DTRX_ENABLE_CLANG_TIDY=ON \
-          -DCMAKE_C_COMPILER=clang-18 \
-          -DCMAKE_CXX_COMPILER=clang++-18
+          -DCMAKE_C_COMPILER=clang-19 \
+          -DCMAKE_CXX_COMPILER=clang++-19
 
     - name: Run clang-tidy
       run: |
-        run-clang-tidy-18 -p build src examples
+        run-clang-tidy-19 -p build src examples
