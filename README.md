@@ -9,7 +9,6 @@ tractography file format (zip archives or on-disk directories of memmaps).
 Required:
 - C++11 compiler and CMake (>= 3.10)
 - libzip
-- nlohmann::json
 - Eigen3
 - spdlog
 
@@ -43,6 +42,8 @@ ctest --test-dir build --output-on-failure
 
 - `mio` by Martin Andreyel (https://github.com/mandreyel/mio) is vendored in
   `third_party/mio`. See `third_party/mio/LICENSE` for the license text.
+- `json11` by Dropbox (https://github.com/dropbox/json11) is vendored in
+  `third_party/json11`. See `third_party/json11/LICENSE` for the license text.
 
 ### Filesystem shim
 
@@ -93,7 +94,7 @@ delete trx;
 
 ```
 TrxFile<float> *trx = load_from_directory<float>("/path/to/trx_dir");
-std::cout << "Header JSON:\n" << trx->header.dump(2) << "\n";
+std::cout << "Header JSON:\n" << trx->header.dump() << "\n";
 trx->close();
 delete trx;
 ```
@@ -106,7 +107,9 @@ You can modify a loaded `TrxFile` and save it to a new archive:
 TrxFile<half> *trx = load_from_zip<half>("tracks.trx");
 
 // Example: update header metadata
-trx->header["COMMENT"] = "saved by trx-cpp";
+auto header_obj = trx->header.object_items();
+header_obj["COMMENT"] = "saved by trx-cpp";
+trx->header = json(header_obj);
 
 // Save with no compression (ZIP_CM_STORE) or another libzip compression level
 save(*trx, "tracks_copy.trx", ZIP_CM_STORE);

@@ -272,7 +272,12 @@ bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent)
 		free(buffer);
 
 		// convert jstream data into Json.
-		auto root = json::parse(jstream);
+		std::string err;
+		auto root = json::parse(jstream, err);
+		if (!err.empty())
+		{
+			throw std::runtime_error("Failed to parse header.json: " + err);
+		}
 		return root;
 	}
 

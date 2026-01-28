@@ -8,15 +8,20 @@ set(CMAKE_BUILD_TYPE Debug)
 
 find_package(libzip REQUIRED)
 find_package (Eigen3 CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 
 include_directories(../src)
-add_executable(load_trx load_trx.cpp ../src/trx.h ../src/trx.tpp ../src/trx.cpp)
+include_directories(../third_party/json11)
+add_executable(load_trx
+    load_trx.cpp
+    ../src/trx.h
+    ../src/trx.tpp
+    ../src/trx.cpp
+    ../third_party/json11/json11.cpp
+)
 
 
 TARGET_LINK_LIBRARIES(load_trx
-	nlohmann_json::nlohmann_json
 	Eigen3::Eigen
 	libzip::zip
 	spdlog::spdlog

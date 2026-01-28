@@ -126,13 +126,13 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 			affine[i] = {0, 0, 0, 0};
 			for (int j = 0; j < 4; j++)
 			{
-				affine[i][j] = float(init_as->header["VOXEL_TO_RASMM"][i][j]);
+				affine[i][j] = float(init_as->header["VOXEL_TO_RASMM"][i][j].number_value());
 			}
 		}
 
 		for (int i = 0; i < 3; i++)
 		{
-			dimensions[i] = uint16_t(init_as->header["DIMENSIONS"][i]);
+			dimensions[i] = uint16_t(init_as->header["DIMENSIONS"][i].int_value());
 		}
 	}
 	// TODO: add else if for get_reference_info
@@ -192,10 +192,12 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 		throw std::invalid_argument("You must declare both NB_VERTICES AND NB_STREAMLINES");
 	}
 
-	this->header["VOXEL_TO_RASMM"] = affine;
-	this->header["DIMENSIONS"] = dimensions;
-	this->header["NB_VERTICES"] = nb_vertices;
-	this->header["NB_STREAMLINES"] = nb_streamlines;
+	json::object header_obj;
+	header_obj["VOXEL_TO_RASMM"] = affine;
+	header_obj["DIMENSIONS"] = dimensions;
+	header_obj["NB_VERTICES"] = nb_vertices;
+	header_obj["NB_STREAMLINES"] = nb_streamlines;
+	this->header = json(header_obj);
 
 	this->_copy_safe = true;
 }
@@ -209,8 +211,13 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 
 	spdlog::info("Temporary folder for memmaps: {}", tmp_dir);
 
-	trx->header["NB_VERTICES"] = nb_vertices;
-	trx->header["NB_STREAMLINES"] = nb_streamlines;
+	json header = json::object();
+	if (init_as != NULL)
+	{
+		header = init_as->header;
+	}
+	header = _json_set(header, "NB_VERTICES", nb_vertices);
+	header = _json_set(header, "NB_STREAMLINES", nb_streamlines);
 
 	std::string positions_dtype;
 	std::string offsets_dtype;
@@ -218,8 +225,8 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 
 	if (init_as != NULL)
 	{
-		trx->header["VOXEL_TO_RASMM"] = init_as->header["VOXEL_TO_RASMM"];
-		trx->header["DIMENSIONS"] = init_as->header["DIMENSIONS"];
+		header = _json_set(header, "VOXEL_TO_RASMM", init_as->header["VOXEL_TO_RASMM"]);
+		header = _json_set(header, "DIMENSIONS", init_as->header["DIMENSIONS"]);
 		positions_dtype = dtype_from_scalar<DT>();
 		offsets_dtype = dtype_from_scalar<uint64_t>();
 		lengths_dtype = dtype_from_scalar<uint32_t>();
@@ -368,6 +375,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 		}
 	}
 
+	trx->header = header;
 	trx->_uncompressed_folder_handle = tmp_dir;
 	trx->_owns_uncompressed_folder = true;
 
@@ -434,13 +442,13 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 
 		if (base.compare("positions") == 0 && (folder.compare("") == 0 || folder.compare(".") == 0))
 		{
-			if (size != int(trx->header["NB_VERTICES"]) * 3 || dim != 3)
+		if (size != static_cast<int>(trx->header["NB_VERTICES"].int_value()) * 3 || dim != 3)
 			{
 
 				throw std::invalid_argument("Wrong data size/dimensionality");
 			}
 
-			std::tuple<int, int> shape = std::make_tuple(trx->header["NB_VERTICES"], 3);
+		std::tuple<int, int> shape = std::make_tuple(static_cast<int>(trx->header["NB_VERTICES"].int_value()), 3);
 			trx->streamlines->mmap_pos = trxmmap::_create_memmap(filename, shape, "r+", ext.substr(1, ext.size() - 1), mem_adress);
 
 			// TODO: find a better way to get the dtype than using all these switch cases. Also refactor into function
@@ -461,15 +469,15 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 
 		else if (base.compare("offsets") == 0 && (folder.compare("") == 0 || folder.compare(".") == 0))
 		{
-			if (size != int(trx->header["NB_STREAMLINES"]) + 1 || dim != 1)
+		if (size != static_cast<int>(trx->header["NB_STREAMLINES"].int_value()) + 1 || dim != 1)
 			{
 				throw std::invalid_argument("Wrong offsets size/dimensionality: size=" +
 							    std::to_string(size) + " nb_streamlines=" +
-							    std::to_string(int(trx->header["NB_STREAMLINES"])) +
+						    std::to_string(static_cast<int>(trx->header["NB_STREAMLINES"].int_value())) +
 							    " dim=" + std::to_string(dim) + " filename=" + elem_filename);
 			}
 
-			const int nb_str = int(trx->header["NB_STREAMLINES"]);
+		const int nb_str = static_cast<int>(trx->header["NB_STREAMLINES"].int_value());
 			std::tuple<int, int> shape = std::make_tuple(nb_str + 1, 1);
 			trx->streamlines->mmap_off = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
@@ -491,23 +499,23 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			}
 
 			Matrix<uint64_t, Dynamic, 1> offsets = trx->streamlines->_offsets;
-			trx->streamlines->_lengths = _compute_lengths(offsets, int(trx->header["NB_VERTICES"]));
+		trx->streamlines->_lengths = _compute_lengths(offsets, static_cast<int>(trx->header["NB_VERTICES"].int_value()));
 		}
 
 		else if (folder.compare("dps") == 0)
 		{
 			std::tuple<int, int> shape;
 			trx->data_per_streamline[base] = new MMappedMatrix<DT>();
-			int nb_scalar = size / int(trx->header["NB_STREAMLINES"]);
+		int nb_scalar = size / static_cast<int>(trx->header["NB_STREAMLINES"].int_value());
 
-			if (size % int(trx->header["NB_STREAMLINES"]) != 0 || nb_scalar != dim)
+		if (size % static_cast<int>(trx->header["NB_STREAMLINES"].int_value()) != 0 || nb_scalar != dim)
 			{
 
 				throw std::invalid_argument("Wrong dps size/dimensionality");
 			}
 			else
 			{
-				shape = std::make_tuple(trx->header["NB_STREAMLINES"], nb_scalar);
+			shape = std::make_tuple(static_cast<int>(trx->header["NB_STREAMLINES"].int_value()), nb_scalar);
 			}
 			trx->data_per_streamline[base]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
@@ -529,16 +537,16 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 		{
 			std::tuple<int, int> shape;
 			trx->data_per_vertex[base] = new ArraySequence<DT>();
-			int nb_scalar = size / int(trx->header["NB_VERTICES"]);
+		int nb_scalar = size / static_cast<int>(trx->header["NB_VERTICES"].int_value());
 
-			if (size % int(trx->header["NB_VERTICES"]) != 0 || nb_scalar != dim)
+		if (size % static_cast<int>(trx->header["NB_VERTICES"].int_value()) != 0 || nb_scalar != dim)
 			{
 
 				throw std::invalid_argument("Wrong dpv size/dimensionality");
 			}
 			else
 			{
-				shape = std::make_tuple(trx->header["NB_VERTICES"], nb_scalar);
+			shape = std::make_tuple(static_cast<int>(trx->header["NB_VERTICES"].int_value()), nb_scalar);
 			}
 			trx->data_per_vertex[base]->mmap_pos = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
@@ -630,7 +638,7 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 	    this->streamlines->_offsets.size() == 0)
 	{
 		trxmmap::TrxFile<DT> *empty_copy = new trxmmap::TrxFile<DT>();
-		empty_copy->header = json::parse(this->header.dump());
+		empty_copy->header = this->header;
 		return empty_copy;
 	}
 	std::string tmp_dir = make_temp_dir("trx");
@@ -639,7 +647,7 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 	std::ofstream out_json(header);
 
 	// TODO: Definitely a better way to deepcopy
-	json tmp_header = json::parse(this->header.dump());
+	json tmp_header = this->header;
 
 	ArraySequence<DT> *to_dump = new ArraySequence<DT>();
 	// TODO: Verify that this is indeed a deep copy
@@ -649,17 +657,19 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 
 	if (!this->_copy_safe)
 	{
-		tmp_header["NB_STREAMLINES"] = to_dump->_offsets.size() > 0 ? to_dump->_offsets.size() - 1 : 0;
-		tmp_header["NB_VERTICES"] = to_dump->_data.size() / 3;
+		const int nb_streamlines = to_dump->_offsets.size() > 0 ? static_cast<int>(to_dump->_offsets.size() - 1) : 0;
+		const int nb_vertices = static_cast<int>(to_dump->_data.size() / 3);
+		tmp_header = _json_set(tmp_header, "NB_STREAMLINES", nb_streamlines);
+		tmp_header = _json_set(tmp_header, "NB_VERTICES", nb_vertices);
 	}
 	// Ensure sentinel is correct before persisting
 	if (to_dump->_offsets.size() > 0)
 	{
-		to_dump->_offsets(to_dump->_offsets.size() - 1) = tmp_header["NB_VERTICES"];
+		to_dump->_offsets(to_dump->_offsets.size() - 1) = static_cast<uint64_t>(tmp_header["NB_VERTICES"].int_value());
 	}
 	if (out_json.is_open())
 	{
-		out_json << std::setw(4) << tmp_header << std::endl;
+		out_json << tmp_header.dump() << std::endl;
 		out_json.close();
 	}
 
@@ -905,7 +915,8 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 		nb_streamlines = strs_end;
 	}
 
-	if (nb_streamlines == this->header["NB_STREAMLINES"] && nb_vertices == this->header["NB_VERTICES"])
+	if (nb_streamlines == this->header["NB_STREAMLINES"].int_value() &&
+	    nb_vertices == this->header["NB_VERTICES"].int_value())
 	{
 		spdlog::debug("TrxFile of the right size, no resizing.");
 		return;
@@ -916,7 +927,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 	spdlog::info("Resizing streamlines from size {} to {}", this->streamlines->_lengths.size(), nb_streamlines);
 	spdlog::info("Resizing vertices from size {} to  {}", this->streamlines->_data.rows(), nb_vertices);
 
-	if (nb_streamlines < this->header["NB_STREAMLINES"])
+	if (nb_streamlines < this->header["NB_STREAMLINES"].int_value())
 		trx->_copy_fixed_arrays_from(this, -1, -1, nb_streamlines);
 	else
 	{
@@ -1071,9 +1082,19 @@ TrxFile<DT> *load_from_directory(std::string path)
 
 	// TODO: add check to verify that it's open
 	std::ifstream header_file(header_name);
-	json header;
-	header_file >> header;
+	if (!header_file.is_open())
+	{
+		throw std::runtime_error("Failed to open header.json at: " + header_name);
+	}
+	std::string jstream((std::istreambuf_iterator<char>(header_file)),
+			    std::istreambuf_iterator<char>());
 	header_file.close();
+	std::string err;
+	json header = json::parse(jstream, err);
+	if (!err.empty())
+	{
+		throw std::runtime_error("Failed to parse header.json: " + err);
+	}
 
 	std::map<std::string, std::tuple<long long, long long>> files_pointer_size;
 	populate_fps(directory.c_str(), files_pointer_size);
@@ -1159,6 +1180,6 @@ std::ostream &operator<<(std::ostream &out, const TrxFile<DT> &trx)
 {
 
 	out << "Header (header.json):\n";
-	out << trx.header.dump(4);
+	out << trx.header.dump();
 	return out;
 }

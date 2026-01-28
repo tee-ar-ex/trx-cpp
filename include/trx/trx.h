@@ -6,7 +6,7 @@
 #include <zip.h>
 #include <string.h>
 #include <vector>
-#include <nlohmann/json.hpp>
+#include <json11.hpp>
 #include <algorithm>
 #include <cstdint>
 #include <type_traits>
@@ -27,10 +27,25 @@
 #include "spdlog/spdlog.h"
 
 using namespace Eigen;
-using json = nlohmann::json;
+using json = json11::Json;
 
 namespace trxmmap
 {
+	inline json::object _json_object(const json &value)
+	{
+		if (value.is_object())
+		{
+			return value.object_items();
+		}
+		return json::object();
+	}
+
+	inline json _json_set(const json &value, const std::string &key, const json &field)
+	{
+		auto obj = _json_object(value);
+		obj[key] = field;
+		return json(obj);
+	}
 	inline std::string path_basename(const std::string &path)
 	{
 		if (path.empty())

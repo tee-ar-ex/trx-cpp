@@ -41,7 +41,6 @@ if (NOT TARGET Eigen3::Eigen AND EXISTS "${EIGEN3_INCLUDE_DIR}")
         INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_INCLUDE_DIR}"
     )
 endif()
-find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 set(TRX_HAVE_MIO_TARGET OFF)
 set(MIO_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/mio/include")
@@ -49,7 +48,12 @@ if (NOT EXISTS "${MIO_INCLUDE_DIR}/mio/mmap.hpp")
     message(FATAL_ERROR "Vendored mio headers not found at ${MIO_INCLUDE_DIR}/mio/mmap.hpp.")
 endif()
 
-add_library(trx src/trx.cpp include/trx/trx.h include/trx/trx.tpp)
+add_library(trx
+    src/trx.cpp
+    include/trx/trx.h
+    include/trx/trx.tpp
+    third_party/json11/json11.cpp
+)
 add_library(trx-cpp::trx ALIAS trx)
 
 if(TRX_USE_CONAN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ConanSetup.cmake")
@@ -70,7 +74,6 @@ endif()
 
 TARGET_LINK_LIBRARIES(trx
     PUBLIC
-        nlohmann_json::nlohmann_json
         ${TRX_LIBZIP_TARGET}
         Eigen3::Eigen
         spdlog::spdlog
@@ -81,6 +84,7 @@ target_include_directories(trx
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         $<$<NOT:$<BOOL:${TRX_HAVE_MIO_TARGET}>>:$<BUILD_INTERFACE:${MIO_INCLUDE_DIR}>>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/json11>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
@@ -117,6 +121,7 @@ install(TARGETS trx
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(DIRECTORY third_party/mio/include/mio DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES third_party/json11/json11.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 install(EXPORT trx-cppTargets
     FILE trx-cppTargets.cmake

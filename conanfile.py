@@ -40,7 +40,6 @@ class TrxCppConan(ConanFile):
 
     def requirements(self):
         self.requires("libzip/1.10.1")
-        self.requires("nlohmann_json/3.11.3")
         self.requires("eigen/3.4.0")
         self.requires("spdlog/1.12.0")
 
@@ -77,10 +76,6 @@ class TrxCppConan(ConanFile):
             copy(self, "zip.h", src=libzip_include, dst=os.path.join(self.package_folder, "include"))
             copy(self, "zipconf.h", src=libzip_include, dst=os.path.join(self.package_folder, "include"))
 
-        nlohmann_dep = self.dependencies.get("nlohmann_json")
-        if nlohmann_dep and nlohmann_dep.package_folder:
-            nlohmann_include = os.path.join(nlohmann_dep.package_folder, "include")
-            copy(self, "nlohmann/*", src=nlohmann_include, dst=os.path.join(self.package_folder, "include"))
         eigen_dep = self.dependencies.get("eigen")
         if eigen_dep and eigen_dep.package_folder:
             eigen_include = os.path.join(eigen_dep.package_folder, "include", "eigen3")
@@ -108,11 +103,10 @@ class TrxCppConan(ConanFile):
         self.cpp_info.components["trx"].requires = [
             "libzip::libzip",
             "spdlog::spdlog",
-            "nlohmann_json::nlohmann_json",
             "eigen::Eigen3::Eigen",
         ]
         extra_includes = []
-        for dep_name in ("nlohmann_json", "eigen"):
+        for dep_name in ("eigen",):
             dep = self.dependencies.get(dep_name)
             if dep and dep.package_folder:
                 dep_include = os.path.join(dep.package_folder, "include")

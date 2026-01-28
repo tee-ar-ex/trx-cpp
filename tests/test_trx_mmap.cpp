@@ -3,7 +3,6 @@
 #include <typeinfo>
 #include <stdexcept>
 #include <sys/stat.h>
-#include <iomanip>
 #include <trx/filesystem.h>
 #include <random>
 #include <system_error>
@@ -106,13 +105,17 @@ namespace
 		fixture.nb_vertices = 12;
 		fixture.nb_streamlines = 4;
 
-		fixture.expected_header["DIMENSIONS"] = {117, 151, 115};
-		fixture.expected_header["NB_STREAMLINES"] = fixture.nb_streamlines;
-		fixture.expected_header["NB_VERTICES"] = fixture.nb_vertices;
-		fixture.expected_header["VOXEL_TO_RASMM"] = {{-1.25, 0.0, 0.0, 72.5},
-							    {0.0, 1.25, 0.0, -109.75},
-							    {0.0, 0.0, 1.25, -64.5},
-							    {0.0, 0.0, 0.0, 1.0}};
+		json::object header_obj;
+		header_obj["DIMENSIONS"] = json::array{117, 151, 115};
+		header_obj["NB_STREAMLINES"] = fixture.nb_streamlines;
+		header_obj["NB_VERTICES"] = fixture.nb_vertices;
+		header_obj["VOXEL_TO_RASMM"] = json::array{
+			json::array{-1.25, 0.0, 0.0, 72.5},
+			json::array{0.0, 1.25, 0.0, -109.75},
+			json::array{0.0, 0.0, 1.25, -64.5},
+			json::array{0.0, 0.0, 0.0, 1.0},
+		};
+		fixture.expected_header = json(header_obj);
 
 		// Write header.json
 		fs::path header_path = trx_dir / "header.json";
@@ -121,7 +124,7 @@ namespace
 		{
 			throw std::runtime_error("Failed to write header.json");
 		}
-		header_out << std::setw(4) << fixture.expected_header << std::endl;
+		header_out << fixture.expected_header.dump() << std::endl;
 		header_out.close();
 
 		// Write positions (float16)
@@ -552,15 +555,17 @@ TEST(TrxFileMemmap, TrxFile)
 	trxmmap::TrxFile<half> *trx = new TrxFile<half>();
 
 	// expected header
-	json expected;
-
-	expected["DIMENSIONS"] = {1, 1, 1};
-	expected["NB_STREAMLINES"] = 0;
-	expected["NB_VERTICES"] = 0;
-	expected["VOXEL_TO_RASMM"] = {{1.0, 0.0, 0.0, 0.0},
-				      {0.0, 1.0, 0.0, 0.0},
-				      {0.0, 0.0, 1.0, 0.0},
-				      {0.0, 0.0, 0.0, 1.0}};
+	json::object expected_obj;
+	expected_obj["DIMENSIONS"] = json::array{1, 1, 1};
+	expected_obj["NB_STREAMLINES"] = 0;
+	expected_obj["NB_VERTICES"] = 0;
+	expected_obj["VOXEL_TO_RASMM"] = json::array{
+		json::array{1.0, 0.0, 0.0, 0.0},
+		json::array{0.0, 1.0, 0.0, 0.0},
+		json::array{0.0, 0.0, 1.0, 0.0},
+		json::array{0.0, 0.0, 0.0, 1.0},
+	};
+	json expected(expected_obj);
 
 	EXPECT_EQ(trx->header, expected);
 
@@ -575,15 +580,17 @@ TEST(TrxFileMemmap, TrxFile)
 	// TODO: test for now..
 
 	trxmmap::TrxFile<half> *trx_init = new TrxFile<half>(fixture.nb_vertices, fixture.nb_streamlines, root_init);
-	json init_as;
-
-	init_as["DIMENSIONS"] = {117, 151, 115};
-	init_as["NB_STREAMLINES"] = fixture.nb_streamlines;
-	init_as["NB_VERTICES"] = fixture.nb_vertices;
-	init_as["VOXEL_TO_RASMM"] = {{-1.25, 0.0, 0.0, 72.5},
-				     {0.0, 1.25, 0.0, -109.75},
-				     {0.0, 0.0, 1.25, -64.5},
-				     {0.0, 0.0, 0.0, 1.0}};
+	json::object init_as_obj;
+	init_as_obj["DIMENSIONS"] = json::array{117, 151, 115};
+	init_as_obj["NB_STREAMLINES"] = fixture.nb_streamlines;
+	init_as_obj["NB_VERTICES"] = fixture.nb_vertices;
+	init_as_obj["VOXEL_TO_RASMM"] = json::array{
+		json::array{-1.25, 0.0, 0.0, 72.5},
+		json::array{0.0, 1.25, 0.0, -109.75},
+		json::array{0.0, 0.0, 1.25, -64.5},
+		json::array{0.0, 0.0, 0.0, 1.0},
+	};
+	json init_as(init_as_obj);
 
 	EXPECT_EQ(root_init->header, init_as);
 	EXPECT_EQ(trx_init->streamlines->_data.size(), fixture.nb_vertices * 3);

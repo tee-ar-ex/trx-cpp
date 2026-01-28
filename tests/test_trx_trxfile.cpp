@@ -1,6 +1,5 @@
 #include <any>
 #include <sstream>
-#include <nlohmann/json.hpp>
 
 #define private public
 #include <trx/trx.h>
@@ -10,7 +9,6 @@
 #include <trx/filesystem.h>
 
 #include <fstream>
-#include <iomanip>
 #include <random>
 #include <set>
 
@@ -59,21 +57,24 @@ namespace
 		fs::path root = make_temp_test_dir("trx_float");
 		fs::path header_path = root / "header.json";
 
-		json header;
-		header["DIMENSIONS"] = {1, 1, 1};
-		header["NB_STREAMLINES"] = 2;
-		header["NB_VERTICES"] = 4;
-		header["VOXEL_TO_RASMM"] = {{1.0, 0.0, 0.0, 0.0},
-		                            {0.0, 1.0, 0.0, 0.0},
-		                            {0.0, 0.0, 1.0, 0.0},
-		                            {0.0, 0.0, 0.0, 1.0}};
+		json::object header_obj;
+		header_obj["DIMENSIONS"] = json::array{1, 1, 1};
+		header_obj["NB_STREAMLINES"] = 2;
+		header_obj["NB_VERTICES"] = 4;
+		header_obj["VOXEL_TO_RASMM"] = json::array{
+			json::array{1.0, 0.0, 0.0, 0.0},
+			json::array{0.0, 1.0, 0.0, 0.0},
+			json::array{0.0, 0.0, 1.0, 0.0},
+			json::array{0.0, 0.0, 0.0, 1.0},
+		};
+		json header(header_obj);
 
 		std::ofstream header_out(header_path.string());
 		if (!header_out.is_open())
 		{
 			throw std::runtime_error("Failed to write header.json");
 		}
-		header_out << std::setw(4) << header << std::endl;
+		header_out << header.dump() << std::endl;
 		header_out.close();
 
 		Matrix<float, Dynamic, Dynamic, RowMajor> positions(4, 3);
@@ -200,8 +201,8 @@ TEST(TrxFileTpp, CopyFixedArraysFrom)
 {
 	const fs::path data_dir = create_float_trx_dir();
 	trxmmap::TrxFile<float> *src = load_trx_dir<float>(data_dir);
-	const int nb_vertices = int(src->header["NB_VERTICES"]);
-	const int nb_streamlines = int(src->header["NB_STREAMLINES"]);
+	const int nb_vertices = src->header["NB_VERTICES"].int_value();
+	const int nb_streamlines = src->header["NB_STREAMLINES"].int_value();
 	trxmmap::TrxFile<float> *dst = new trxmmap::TrxFile<float>(nb_vertices, nb_streamlines, src);
 
 	dst->_copy_fixed_arrays_from(src, 0, 0, nb_streamlines);
@@ -257,8 +258,8 @@ TEST(TrxFileTpp, ResizeDeleteDpgCloses)
 	trxmmap::TrxFile<float> *trx = load_trx_dir<float>(data_dir);
 	trx->resize(1, -1, true);
 
-	EXPECT_EQ(int(trx->header["NB_STREAMLINES"]), 0);
-	EXPECT_EQ(int(trx->header["NB_VERTICES"]), 0);
+	EXPECT_EQ(trx->header["NB_STREAMLINES"].int_value(), 0);
+	EXPECT_EQ(trx->header["NB_VERTICES"].int_value(), 0);
 	EXPECT_EQ(trx->data_per_group.size(), 0u);
 	EXPECT_EQ(trx->groups.size(), 0u);
 	EXPECT_EQ(trx->data_per_vertex.size(), 0u);
