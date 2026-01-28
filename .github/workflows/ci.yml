@@ -24,6 +24,7 @@ jobs:
             cmake \
             g++ \
             libzip-dev \
+            libzip-tools \
             libeigen3-dev \
             zlib1g-dev
 
