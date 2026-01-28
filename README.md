@@ -37,6 +37,40 @@ ctest --test-dir build --output-on-failure
 
 `mio` is vendored under `third_party/mio/include` and used directly from there.
 
+## Style checks
+
+This repo includes `.clang-tidy` and `.clang-format` at the root.
+
+### clang-tidy
+
+Generate a build with compile commands, then run clang-tidy:
+
+```
+cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+clang-tidy -p build src/trx.cpp
+```
+
+To run clang-tidy automatically during builds:
+
+```
+cmake -S . -B build -DTRX_ENABLE_CLANG_TIDY=ON
+cmake --build build
+```
+
+If you have `run-clang-tidy` installed (LLVM extras), you can lint everything:
+
+```
+run-clang-tidy -p build
+```
+
+### clang-format
+
+Format files in place using the repo config:
+
+```
+clang-format -i src/*.cpp include/trx/*.h include/trx/*.tpp tests/*.cpp examples/*.cpp
+```
+
 ## Third-party notices
 
 - `mio` by Martin Andreyel (https://github.com/mandreyel/mio) is vendored in

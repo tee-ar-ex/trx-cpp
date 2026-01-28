@@ -1,0 +1,16 @@
+Checks: >-
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  readability-*,
+  modernize-*,
+  misc-*
+WarningsAsErrors: ''
+HeaderFilterRegex: '^(include|src|tests|examples)/'
+FormatStyle: file
+CheckOptions:
+  - key: readability-identifier-naming.IgnoredRegexp
+    value: '^[A-Z0-9_]+$'
+  - key: modernize-use-trailing-return-type.IgnoreMacros
+    value: '1'
