@@ -11,6 +11,9 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
+        sudo apt-get install -y software-properties-common
+        sudo add-apt-repository universe
+        sudo apt-get update
         sudo apt-get install -y \
           cmake \
           g++ \
@@ -26,7 +29,6 @@ jobs:
     - uses: ZedThree/clang-tidy-review@v0.21.0
       id: review
       with:
-        apt_packages: g++,libzip-dev,libzip-tools,zlib1g-dev,ninja-build
         config_file: .clang-tidy
         clang_tidy_version: 17
 
