@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <algorithm>
 #include <stdexcept>
+#include <random>
 #include <vector>
 #define SYSERROR() errno
 
@@ -626,31 +627,41 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 	}
 	if (base_dir.empty())
 	{
+#if defined(_WIN32) || defined(_WIN64)
+		base_dir = ".";
+#else
 		base_dir = "/tmp";
+#endif
 	}
 
-	trx::fs::path tmpl = trx::fs::path(base_dir) / (prefix + "_XXXXXX");
-	std::string tmpl_str = tmpl.string();
-	std::vector<char> buf(tmpl_str.begin(), tmpl_str.end());
-	buf.push_back('\0');
-#if defined(_WIN32) || defined(_WIN64)
-	if (_mktemp_s(buf.data(), buf.size()) != 0)
+	trx::fs::path base_path(base_dir);
+	std::error_code ec;
+	if (!trx::fs::exists(base_path, ec))
 	{
-		throw std::runtime_error("Failed to create temporary directory");
+		ec.clear();
+		trx::fs::create_directories(base_path, ec);
+		if (ec)
+		{
+			throw std::runtime_error("Failed to create base temp directory: " + base_dir);
+		}
 	}
-	if (_mkdir(buf.data()) != 0)
+
+	static std::mt19937_64 rng(std::random_device{}());
+	std::uniform_int_distribution<uint64_t> dist;
+	for (int attempt = 0; attempt < 100; ++attempt)
 	{
-		throw std::runtime_error("Failed to create temporary directory");
+		trx::fs::path candidate = base_path / (prefix + "_" + std::to_string(dist(rng)));
+		ec.clear();
+		if (trx::fs::create_directory(candidate, ec))
+		{
+			return candidate.string();
+		}
+		if (ec && ec != std::errc::file_exists)
+		{
+			throw std::runtime_error("Failed to create temporary directory: " + ec.message());
+		}
 	}
-	return std::string(buf.data());
-#else
-	char *dirname = mkdtemp(buf.data());
-	if (dirname == nullptr)
-	{
-		throw std::runtime_error("Failed to create temporary directory");
-	}
-	return std::string(dirname);
-#endif
+	throw std::runtime_error("Failed to create temporary directory");
 	}
 
 	std::string extract_zip_to_directory(zip_t *zfolder)
