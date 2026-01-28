@@ -51,7 +51,7 @@ cmake -S . -B build \
   -DTRX_BUILD_TESTS=ON \
   -DTRX_BUILD_EXAMPLES=ON \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-run-clang-tidy -p build $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
+run-clang-tidy-17 -p build $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
 ```
 
 To run clang-tidy automatically during builds:
@@ -61,7 +61,7 @@ cmake -S . -B build -DTRX_ENABLE_CLANG_TIDY=ON
 cmake --build build
 ```
 
-If you have `run-clang-tidy` installed (LLVM extras), you can lint everything
+If you have `run-clang-tidy-17` installed (LLVM extras), you can lint everything
 tracked by the repo (excluding `third_party`), which matches CI.
 
 ### clang-format
@@ -69,7 +69,7 @@ tracked by the repo (excluding `third_party`), which matches CI.
 Check formatting using the repo config (matches CI):
 
 ```
-clang-format --dry-run --Werror $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
+clang-format-17 --dry-run --Werror $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
 ```
 
 ## Third-party notices
