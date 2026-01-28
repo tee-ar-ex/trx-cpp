@@ -23,10 +23,18 @@ jobs:
             clang-tools \
             cmake \
             g++ \
-            libzip-dev \
-            libzip-tools \
             libeigen3-dev \
             zlib1g-dev
+
+      - name: Build and install libzip
+        run: |
+          git clone --depth 1 https://github.com/nih-at/libzip.git deps/libzip
+          cmake -S deps/libzip -B deps/libzip/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TOOLS=OFF \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/deps/libzip/install
+          cmake --build deps/libzip/build --target install
 
       - name: Configure (compile commands)
         run: |
@@ -34,7 +42,8 @@ jobs:
             -DTRX_USE_CONAN=OFF \
             -DTRX_BUILD_TESTS=ON \
             -DTRX_BUILD_EXAMPLES=ON \
-            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/deps/libzip/install
 
       - name: Check formatting
         run: >
