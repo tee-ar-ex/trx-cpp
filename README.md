@@ -123,3 +123,4 @@ delete trx;
 `TrxFile` uses memory-mapped arrays under the hood for large datasets. The
 `close()` method cleans up any temporary folders created during zip extraction.
 If you skip `close()`, temporary directories may be left behind.
+
