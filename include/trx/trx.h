@@ -3,6 +3,7 @@
 
 #include <Eigen/Core>
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -252,7 +253,7 @@ private:
  * @param[in] root a Json::Value root obtained from reading a header file with JsonCPP
  * @param[out] header a header containing the same elements as the original root
  * */
-json assignHeader(json root);
+json assignHeader(const json &root);
 
 /**
  * Returns the properly formatted datatype name
@@ -261,7 +262,7 @@ json assignHeader(json root);
  * @param[out] fmt_dtype the formatted datatype
  *
  * */
-std::string _get_dtype(std::string dtype);
+std::string _get_dtype(const std::string &dtype);
 
 /**
  * @brief Get the size of the datatype
@@ -269,7 +270,7 @@ std::string _get_dtype(std::string dtype);
  * @param dtype the string name of the datatype
  * @return int corresponding to the size of the datatype
  */
-int _sizeof_dtype(std::string dtype);
+int _sizeof_dtype(const std::string &dtype);
 
 /**
  * Determine whether the extension is a valid extension
@@ -279,7 +280,7 @@ int _sizeof_dtype(std::string dtype);
  * @param[out] is_valid a boolean denoting whether the extension is valid.
  *
  * */
-bool _is_dtype_valid(std::string &ext);
+bool _is_dtype_valid(const std::string &ext);
 
 /**
  * This function loads the header json file
@@ -407,12 +408,12 @@ auto with_trx_reader(const std::string &path, Fn &&fn)
  * @param[in] dimensions vector of size 3
  *
  * */
-void get_reference_info(std::string reference, const MatrixXf &affine, const RowVectorXf &dimensions);
+void get_reference_info(const std::string &reference, const MatrixXf &affine, const RowVectorXi &dimensions);
 
 template <typename DT> std::ostream &operator<<(std::ostream &out, const TrxFile<DT> &trx);
 // private:
 
-void allocate_file(const std::string &path, const int size);
+void allocate_file(const std::string &path, std::size_t size);
 
 /**
  * @brief Wrapper to support empty array as memmaps
@@ -429,12 +430,12 @@ void allocate_file(const std::string &path, const int size);
 // TODO: remove data type as that's done outside of this function
 mio::shared_mmap_sink _create_memmap(std::string filename,
                                      std::tuple<int, int> &shape,
-                                     std::string mode = "r",
-                                     std::string dtype = "float32",
+                                     const std::string &mode = "r",
+                                     const std::string &dtype = "float32",
                                      long long offset = 0);
 
 template <typename DT> std::string _generate_filename_from_data(const MatrixBase<DT> &arr, const std::string filename);
-std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string filename);
+std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string &filename);
 
 /**
  * @brief Compute the lengths from offsets and header information
@@ -491,8 +492,8 @@ void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression
  * @param compression_standard The compression standard to use, as defined by the ZipFile library
  */
 void zip_from_folder(zip_t *zf,
-                     const std::string root,
-                     const std::string directory,
+                     const std::string &root,
+                     const std::string &directory,
                      zip_uint32_t compression_standard = ZIP_CM_STORE);
 
 std::string get_base(const std::string &delimiter, const std::string &str);
@@ -505,7 +506,7 @@ int rm_dir(const char *d);
 std::string make_temp_dir(const std::string &prefix);
 std::string extract_zip_to_directory(zip_t *zfolder);
 
-std::string rm_root(std::string root, const std::string path);
+std::string rm_root(const std::string &root, const std::string &path);
 #include <trx/trx.tpp>
 
 } // namespace trxmmap

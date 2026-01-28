@@ -1,12 +1,14 @@
 #include <trx/trx.h>
 
+#include <Eigen/Core>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -21,7 +23,7 @@ std::string format_json_array(const json &value) {
   }
   std::ostringstream out;
   out << "[";
-  const auto items = value.array_items();
+  const auto &items = value.array_items();
   for (size_t i = 0; i < items.size(); ++i) {
     if (i > 0) {
       out << ", ";
@@ -42,7 +44,7 @@ std::string format_matrix_row(const json &row) {
   }
   std::ostringstream out;
   out << "[";
-  const auto items = row.array_items();
+  const auto &items = row.array_items();
   for (size_t i = 0; i < items.size(); ++i) {
     if (i > 0) {
       out << ", ";
@@ -158,7 +160,7 @@ void print_trx_info(
 }
 
 struct ReaderPrinter {
-  const std::string &path;
+  std::string path;
   bool is_dir;
   bool show_stats;
 
@@ -171,30 +173,33 @@ struct ReaderPrinter {
 } // namespace
 
 int main(int argc, char **argv) {
-  std::string path;
-  bool show_stats = false;
-
-  cxxopts::Options options("trxinfo", "Print information about a TRX file or directory.");
-  options.add_options()(
-      "stats", "Compute Min/Mean/Max streamline lengths", cxxopts::value<bool>(show_stats)->default_value("false"))(
-      "path", "Path to TRX file or directory", cxxopts::value<std::string>(path));
-  options.parse_positional({"path"});
-
+  std::string help_text;
   try {
+    std::string path;
+    bool show_stats = false;
+    cxxopts::Options options("trxinfo", "Print information about a TRX file or directory.");
+    options.add_options()(
+        "stats", "Compute Min/Mean/Max streamline lengths", cxxopts::value<bool>(show_stats)->default_value("false"))(
+        "path", "Path to TRX file or directory", cxxopts::value<std::string>(path));
+    options.parse_positional({"path"});
+    help_text = options.help();
+
     auto result = options.parse(argc, argv);
-    if (!result.count("path")) {
-      std::cerr << options.help() << "\n";
+    if (result.count("path") == 0U) {
+      std::cerr << help_text << "\n";
       return 1;
     }
     path = result["path"].as<std::string>();
     show_stats = result["stats"].as<bool>();
 
     const bool is_dir = trxmmap::is_trx_directory(path);
-    ReaderPrinter printer{path, is_dir, show_stats};
+    const ReaderPrinter printer{path, is_dir, show_stats};
     return trxmmap::with_trx_reader(path, printer);
   } catch (const cxxopts::exceptions::exception &e) {
     std::cerr << "trxinfo: " << e.what() << "\n";
-    std::cerr << options.help() << "\n";
+    if (!help_text.empty()) {
+      std::cerr << help_text << "\n";
+    }
     return 1;
   } catch (const std::exception &e) {
     std::cerr << "trxinfo: " << e.what() << "\n";

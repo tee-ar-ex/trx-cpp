@@ -78,6 +78,7 @@ add_library(trx
     include/trx/trx.tpp
     third_party/json11/json11.cpp
 )
+set_source_files_properties(third_party/json11/json11.cpp PROPERTIES SKIP_LINTING ON)
 add_library(trx-cpp::trx ALIAS trx)
 
 target_compile_features(trx PUBLIC cxx_std_17)
