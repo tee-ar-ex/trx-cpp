@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
-#include <trx/filesystem.h>
+#include <filesystem>
 
 #include <algorithm>
 #include <fstream>
 #include <random>
 #include <string>
 
-namespace fs = trx::fs;
+namespace fs = std::filesystem;
 
 namespace
 {
@@ -115,25 +115,25 @@ TEST(TrxFilesystem, PermissionsRoundTrip)
 	write_text_file(file, "perm");
 
 	std::error_code ec;
-	auto perms_before = fs::permissions(file, ec);
+	auto perms_before = fs::status(file, ec).permissions();
 	if (ec)
 	{
 		GTEST_SKIP() << "permissions() not supported on this platform";
 	}
 
-	fs::permissions(file, fs::perms::owner_read, ec);
+	fs::permissions(file, fs::perms::owner_read, fs::perm_options::replace, ec);
 	if (ec)
 	{
 		GTEST_SKIP() << "permissions() failed on this platform";
 	}
 
-	auto perms_after = fs::permissions(file, ec);
+	auto perms_after = fs::status(file, ec).permissions();
 	if (!ec)
 	{
 		EXPECT_NE(static_cast<unsigned>(perms_after), 0u);
 	}
 
-	fs::permissions(file, perms_before, ec);
+	fs::permissions(file, perms_before, fs::perm_options::replace, ec);
 
 	fs::remove_all(root, ec);
 }
@@ -147,7 +147,8 @@ TEST(TrxFilesystem, SymlinkCreateAndDetect)
 	write_text_file(target, "data");
 
 	std::error_code ec;
-	if (!fs::create_symlink(target, link, ec))
+	fs::create_symlink(target, link, ec);
+	if (ec)
 	{
 		GTEST_SKIP() << "Symlink creation not permitted: " << ec.message();
 	}

@@ -70,23 +70,23 @@ endif()
 
 add_executable(test_mmap test_trx_mmap.cpp)
 target_link_libraries(test_mmap PRIVATE trx GTest::gtest_main)
-target_compile_features(test_mmap PRIVATE cxx_std_14)
+target_compile_features(test_mmap PRIVATE cxx_std_17)
 
 add_executable(test_io test_trx_io.cpp)
 target_link_libraries(test_io PRIVATE trx GTest::gtest_main)
-target_compile_features(test_io PRIVATE cxx_std_14)
+target_compile_features(test_io PRIVATE cxx_std_17)
 
 add_executable(test_streamlines_ops test_trx_streamlines_ops.cpp)
 target_link_libraries(test_streamlines_ops PRIVATE trx GTest::gtest_main)
-target_compile_features(test_streamlines_ops PRIVATE cxx_std_14)
+target_compile_features(test_streamlines_ops PRIVATE cxx_std_17)
 
 add_executable(test_filesystem test_trx_filesystem.cpp)
 target_link_libraries(test_filesystem PRIVATE trx GTest::gtest_main)
-target_compile_features(test_filesystem PRIVATE cxx_std_14)
+target_compile_features(test_filesystem PRIVATE cxx_std_17)
 
 add_executable(test_trxfile test_trx_trxfile.cpp)
 target_link_libraries(test_trxfile PRIVATE trx GTest::gtest_main)
-target_compile_features(test_trxfile PRIVATE cxx_std_14)
+target_compile_features(test_trxfile PRIVATE cxx_std_17)
 
 include(GoogleTest)
 gtest_discover_tests(test_mmap PROPERTIES

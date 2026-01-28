@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <trx/trx.h>
-#include <trx/filesystem.h>
+#include <filesystem>
 #include <zip.h>
 
 #include <algorithm>
@@ -16,7 +16,7 @@
 
 using namespace Eigen;
 using namespace trxmmap;
-namespace fs = trx::fs;
+namespace fs = std::filesystem;
 
 namespace
 {
@@ -108,20 +108,16 @@ namespace
 		return normalize_path(path.string());
 	}
 
-	bool is_directory(const fs::path &path)
+	bool is_dir(const fs::path &path)
 	{
 		std::error_code ec;
 		return fs::is_directory(path, ec) && !ec;
 	}
 
-	bool is_regular_file(const fs::path &path)
+	bool is_regular(const fs::path &path)
 	{
-		struct stat sb;
-		if (stat(path.c_str(), &sb) != 0)
-		{
-			return false;
-		}
-		return S_ISREG(sb.st_mode);
+		std::error_code ec;
+		return fs::is_regular_file(path, ec) && !ec;
 	}
 
 	Matrix<float, Dynamic, Dynamic, RowMajor> load_rasmm_coords(const fs::path &path)
@@ -177,7 +173,7 @@ namespace
 	template <typename DT>
 	trxmmap::TrxFile<DT> *load_trx(const fs::path &path)
 	{
-		if (is_directory(path))
+		if (is_dir(path))
 		{
 			return trxmmap::load_from_directory<DT>(path.string());
 		}
@@ -325,7 +321,7 @@ TEST(TrxFileIo, delete_tmp_gs_dir_rasmm)
 		trxmmap::TrxFile<float> *trx = load_trx<float>(input);
 
 		std::string tmp_dir = trx->_uncompressed_folder_handle;
-		if (is_regular_file(input))
+		if (is_regular(input))
 		{
 			ASSERT_FALSE(tmp_dir.empty());
 			ASSERT_TRUE(fs::exists(tmp_dir));
@@ -335,7 +331,7 @@ TEST(TrxFileIo, delete_tmp_gs_dir_rasmm)
 		expect_allclose(actual, coords);
 		trx->close();
 
-		if (is_regular_file(input))
+		if (is_regular(input))
 		{
 #if defined(_WIN32) || defined(_WIN64)
 			// Windows can hold file handles briefly after close; avoid flaky removal assertions.
@@ -456,49 +452,25 @@ TEST(TrxFileIo, complete_dir_from_trx)
 	{
 		ASSERT_TRUE(fs::exists(input));
 		trxmmap::TrxFile<float> *trx = load_trx<float>(input);
-		fs::path dir_to_check = trx->_uncompressed_folder_handle.empty() ? input : trx->_uncompressed_folder_handle;
+		fs::path dir_to_check = trx->_uncompressed_folder_handle.empty()
+		                            ? input
+		                            : fs::path(trx->_uncompressed_folder_handle);
 
 		std::set<std::string> file_paths;
-		std::vector<fs::path> pending;
-		pending.push_back(dir_to_check);
-		while (!pending.empty())
+		std::error_code ec;
+		for (fs::recursive_directory_iterator it(dir_to_check, ec), end; it != end; it.increment(ec))
 		{
-			fs::path current = pending.back();
-			pending.pop_back();
-
-			DIR *dir = opendir(current.c_str());
-			if (dir == nullptr)
+			if (ec)
 			{
+				break;
+			}
+			if (!it->is_regular_file(ec))
+			{
+				ec.clear();
 				continue;
 			}
-			struct dirent *entry;
-			while ((entry = readdir(dir)) != nullptr)
-			{
-				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-				{
-					continue;
-				}
-				fs::path child = current / entry->d_name;
-				if (is_directory(child))
-				{
-					pending.push_back(child);
-				}
-				else if (is_regular_file(child))
-				{
-					std::string full = normalize_path(child);
-					std::string base = normalize_path(dir_to_check);
-					if (full.rfind(base, 0) == 0)
-					{
-						std::string rel = full.substr(base.size());
-						if (!rel.empty() && rel[0] == '/')
-						{
-							rel.erase(0, 1);
-						}
-						file_paths.insert(rel);
-					}
-				}
-			}
-			closedir(dir);
+			fs::path rel = it->path().lexically_relative(dir_to_check);
+			file_paths.insert(normalize_path(rel.string()));
 		}
 
 		EXPECT_EQ(file_paths, expected_content);

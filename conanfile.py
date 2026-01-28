@@ -52,7 +52,7 @@ class TrxCppConan(ConanFile):
 
     def generate(self):
         tc = CMakeToolchain(self)
-        tc.variables["CMAKE_CXX_STANDARD"] = 11
+        tc.variables["CMAKE_CXX_STANDARD"] = 17
         tc.variables["CMAKE_CXX_STANDARD_REQUIRED"] = "ON"
         tc.variables["CMAKE_CXX_EXTENSIONS"] = "OFF"
         tc.generate()

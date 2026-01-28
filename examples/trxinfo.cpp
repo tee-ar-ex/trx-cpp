@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#include <CLI/CLI.hpp>
+#include <cxxopts.hpp>
 
 #include "cli_colors.h"
 
@@ -210,19 +210,35 @@ struct ReaderPrinter
 
 int main(int argc, char **argv)
 {
-	CLI::App app{"Print information about a TRX file or directory."};
 	std::string path;
 	bool show_stats = false;
 
-	app.add_option("path", path, "Path to TRX file or directory")->required();
-	app.add_flag("--stats", show_stats, "Compute Min/Mean/Max streamline lengths");
+	cxxopts::Options options("trxinfo", "Print information about a TRX file or directory.");
+	options.add_options()("stats", "Compute Min/Mean/Max streamline lengths",
+	                      cxxopts::value<bool>(show_stats)->default_value("false"))(
+	    "path", "Path to TRX file or directory", cxxopts::value<std::string>(path));
+	options.parse_positional({"path"});
 
-	CLI11_PARSE(app, argc, argv);
 	try
 	{
+		auto result = options.parse(argc, argv);
+		if (!result.count("path"))
+		{
+			std::cerr << options.help() << "\n";
+			return 1;
+		}
+		path = result["path"].as<std::string>();
+		show_stats = result["stats"].as<bool>();
+
 		const bool is_dir = trxmmap::is_trx_directory(path);
 		ReaderPrinter printer{path, is_dir, show_stats};
 		return trxmmap::with_trx_reader(path, printer);
+	}
+	catch (const cxxopts::exceptions::exception &e)
+	{
+		std::cerr << "trxinfo: " << e.what() << "\n";
+		std::cerr << options.help() << "\n";
+		return 1;
 	}
 	catch (const std::exception &e)
 	{
