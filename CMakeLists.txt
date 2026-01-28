@@ -14,6 +14,7 @@ endif()
 
 option(TRX_USE_CONAN "Should Conan package manager be used?" ON)
 option(TRX_BUILD_TESTS "Build trx tests" OFF)
+option(TRX_BUILD_EXAMPLES "Build trx example commandline programs" ON)
 
 if(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
@@ -104,6 +105,11 @@ if(TRX_BUILD_TESTS)
     else()
         message(STATUS "GTest not found; skipping tests. Set GTest_DIR to a config path to enable.")
     endif()
+endif()
+
+if(TRX_BUILD_EXAMPLES)
+    add_subdirectory(third_party/CLI11)
+    add_subdirectory(examples)
 endif()
 
 # Installation and package config
