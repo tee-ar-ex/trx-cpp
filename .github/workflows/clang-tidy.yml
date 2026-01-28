@@ -16,6 +16,7 @@ jobs:
           g++ \
           libeigen3-dev \
           libzip-dev \
+          libzip-tools \
           zlib1g-dev \
           ninja-build
 
@@ -25,7 +26,7 @@ jobs:
     - uses: ZedThree/clang-tidy-review@v0.21.0
       id: review
       with:
-        apt_packages: g++,libzip-dev,zlib1g-dev,ninja-build
+        apt_packages: g++,libzip-dev,libzip-tools,zlib1g-dev,ninja-build
         config_file: .clang-tidy
         clang_tidy_version: 17
 
