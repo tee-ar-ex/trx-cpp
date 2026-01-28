@@ -152,14 +152,14 @@ template <typename DT> struct ArraySequence {
   mio::shared_mmap_sink mmap_pos;
   mio::shared_mmap_sink mmap_off;
 
-  ArraySequence() : _data(NULL, 1, 1), _offsets(NULL, 1, 1) {};
+  ArraySequence() : _data(NULL, 1, 1), _offsets(NULL, 1, 1) {}
 };
 
 template <typename DT> struct MMappedMatrix {
   Map<Matrix<DT, Dynamic, Dynamic>> _matrix;
   mio::shared_mmap_sink mmap;
 
-  MMappedMatrix() : _matrix(NULL, 1, 1) {};
+  MMappedMatrix() : _matrix(NULL, 1, 1) {}
 };
 
 template <typename DT> class TrxFile {
