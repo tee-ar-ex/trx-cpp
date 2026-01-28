@@ -232,12 +232,13 @@ namespace
 
 	std::string get_current_working_dir()
 	{
-		char buffer[PATH_MAX];
-		if (getcwd(buffer, sizeof(buffer)) == nullptr)
+		std::error_code ec;
+		auto cwd = fs::current_path(ec);
+		if (ec)
 		{
-			throw std::runtime_error("Failed to get current working directory");
+			throw std::runtime_error("Failed to get current working directory: " + ec.message());
 		}
-		return std::string(buffer);
+		return cwd.string();
 	}
 
 	bool wait_for_path_gone(const fs::path &path, int retries = 10, int delay_ms = 50)

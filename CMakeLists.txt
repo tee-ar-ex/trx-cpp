@@ -21,6 +21,7 @@ option(TRX_BUILD_EXAMPLES "Build trx example commandline programs" ON)
 
 if(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+    add_compile_definitions(NOMINMAX)
 endif()
 
 find_package(libzip REQUIRED)

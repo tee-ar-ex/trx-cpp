@@ -99,7 +99,7 @@ TEST(TrxFilesystem, FileSizeAndRemoveAll)
 
 	EXPECT_EQ(fs::file_size(file), 3u);
 
-	EXPECT_THROW(fs::file_size(root), std::runtime_error);
+	EXPECT_THROW((void)fs::file_size(root), std::runtime_error);
 
 	std::error_code ec;
 	fs::remove_all(root, ec);

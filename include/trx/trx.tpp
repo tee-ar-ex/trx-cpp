@@ -898,7 +898,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 {
 	if (!this->_copy_safe)
 	{
-		std::invalid_argument("Cannot resize a sliced dataset.");
+		throw std::invalid_argument("Cannot resize a sliced dataset.");
 	}
 
 	std::tuple<int, int> sp_end = this->_get_real_len();
@@ -1230,15 +1230,12 @@ void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression
 	}
 	else
 	{
-		struct stat sb;
-
-		struct stat tmp_sb;
-		if (stat(tmp_dir_name.c_str(), &tmp_sb) != 0 || !S_ISDIR(tmp_sb.st_mode))
+		std::error_code ec;
+		if (!trx::fs::exists(tmp_dir_name, ec) || !trx::fs::is_directory(tmp_dir_name, ec))
 		{
 			throw std::runtime_error("Temporary TRX directory does not exist: " + tmp_dir_name);
 		}
-
-		if (stat(filename.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode))
+		if (trx::fs::exists(filename, ec) && trx::fs::is_directory(filename, ec))
 		{
 			if (rm_dir(filename.c_str()) != 0)
 			{
@@ -1257,7 +1254,8 @@ void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression
 			}
 		}
 		copy_dir(tmp_dir_name.c_str(), filename.c_str());
-		if (stat(filename.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode))
+		ec.clear();
+		if (!trx::fs::exists(filename, ec) || !trx::fs::is_directory(filename, ec))
 		{
 			throw std::runtime_error("Failed to create output directory: " + filename);
 		}
