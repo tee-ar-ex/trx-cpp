@@ -574,7 +574,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			}
 			else
 			{
-				shape = std::make_tuple(1, size);
+				shape = std::make_tuple(1, static_cast<int>(size));
 			}
 
 			std::string data_name = path_basename(base);
@@ -606,7 +606,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			}
 			else
 			{
-				shape = std::make_tuple(size, 1);
+				shape = std::make_tuple(static_cast<int>(size), 1);
 			}
 			trx->groups[base] = new MMappedMatrix<uint32_t>();
 			trx->groups[base]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
