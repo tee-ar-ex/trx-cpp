@@ -1,0 +1,12 @@
+coverage:
+  status:
+    project:
+      default:
+        paths:
+          - "include/trx"
+          - "src"
+    patch:
+      default:
+        paths:
+          - "include/trx"
+          - "src"
