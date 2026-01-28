@@ -1,0 +1,817 @@
+---
+MainSourceFile:  '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+Diagnostics:
+  - DiagnosticName:  clang-diagnostic-error
+    DiagnosticMessage:
+      Message:         '''algorithm'' file not found'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      9
+      Replacements:    []
+      Ranges:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          FileOffset:      9
+          Length:          11
+    Level:           Error
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  cppcoreguidelines-macro-usage
+    DiagnosticMessage:
+      Message:         'function-like macro ''SYSERROR'' used; consider a ''constexpr'' template function'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      165
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  bugprone-empty-catch
+    DiagnosticMessage:
+      Message:         'empty catch statements hide issues; to handle exceptions appropriately, consider re-throwing, handling, or avoiding catch altogether'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      817
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''detect_positions_dtype'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      900
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          888
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_t" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      1456
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          157
+          Length:          0
+          ReplacementText: "#include <zip.h>\n"
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_int64_t" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      1623
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          157
+          Length:          0
+          ReplacementText: "#include <zipconf.h>\n"
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_get_num_entries" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      1643
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_get_name" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      1738
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  readability-implicit-bool-conversion
+    DiagnosticMessage:
+      Message:         'implicit conversion ''const char *'' -> ''bool'''
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      1771
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          1770
+          Length:          1
+          ReplacementText: ''
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          1775
+          Length:          0
+          ReplacementText: ' == nullptr'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_close" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      1872
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''detect_positions_scalar_type'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      1920
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          1906
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''is_trx_directory'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      2286
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          2281
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''populate_fps'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      2544
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          2539
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-unused-parameters
+    DiagnosticMessage:
+      Message:         'parameter ''name'' is unused'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      2569
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          2569
+          Length:          4
+          ReplacementText: ' /*name*/'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  readability-named-parameter
+    DiagnosticMessage:
+      Message:         all parameters should be named in a function
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      2629
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          2629
+          Length:          0
+          ReplacementText: ' /*unused*/'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  cppcoreguidelines-init-variables
+    DiagnosticMessage:
+      Message:         'variable ''dtype_size'' is not initialized'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      3903
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          3934
+          Length:          0
+          ReplacementText: ' = 0'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  bugprone-branch-clone
+    DiagnosticMessage:
+      Message:         repeated branch body in conditional chain
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      4384
+      Replacements:    []
+    Notes:
+      - Message:         end of the original
+        FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+        FileOffset:      4456
+        Replacements:    []
+      - Message:         clone 1 starts here
+        FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+        FileOffset:      4462
+        Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''get_base'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      4549
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          4537
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''get_ext'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      4798
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          4786
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''_is_path_within'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      5011
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          5006
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''_sizeof_dtype'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      5587
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          5583
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "uint8_t" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      5700
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          21
+          Length:          0
+          ReplacementText: "#include <cstdint>\n"
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "uint16_t" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      5848
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "uint32_t" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      5902
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "uint64_t" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      5956
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "int8_t" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      6008
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "int16_t" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      6059
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "int32_t" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      6111
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "int64_t" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      6163
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "Eigen::half" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      6294
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          0
+          Length:          0
+          ReplacementText: "#include <Eigen/src/Core/arch/Default/Half.h>\n"
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''_get_dtype'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      6383
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          6371
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  bugprone-branch-clone
+    DiagnosticMessage:
+      Message:         switch has 2 consecutive identical branches
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      6587
+      Replacements:    []
+    Notes:
+      - Message:         last of these clones ends here
+        FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+        FileOffset:      6685
+        Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  bugprone-branch-clone
+    DiagnosticMessage:
+      Message:         switch has 2 consecutive identical branches
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      6784
+      Replacements:    []
+    Notes:
+      - Message:         last of these clones ends here
+        FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+        FileOffset:      6871
+        Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''_split_ext_with_dimensionality'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      7089
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          7047
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  cppcoreguidelines-init-variables
+    DiagnosticMessage:
+      Message:         'variable ''dim'' is not initialized'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      7268
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          7271
+          Length:          0
+          ReplacementText: ' = 0'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  cppcoreguidelines-init-variables
+    DiagnosticMessage:
+      Message:         'variable ''is_valid'' is not initialized'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      7662
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          7693
+          Length:          0
+          ReplacementText: ' = false'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  readability-simplify-boolean-expr
+    DiagnosticMessage:
+      Message:         redundant boolean literal supplied to boolean operator
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      7714
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          7702
+          Length:          17
+          ReplacementText: '!is_valid'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''_is_dtype_valid'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      7956
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          7951
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_file_t" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      8319
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_fopen" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      8336
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "ZIP_FL_UNCHANGED" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      8370
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-const-correctness
+    DiagnosticMessage:
+      Message:         'variable ''buff_len'' of type ''int'' can be declared ''const'''
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      8574
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          8578
+          Length:          0
+          ReplacementText: 'const '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  cppcoreguidelines-init-variables
+    DiagnosticMessage:
+      Message:         'variable ''nbytes'' is not initialized'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      8695
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          8701
+          Length:          0
+          ReplacementText: ' = 0'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_fread" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      8722
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_fclose" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      8846
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''allocate_file'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      9094
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          9089
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-unused-parameters
+    DiagnosticMessage:
+      Message:         'parameter ''size'' is unused'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      9143
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          9143
+          Length:          4
+          ReplacementText: ' /*size*/'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  bugprone-branch-clone
+    DiagnosticMessage:
+      Message:         if with identical then and else branches
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      9181
+      Replacements:    []
+    Notes:
+      - Message:         else branch starts here
+        FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+        FileOffset:      9289
+        Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  cppcoreguidelines-avoid-non-const-global-variables
+    DiagnosticMessage:
+      Message:         'variable ''_create_memmap'' is non-const and globally accessible, consider making it const'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      9399
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'variable ''_create_memmap'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      9399
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          9377
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''get_reference_info'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      10773
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          10768
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "Eigen::MatrixXf" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      10821
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          0
+          Length:          0
+          ReplacementText: "#include <Eigen/src/Core/Matrix.h>\n"
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-unused-parameters
+    DiagnosticMessage:
+      Message:         'parameter ''affine'' is unused'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      10831
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          10831
+          Length:          6
+          ReplacementText: ' /*affine*/'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "Eigen::RowVectorXi" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      10845
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-unused-parameters
+    DiagnosticMessage:
+      Message:         'parameter ''dimensions'' is unused'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      10858
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          10858
+          Length:          10
+          ReplacementText: ' /*dimensions*/'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  bugprone-branch-clone
+    DiagnosticMessage:
+      Message:         if with identical then and else branches
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      11007
+      Replacements:    []
+    Notes:
+      - Message:         else branch starts here
+        FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+        FileOffset:      11179
+        Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-unused-parameters
+    DiagnosticMessage:
+      Message:         'parameter ''src'' is unused'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      11336
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          11336
+          Length:          3
+          ReplacementText: ' /*src*/'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  cppcoreguidelines-avoid-c-arrays
+    DiagnosticMessage:
+      Message:         'do not declare C-style arrays, use ''std::array'' instead'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      12834
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''make_temp_dir'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      13316
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          13304
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  cppcoreguidelines-init-variables
+    DiagnosticMessage:
+      Message:         'variable ''env_tmp'' is not initialized'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      13373
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          13408
+          Length:          0
+          ReplacementText: ' = nullptr'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  cppcoreguidelines-avoid-c-arrays
+    DiagnosticMessage:
+      Message:         'do not declare C-style arrays, use ''std::array'' instead'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      13800
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''extract_zip_to_directory'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      15370
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          15358
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-const-correctness
+    DiagnosticMessage:
+      Message:         'variable ''num_entries'' of type ''zip_int64_t'' (aka ''long long'') can be declared ''const'''
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      15641
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          15653
+          Length:          0
+          ReplacementText: 'const '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_fopen_index" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      16944
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  cppcoreguidelines-avoid-c-arrays
+    DiagnosticMessage:
+      Message:         'do not declare C-style arrays, use ''std::array'' instead'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      17308
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  cppcoreguidelines-pro-bounds-array-to-pointer-decay
+    DiagnosticMessage:
+      Message:         'do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      17390
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''zip_from_folder'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      18019
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          18014
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_uint32_t" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      18162
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "ZIP_FL_ENC_GUESS" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      18631
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_source_t" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      18792
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  cppcoreguidelines-init-variables
+    DiagnosticMessage:
+      Message:         'variable ''s'' is not initialized'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      18806
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          18807
+          Length:          0
+          ReplacementText: ' = nullptr'
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-const-correctness
+    DiagnosticMessage:
+      Message:         'variable ''file_idx'' of type ''zip_int64_t'' (aka ''long long'') can be declared ''const'''
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      18813
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          18825
+          Length:          0
+          ReplacementText: 'const '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "ZIP_FL_ENC_UTF_8" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      18968
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_source_free" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      19000
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-include-cleaner
+    DiagnosticMessage:
+      Message:         'no header providing "zip_set_file_compression" is directly included'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      19140
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  bugprone-narrowing-conversions
+    DiagnosticMessage:
+      Message:         'narrowing conversion from ''zip_uint32_t'' (aka ''unsigned int'') to signed type ''zip_int32_t'' (aka ''int'') is implementation-defined'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      19179
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+  - DiagnosticName:  misc-use-internal-linkage
+    DiagnosticMessage:
+      Message:         'function ''rm_root'' can be made static or moved into an anonymous namespace to enforce internal linkage'
+      FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+      FileOffset:      19353
+      Replacements:
+        - FilePath:        '/Users/mcieslak/projects/trx-cpp/src/trx.cpp'
+          Offset:          19341
+          Length:          0
+          ReplacementText: 'static '
+    Level:           Warning
+    BuildDirectory:  '/Users/mcieslak/projects/trx-cpp/build'
+...

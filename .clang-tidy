@@ -1,12 +1,20 @@
-Checks: >-
+Checks: >
   -*,
-  clang-analyzer-*,
   bugprone-*,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  misc-*,
+  -misc-non-private-member-variables-in-classes,
   performance-*,
+  portability-*,
   readability-*,
-  modernize-*,
-  misc-*
-WarningsAsErrors: ''
+  -bugprone-easily-swappable-parameters,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-braces-around-statements,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  -readability-magic-numbers,
 HeaderFilterRegex: '^(include|src|tests|examples)/'
 FormatStyle: file
 CheckOptions:

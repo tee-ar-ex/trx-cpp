@@ -1,12 +1,18 @@
 #include <algorithm>
+#include <cstring>
 #include <errno.h>
+#include <exception>
+#include <filesystem>
 #include <fstream>
+#include <map>
 #include <random>
 #include <stdexcept>
+#include <string>
+#include <system_error>
 #include <trx/trx.h>
-#include <typeinfo>
+#include <tuple>
 #include <vector>
-#define SYSERROR() errno
+#include <zip.h>
 
 // #define ZIP_DD_SIG 0x08074b50
 // #define ZIP_CD_SIG 0x06054b50
@@ -15,13 +21,17 @@ using namespace std;
 
 namespace trxmmap {
 namespace {
+inline int sys_error() {
+  return errno;
+}
+
 std::string normalize_slashes(std::string path) {
   std::replace(path.begin(), path.end(), '\\', '/');
   return path;
 }
 
 bool parse_positions_dtype(const std::string &filename, std::string &out_dtype) {
-  std::string normalized = normalize_slashes(filename);
+  const std::string normalized = normalize_slashes(filename);
   try {
     const auto tuple = trxmmap::_split_ext_with_dimensionality(normalized);
     const std::string &base = std::get<0>(tuple);
@@ -30,13 +40,15 @@ bool parse_positions_dtype(const std::string &filename, std::string &out_dtype) 
       return true;
     }
   } catch (const std::exception &) {
+    // Ignore malformed entries and continue searching.
+    return false;
   }
   return false;
 }
 } // namespace
 
 std::string detect_positions_dtype(const std::string &path) {
-  trx::fs::path input(path);
+  const trx::fs::path input(path);
   if (!trx::fs::exists(input)) {
     throw std::runtime_error("Input path does not exist: " + path);
   }
@@ -62,8 +74,8 @@ std::string detect_positions_dtype(const std::string &path) {
   std::string dtype;
   const zip_int64_t count = zip_get_num_entries(zf, 0);
   for (zip_int64_t i = 0; i < count; ++i) {
-    const char *name = zip_get_name(zf, i, 0);
-    if (!name) {
+  const char *name = zip_get_name(zf, i, 0);
+  if (name == nullptr) {
       continue;
     }
     if (parse_positions_dtype(name, dtype)) {
@@ -89,7 +101,7 @@ TrxScalarType detect_positions_scalar_type(const std::string &path, TrxScalarTyp
 }
 
 bool is_trx_directory(const std::string &path) {
-  trx::fs::path input(path);
+  const trx::fs::path input(path);
   if (!trx::fs::exists(input)) {
     throw std::runtime_error("Input path does not exist: " + path);
   }
@@ -98,7 +110,7 @@ bool is_trx_directory(const std::string &path) {
 }
 
 void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size) {
-  trx::fs::path root(name);
+  const trx::fs::path root(name);
   std::error_code ec;
   if (!trx::fs::exists(root, ec) || !trx::fs::is_directory(root, ec)) {
     return;
@@ -128,7 +140,7 @@ void populate_fps(const char *name, std::map<std::string, std::tuple<long long, 
       continue;
     }
 
-    std::string elem_filename = entry_path.string();
+    const std::string elem_filename = entry_path.string();
     std::string ext = get_ext(elem_filename);
 
     if (strcmp(ext.c_str(), "json") == 0) {
@@ -143,7 +155,7 @@ void populate_fps(const char *name, std::map<std::string, std::tuple<long long, 
       ext = "bool";
     }
 
-    int dtype_size = _sizeof_dtype(ext);
+    const int dtype_size = _sizeof_dtype(ext);
     std::error_code size_ec;
     auto raw_size = trx::fs::file_size(entry_path, size_ec);
     if (size_ec) {
@@ -340,7 +352,7 @@ void allocate_file(const std::string &path, const int size) {
     file.flush();
     file.close();
   } else {
-    std::cerr << "Failed to allocate file : " << SYSERROR() << std::endl;
+    std::cerr << "Failed to allocate file : " << sys_error() << std::endl;
   }
 }
 

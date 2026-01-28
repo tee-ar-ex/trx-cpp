@@ -497,7 +497,7 @@ void zip_from_folder(zip_t *zf,
 
 std::string get_base(const std::string &delimiter, const std::string &str);
 std::string get_ext(const std::string &str);
-void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &file_pointer_size);
+void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size);
 
 void copy_dir(const char *src, const char *dst);
 void copy_file(const char *src, const char *dst);

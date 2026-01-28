@@ -1,0 +1,758 @@
+[ 20%] Building CXX object CMakeFiles/trx.dir/src/trx.cpp.o
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:75:9: warning: no header providing "zip_int64_t" is directly included [misc-include-cleaner]
+   16 |   const zip_int64_t count = zip_get_num_entries(zf, 0);
+      |         ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:165:37: warning: no header providing "std::uintmax_t" is directly included [misc-include-cleaner]
+    2 |     if (raw_size % static_cast<std::uintmax_t>(dtype_size) == 0) {
+      |                                     ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:187:15: warning: redundant string initialization [readability-redundant-string-init]
+  187 |   std::string ext = "";
+      |               ^~~~~~~~
+      |               ext
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:188:3: warning: variable 'delimeter' of type 'std::string' (aka 'basic_string<char>') can be declared 'const' [misc-const-correctness]
+  188 |   std::string delimeter = ".";
+      |   ^
+      |               const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:196:6: warning: function '_is_path_within' can be made static or moved into an anonymous namespace to enforce internal linkage [misc-use-internal-linkage]
+  196 | bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent) {
+      |      ^
+      | static 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:197:3: warning: variable 'parent_str' of type 'std::string' (aka 'basic_string<char>') can be declared 'const' [misc-const-correctness]
+  197 |   std::string parent_str = parent.lexically_normal().string();
+      |   ^
+      |               const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:207:3: warning: variable 'next' of type 'char' can be declared 'const' [misc-const-correctness]
+  207 |   char next = child_str[parent_str.size()];
+      |   ^
+      |        const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:211:31: warning: the parameter 'dtype' is copied for each invocation but only used as a const reference; consider making it a const reference [performance-unnecessary-value-param]
+  211 | int _sizeof_dtype(std::string dtype) {
+      |                               ^
+      |                   const      &
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:215:19: warning: no header providing "uint8_t" is directly included [misc-include-cleaner]
+  215 |     return sizeof(uint8_t);
+      |                   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:218:19: warning: no header providing "uint16_t" is directly included [misc-include-cleaner]
+  218 |     return sizeof(uint16_t);
+      |                   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:220:19: warning: no header providing "uint32_t" is directly included [misc-include-cleaner]
+  220 |     return sizeof(uint32_t);
+      |                   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:222:19: warning: no header providing "uint64_t" is directly included [misc-include-cleaner]
+  222 |     return sizeof(uint64_t);
+      |                   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:224:19: warning: no header providing "int8_t" is directly included [misc-include-cleaner]
+  224 |     return sizeof(int8_t);
+      |                   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:226:19: warning: no header providing "int16_t" is directly included [misc-include-cleaner]
+  226 |     return sizeof(int16_t);
+      |                   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:228:19: warning: no header providing "int32_t" is directly included [misc-include-cleaner]
+  228 |     return sizeof(int32_t);
+      |                   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:230:19: warning: no header providing "int64_t" is directly included [misc-include-cleaner]
+  230 |     return sizeof(int64_t);
+      |                   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:235:17: warning: no header providing "Eigen::half" is directly included [misc-include-cleaner]
+    1 |   return sizeof(half); // setting this as default for now but a better solution is needed
+      |                 ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:239:3: warning: variable 'dt' of type 'char' can be declared 'const' [misc-const-correctness]
+  239 |   char dt = dtype.back();
+      |   ^
+      |        const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:249:3: warning: switch has 2 consecutive identical branches [bugprone-branch-clone]
+  249 |   case 'm':
+      |   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:252:20: note: last of these clones ends here
+  252 |     return "uint64";
+      |                    ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:259:3: warning: switch has 2 consecutive identical branches [bugprone-branch-clone]
+  259 |   case 'l':
+      |   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:262:19: note: last of these clones ends here
+  262 |     return "int64";
+      |                   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:271:92: warning: the const qualified parameter 'filename' is copied for each invocation; consider making it a reference [performance-unnecessary-value-param]
+  271 | std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string filename) {
+      |                                                                                            ^
+      |                                                                                           &
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:274:3: warning: variable 'num_splits' of type 'size_t' (aka 'unsigned long') can be declared 'const' [misc-const-correctness]
+  274 |   size_t num_splits = std::count(base.begin(), base.end(), '.');
+      |   ^
+      |          const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:275:7: warning: variable 'dim' is not initialized [cppcoreguidelines-init-variables]
+  275 |   int dim;
+      |       ^  
+      |           = 0
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:288:5: warning: variable 'pos' of type 'size_t' (aka 'unsigned long') can be declared 'const' [misc-const-correctness]
+  288 |     size_t pos = base.find_last_of(".");
+      |     ^
+      |            const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:288:36: warning: 'find_last_of' called with a string literal consisting of a single character; consider using the more effective overload accepting a character [performance-faster-string-find]
+  288 |     size_t pos = base.find_last_of(".");
+      |                                    ^~~
+      |                                    '.'
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:293:3: warning: variable 'is_valid' of type 'bool' can be declared 'const' [misc-const-correctness]
+  293 |   bool is_valid = _is_dtype_valid(ext);
+      |   ^
+      |        const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:295:19: warning: redundant boolean literal supplied to boolean operator [readability-simplify-boolean-expr]
+  295 |   if (is_valid == false) {
+      |       ~~~~~~~~~~~~^~~~~
+      |       !is_valid
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:306:7: warning: do not use 'compare' to test equality of strings; use the string equality operator instead [readability-string-compare]
+  306 |   if (ext.compare("bit") == 0)
+      |       ^~~~~~~~~~~~~~~~~~    ~
+      |       ext                   "bit"
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:324:3: warning: variable 'buff_len' of type 'int' can be declared 'const' [misc-const-correctness]
+  324 |   int buff_len = 255 * sizeof(char);
+      |   ^
+      |       const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:325:3: warning: initializing non-owner 'char *' with a newly created 'gsl::owner<>' [cppcoreguidelines-owning-memory]
+  325 |   char *buffer = (char *)malloc(buff_len);
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:325:18: warning: do not use C-style cast to convert between unrelated types [cppcoreguidelines-pro-type-cstyle-cast]
+  325 |   char *buffer = (char *)malloc(buff_len);
+      |                  ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:325:26: warning: do not manage memory manually; consider a container or a smart pointer [cppcoreguidelines-no-malloc]
+  325 |   char *buffer = (char *)malloc(buff_len);
+      |                          ^~~~~~~~~~~~~~~~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:325:26: warning: no header providing "malloc" is directly included [misc-include-cleaner]
+    2 |   char *buffer = (char *)malloc(buff_len);
+      |                          ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:327:15: warning: redundant string initialization [readability-redundant-string-init]
+  327 |   std::string jstream = "";
+      |               ^~~~~~~~~~~~
+      |               jstream
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:328:15: warning: variable 'nbytes' is not initialized [cppcoreguidelines-init-variables]
+  328 |   zip_int64_t nbytes;
+      |               ^     
+      |                      = 0
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:329:20: warning: Null passed to a callee that requires a non-null 2nd parameter [clang-analyzer-nullability.NullPassedToNonnull]
+  329 |   while ((nbytes = zip_fread(zh, buffer, buff_len - 1)) > 0) {
+      |                    ^             ~~~~~~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:314:7: note: Assuming the condition is false
+  314 |   if (zfolder == nullptr) {
+      |       ^~~~~~~~~~~~~~~~~~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:314:3: note: Taking false branch
+  314 |   if (zfolder == nullptr) {
+      |   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:319:7: note: Assuming the condition is false
+  319 |   if (zh == nullptr) {
+      |       ^~~~~~~~~~~~~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:319:3: note: Taking false branch
+  319 |   if (zh == nullptr) {
+      |   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:325:3: note: 'buffer' initialized here
+  325 |   char *buffer = (char *)malloc(buff_len);
+      |   ^~~~~~~~~~~~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:329:10: note: Assuming the condition is true
+  329 |   while ((nbytes = zip_fread(zh, buffer, buff_len - 1)) > 0) {
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:329:3: note: Loop condition is true.  Entering loop body
+  329 |   while ((nbytes = zip_fread(zh, buffer, buff_len - 1)) > 0) {
+      |   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:330:9: note: Assuming 'buffer' is equal to NULL
+  330 |     if (buffer != NULL) {
+      |         ^~~~~~~~~~~~~~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:330:5: note: Taking false branch
+  330 |     if (buffer != NULL) {
+      |     ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:329:20: note: Null passed to a callee that requires a non-null 2nd parameter
+  329 |   while ((nbytes = zip_fread(zh, buffer, buff_len - 1)) > 0) {
+      |                    ^             ~~~~~~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:336:3: warning: do not manage memory manually; use RAII [cppcoreguidelines-no-malloc]
+  336 |   free(buffer);
+      |   ^~~~~~~~~~~~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:336:3: warning: calling legacy resource function without passing a 'gsl::owner<>' [cppcoreguidelines-owning-memory]
+  336 |   free(buffer);
+      |   ^~~~~~~~~~~~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:336:3: warning: no header providing "free" is directly included [misc-include-cleaner]
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:350:5: warning: variable 's' of type 'std::string' (aka 'basic_string<char>') can be declared 'const' [misc-const-correctness]
+  350 |     std::string s(size, '\0');
+      |     ^
+      |                 const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:355:10: warning: no header providing "std::cerr" is directly included [misc-include-cleaner]
+    7 |     std::cerr << "Failed to allocate file : " << sys_error() << std::endl;
+      |          ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:355:65: warning: do not use 'std::endl' with streams; use '\n' instead [performance-avoid-endl]
+  355 |     std::cerr << "Failed to allocate file : " << sys_error() << std::endl;
+      |                                                                 ^~~~~~~~~
+      |                                                                 '\n'
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:355:70: warning: no header providing "std::endl" is directly included [misc-include-cleaner]
+    8 |     std::cerr << "Failed to allocate file : " << sys_error() << std::endl;
+      |                                                                      ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:359:6: warning: no header providing "mio::shared_mmap_sink" is directly included [misc-include-cleaner]
+    1 | mio::shared_mmap_sink _create_memmap(
+      |      ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:360:68: warning: parameter 'mode' is unused [misc-unused-parameters]
+  360 |     std::string filename, std::tuple<int, int> &shape, std::string mode, std::string dtype, long long offset) {
+      |                                                                    ^~~~
+      |                                                                     /*mode*/
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:360:68: warning: the parameter 'mode' is copied for each invocation but only used as a const reference; consider making it a const reference [performance-unnecessary-value-param]
+  360 |     std::string filename, std::tuple<int, int> &shape, std::string mode, std::string dtype, long long offset) {
+      |                                                                    ^
+      |                                                        const      &
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:360:86: warning: the parameter 'dtype' is copied for each invocation but only used as a const reference; consider making it a const reference [performance-unnecessary-value-param]
+  360 |     std::string filename, std::tuple<int, int> &shape, std::string mode, std::string dtype, long long offset) {
+      |                                                                                      ^
+      |                                                                          const      &
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:361:7: warning: do not use 'compare' to test equality of strings; use the string equality operator instead [readability-string-compare]
+  361 |   if (dtype.compare("bool") == 0) {
+      |       ^~~~~~~~~~~~~~~~~~~~~    ~
+      |       dtype                    "bool"
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:362:5: warning: variable 'ext' of type 'std::string' (aka 'basic_string<char>') can be declared 'const' [misc-const-correctness]
+  362 |     std::string ext = "bit";
+      |     ^
+      |                 const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:367:3: warning: variable 'filesize' of type 'long' can be declared 'const' [misc-const-correctness]
+  367 |   long filesize = std::get<0>(shape) * std::get<1>(shape) * _sizeof_dtype(dtype);
+      |   ^
+      |        const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:367:19: warning: performing an implicit widening conversion to type 'long' of a multiplication performed in type 'int' [bugprone-implicit-widening-of-multiplication-result]
+  367 |   long filesize = std::get<0>(shape) * std::get<1>(shape) * _sizeof_dtype(dtype);
+      |                   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:367:19: note: make conversion explicit to silence this warning
+    2 |   long filesize = std::get<0>(shape) * std::get<1>(shape) * _sizeof_dtype(dtype);
+      |                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                   static_cast<long>(                                            )
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:367:19: note: perform multiplication in a wider type
+  367 |   long filesize = std::get<0>(shape) * std::get<1>(shape) * _sizeof_dtype(dtype);
+      |                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                   static_cast<long>(                     )
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:370:3: warning: uninitialized record type: 'buffer' [cppcoreguidelines-pro-type-member-init]
+  370 |   struct stat buffer;
+      |   ^                 
+      |                     {}
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:370:10: warning: no header providing "stat" is directly included [misc-include-cleaner]
+   11 |   struct stat buffer;
+      |          ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:371:7: warning: no header providing "stat" is directly included [misc-include-cleaner]
+  371 |   if (stat(filename.c_str(), &buffer) != 0) {
+      |       ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:372:29: warning: narrowing conversion from 'long' to signed type 'int' is implementation-defined [bugprone-narrowing-conversions,cppcoreguidelines-narrowing-conversions]
+  372 |     allocate_file(filename, filesize);
+      |                             ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:390:17: warning: parameter 'root' is passed by value and only copied once; consider moving it to avoid unnecessary copies [performance-unnecessary-value-param]
+   14 |   json header = root;
+      |                 ^   
+      |                 std::move( )
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:414:6: warning: function 'get_reference_info' can be made static or moved into an anonymous namespace to enforce internal linkage [misc-use-internal-linkage]
+  414 | void get_reference_info(std::string reference, const MatrixXf &affine, const RowVectorXi &dimensions) {
+      |      ^
+      | static 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:414:37: warning: the parameter 'reference' is copied for each invocation but only used as a const reference; consider making it a const reference [performance-unnecessary-value-param]
+  414 | void get_reference_info(std::string reference, const MatrixXf &affine, const RowVectorXi &dimensions) {
+      |                                     ^
+      |                         const      &
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:414:54: warning: no header providing "Eigen::MatrixXf" is directly included [misc-include-cleaner]
+  414 | void get_reference_info(std::string reference, const MatrixXf &affine, const RowVectorXi &dimensions) {
+      |                                                      ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:414:64: warning: parameter 'affine' is unused [misc-unused-parameters]
+  414 | void get_reference_info(std::string reference, const MatrixXf &affine, const RowVectorXi &dimensions) {
+      |                                                                ^~~~~~
+      |                                                                 /*affine*/
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:414:78: warning: no header providing "Eigen::RowVectorXi" is directly included [misc-include-cleaner]
+  414 | void get_reference_info(std::string reference, const MatrixXf &affine, const RowVectorXi &dimensions) {
+      |                                                                              ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:414:91: warning: parameter 'dimensions' is unused [misc-unused-parameters]
+  414 | void get_reference_info(std::string reference, const MatrixXf &affine, const RowVectorXi &dimensions) {
+      |                                                                                           ^~~~~~~~~~
+      |                                                                                            /*dimensions*/
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:419:3: warning: if with identical then and else branches [bugprone-branch-clone]
+  419 |   if (reference.find(".trk") != std::string::npos) {
+      |   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:423:5: note: else branch starts here
+  423 |   } else {
+      |     ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:421:10: warning: no header providing "std::cout" is directly included [misc-include-cleaner]
+  421 |     std::cout << "Trk reference not implemented" << std::endl;
+      |          ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:421:53: warning: do not use 'std::endl' with streams; use '\n' instead [performance-avoid-endl]
+  421 |     std::cout << "Trk reference not implemented" << std::endl;
+      |                                                     ^~~~~~~~~
+      |                                                     '\n'
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:422:5: warning: function is not thread safe [concurrency-mt-unsafe]
+  422 |     std::exit(1);
+      |     ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:422:10: warning: no header providing "std::exit" is directly included [misc-include-cleaner]
+  422 |     std::exit(1);
+      |          ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:425:53: warning: do not use 'std::endl' with streams; use '\n' instead [performance-avoid-endl]
+  425 |     std::cout << "Trk reference not implemented" << std::endl;
+      |                                                     ^~~~~~~~~
+      |                                                     '\n'
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:426:5: warning: function is not thread safe [concurrency-mt-unsafe]
+  426 |     std::exit(1);
+      |     ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:431:3: warning: variable 'src_path' of type 'trx::fs::path' can be declared 'const' [misc-const-correctness]
+  431 |   trx::fs::path src_path(src);
+      |   ^
+      |                 const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:432:3: warning: variable 'dst_path' of type 'trx::fs::path' can be declared 'const' [misc-const-correctness]
+  432 |   trx::fs::path dst_path(dst);
+      |   ^
+      |                 const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:466:30: warning: no header providing "std::ios" is directly included [misc-include-cleaner]
+    7 |   std::ifstream in(src, std::ios::binary);
+      |                              ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:475:3: warning: do not declare C-style arrays, use 'std::array' instead [cppcoreguidelines-avoid-c-arrays]
+  475 |   char buffer[4096];
+      |   ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:477:13: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+  477 |     in.read(buffer, sizeof(buffer));
+      |             ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:478:5: warning: variable 'n' of type 'std::streamsize' (aka 'long') can be declared 'const' [misc-const-correctness]
+  478 |     std::streamsize n = in.gcount();
+      |     ^
+      |                     const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:478:10: warning: no header providing "std::streamsize" is directly included [misc-include-cleaner]
+  478 |     std::streamsize n = in.gcount();
+      |          ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:480:17: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+  480 |       out.write(buffer, n);
+      |                 ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:497:25: warning: function is not thread safe [concurrency-mt-unsafe]
+  497 |   const char *env_tmp = std::getenv("TRX_TMPDIR");
+      |                         ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:497:30: warning: no header providing "std::getenv" is directly included [misc-include-cleaner]
+  497 |   const char *env_tmp = std::getenv("TRX_TMPDIR");
+      |                              ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:501:5: warning: variable 'val' of type 'std::string' (aka 'basic_string<char>') can be declared 'const' [misc-const-correctness]
+  501 |     std::string val(env_tmp);
+      |     ^
+      |                 const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:505:7: warning: variable 'env_path' of type 'trx::fs::path' can be declared 'const' [misc-const-correctness]
+  505 |       trx::fs::path env_path(val);
+      |       ^
+      |                     const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:514:11: warning: do not declare C-style arrays, use 'std::array' instead [cppcoreguidelines-avoid-c-arrays]
+  514 |     const char *candidates[] = {std::getenv("TMPDIR"), std::getenv("TEMP"), std::getenv("TMP")};
+      |           ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:514:33: warning: function is not thread safe [concurrency-mt-unsafe]
+  514 |     const char *candidates[] = {std::getenv("TMPDIR"), std::getenv("TEMP"), std::getenv("TMP")};
+      |                                 ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:514:56: warning: function is not thread safe [concurrency-mt-unsafe]
+  514 |     const char *candidates[] = {std::getenv("TMPDIR"), std::getenv("TEMP"), std::getenv("TMP")};
+      |                                                        ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:514:77: warning: function is not thread safe [concurrency-mt-unsafe]
+  514 |     const char *candidates[] = {std::getenv("TMPDIR"), std::getenv("TEMP"), std::getenv("TMP")};
+      |                                                                             ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:519:7: warning: variable 'path' of type 'trx::fs::path' can be declared 'const' [misc-const-correctness]
+  519 |       trx::fs::path path(candidate);
+      |       ^
+      |                     const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:542:3: warning: variable 'base_path' of type 'trx::fs::path' can be declared 'const' [misc-const-correctness]
+  542 |   trx::fs::path base_path(base_dir);
+      |   ^
+      |                 const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:555:5: warning: variable 'candidate' of type 'trx::fs::path' can be declared 'const' [misc-const-correctness]
+  555 |     trx::fs::path candidate = base_path / (prefix + "_" + std::to_string(dist(rng)));
+      |     ^
+      |                   const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:572:3: warning: variable 'normalized_root' of type 'trx::fs::path' can be declared 'const' [misc-const-correctness]
+  572 |   trx::fs::path normalized_root = trx::fs::path(root_dir).lexically_normal();
+      |   ^
+      |                 const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:574:3: warning: variable 'num_entries' of type 'zip_int64_t' (aka 'long long') can be declared 'const' [misc-const-correctness]
+  574 |   zip_int64_t num_entries = zip_get_num_entries(zfolder, ZIP_FL_UNCHANGED);
+      |   ^
+      |               const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:582:5: warning: variable 'entry_path' of type 'trx::fs::path' can be declared 'const' [misc-const-correctness]
+  582 |     trx::fs::path entry_path(entry);
+      |     ^
+      |                   const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:587:5: warning: variable 'normalized_entry' of type 'trx::fs::path' can be declared 'const' [misc-const-correctness]
+  587 |     trx::fs::path normalized_entry = entry_path.lexically_normal();
+      |     ^
+      |                   const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:588:5: warning: variable 'out_path' of type 'trx::fs::path' can be declared 'const' [misc-const-correctness]
+  588 |     trx::fs::path out_path = normalized_root / normalized_entry;
+      |     ^
+      |                   const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:589:5: warning: variable 'normalized_out' of type 'trx::fs::path' can be declared 'const' [misc-const-correctness]
+  589 |     trx::fs::path normalized_out = out_path.lexically_normal();
+      |     ^
+      |                   const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:621:5: warning: do not declare C-style arrays, use 'std::array' instead [cppcoreguidelines-avoid-c-arrays]
+  621 |     char buffer[4096];
+      |     ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:623:36: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+  623 |     while ((nbytes = zip_fread(zf, buffer, sizeof(buffer))) > 0) {
+      |                                    ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:624:17: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+  624 |       out.write(buffer, nbytes);
+      |                 ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:652:40: warning: the const qualified parameter 'root' is copied for each invocation; consider making it a reference [performance-unnecessary-value-param]
+  652 |                      const std::string root,
+      |                                        ^
+      |                                       &
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:653:40: warning: the const qualified parameter 'directory' is copied for each invocation; consider making it a reference [performance-unnecessary-value-param]
+  653 |                      const std::string directory,
+      |                                        ^
+      |                                       &
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:654:22: warning: no header providing "zip_uint32_t" is directly included [misc-include-cleaner]
+  654 |                      zip_uint32_t compression_standard) {
+      |                      ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:661:5: warning: variable 'zip_fname' of type 'std::string' (aka 'basic_string<char>') can be declared 'const' [misc-const-correctness]
+  661 |     std::string zip_fname = rm_root(root, current.string());
+      |     ^
+      |                 const 
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:672:19: warning: variable 's' is not initialized [cppcoreguidelines-init-variables]
+  672 |     zip_source_t *s;
+      |                   ^
+      |                     = nullptr
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:674:12: warning: an assignment within an 'if' condition is bug-prone [bugprone-assignment-in-if-condition]
+  674 |     if ((s = zip_source_file(zf, fullpath.c_str(), 0, 0)) == NULL ||
+      |          ~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:674:12: note: if it should be an assignment, move it out of the 'if' condition
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:674:12: note: if it is meant to be an equality check, change '=' to '=='
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:675:19: warning: an assignment within an 'if' condition is bug-prone [bugprone-assignment-in-if-condition]
+  675 |         (file_idx = zip_file_add(zf, zip_fname.c_str(), s, ZIP_FL_ENC_UTF_8)) < 0) {
+      |          ~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:675:19: note: if it should be an assignment, move it out of the 'if' condition
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:675:19: note: if it is meant to be an equality check, change '=' to '=='
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:678:7: warning: do not use 'else' after 'throw' [readability-else-after-return]
+  678 |     } else if (zip_set_file_compression(zf, file_idx, compression_standard, 0) < 0) {
+      |       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  679 |       throw std::runtime_error(std::string("Error setting compression for ") + zip_fname + ": " + zip_strerror(zf));
+      |       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  680 |     }
+      |     ~
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:678:55: warning: narrowing conversion from 'zip_uint32_t' (aka 'unsigned int') to signed type 'zip_int32_t' (aka 'int') is implementation-defined [bugprone-narrowing-conversions,cppcoreguidelines-narrowing-conversions]
+  678 |     } else if (zip_set_file_compression(zf, file_idx, compression_standard, 0) < 0) {
+      |                                                       ^
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:684:39: warning: the const qualified parameter 'root' is copied for each invocation; consider making it a reference [performance-unnecessary-value-param]
+  684 | std::string rm_root(const std::string root, const std::string path) {
+      |                                       ^
+      |                                      &
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:684:63: warning: the const qualified parameter 'path' is copied for each invocation; consider making it a reference [performance-unnecessary-value-param]
+  684 | std::string rm_root(const std::string root, const std::string path) {
+      |                                                               ^
+      |                                                              &
+/Users/mcieslak/projects/trx-cpp/src/trx.cpp:686:15: warning: variable 'index' is not initialized [cppcoreguidelines-init-variables]
+  686 |   std::size_t index;
+      |               ^    
+      |                     = 0
+[ 40%] Building CXX object CMakeFiles/trx.dir/third_party/json11/json11.cpp.o
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:33:12: warning: no header providing "std::string" is directly included [misc-include-cleaner]
+   28 | 
+   29 | namespace json11 {
+   30 | 
+   31 | static const int max_depth = 200;
+   32 | 
+   33 | using std::string;
+      |            ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:34:12: warning: no header providing "std::vector" is directly included [misc-include-cleaner]
+   28 | 
+   29 | namespace json11 {
+   30 | 
+   31 | static const int max_depth = 200;
+   32 | 
+   33 | using std::string;
+   34 | using std::vector;
+      |            ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:35:12: warning: no header providing "std::map" is directly included [misc-include-cleaner]
+   28 | 
+   29 | namespace json11 {
+   30 | 
+   31 | static const int max_depth = 200;
+   32 | 
+   33 | using std::string;
+   34 | using std::vector;
+   35 | using std::map;
+      |            ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:37:12: warning: no header providing "std::initializer_list" is directly included [misc-include-cleaner]
+   27 | #include <limits>
+   28 | 
+   29 | namespace json11 {
+   30 | 
+   31 | static const int max_depth = 200;
+   32 | 
+   33 | using std::string;
+   34 | using std::vector;
+   35 | using std::map;
+   36 | using std::make_shared;
+   37 | using std::initializer_list;
+      |            ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:38:12: warning: using decl 'move' is unused [misc-unused-using-decls]
+   38 | using std::move;
+      |            ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:38:12: note: remove the using
+   38 | using std::move;
+      | ~~~~~~~~~~~^~~~~
+   39 | 
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:45:31: warning: all parameters should be named in a function [readability-named-parameter]
+   45 |     bool operator==(NullStruct) const { return true; }
+      |                               ^
+      |                                /*unused*/
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:46:30: warning: all parameters should be named in a function [readability-named-parameter]
+   46 |     bool operator<(NullStruct) const { return false; }
+      |                              ^
+      |                               /*unused*/
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:53:13: warning: function 'dump' declared 'static', move to anonymous namespace instead [misc-use-anonymous-namespace]
+   53 | static void dump(NullStruct, string &out) {
+      |             ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:53:28: warning: all parameters should be named in a function [readability-named-parameter]
+   53 | static void dump(NullStruct, string &out) {
+      |                            ^
+      |                             /*unused*/
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:57:13: warning: function 'dump' declared 'static', move to anonymous namespace instead [misc-use-anonymous-namespace]
+   57 | static void dump(double value, string &out) {
+      |             ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:59:9: warning: do not declare C-style arrays, use 'std::array' instead [cppcoreguidelines-avoid-c-arrays]
+   59 |         char buf[32];
+      |         ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:60:9: warning: do not call c-style vararg functions [cppcoreguidelines-pro-type-vararg]
+   60 |         snprintf(buf, sizeof buf, "%.17g", value);
+      |         ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:60:18: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+   60 |         snprintf(buf, sizeof buf, "%.17g", value);
+      |                  ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:61:16: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+   61 |         out += buf;
+      |                ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:67:13: warning: function 'dump' declared 'static', move to anonymous namespace instead [misc-use-anonymous-namespace]
+   67 | static void dump(int value, string &out) {
+      |             ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:68:5: warning: do not declare C-style arrays, use 'std::array' instead [cppcoreguidelines-avoid-c-arrays]
+   68 |     char buf[32];
+      |     ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:69:5: warning: do not call c-style vararg functions [cppcoreguidelines-pro-type-vararg]
+   69 |     snprintf(buf, sizeof buf, "%d", value);
+      |     ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:69:14: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+   69 |     snprintf(buf, sizeof buf, "%d", value);
+      |              ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:70:12: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+   70 |     out += buf;
+      |            ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:73:13: warning: function 'dump' declared 'static', move to anonymous namespace instead [misc-use-anonymous-namespace]
+   73 | static void dump(bool value, string &out) {
+      |             ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:77:13: warning: function 'dump' declared 'static', move to anonymous namespace instead [misc-use-anonymous-namespace]
+   77 | static void dump(const string &value, string &out) {
+      |             ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:95:32: warning: no header providing "uint8_t" is directly included [misc-include-cleaner]
+   25 |         } else if (static_cast<uint8_t>(ch) <= 0x1f) {
+      |                                ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:96:13: warning: do not declare C-style arrays, use 'std::array' instead [cppcoreguidelines-avoid-c-arrays]
+   96 |             char buf[8];
+      |             ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:97:13: warning: do not call c-style vararg functions [cppcoreguidelines-pro-type-vararg]
+   97 |             snprintf(buf, sizeof buf, "\\u%04x", ch);
+      |             ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:97:22: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+   97 |             snprintf(buf, sizeof buf, "\\u%04x", ch);
+      |                      ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:98:20: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+   98 |             out += buf;
+      |                    ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:114:13: warning: function 'dump' declared 'static', move to anonymous namespace instead [misc-use-anonymous-namespace]
+  114 | static void dump(const Json::array &values, string &out) {
+      |             ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:126:13: warning: function 'dump' declared 'static', move to anonymous namespace instead [misc-use-anonymous-namespace]
+  126 | static void dump(const Json::object &values, string &out) {
+      |             ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:169:13: warning: member 'm_value' of type 'const T' is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+  169 |     const T m_value;
+      |             ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:169:13: warning: member 'm_value' of type 'const bool' is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:169:13: warning: member 'm_value' of type 'const double' is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:169:13: warning: member 'm_value' of type 'const int' is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:169:13: warning: member 'm_value' of type 'const json11::NullStruct' is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:169:13: warning: member 'm_value' of type 'const std::map<std::string, json11::Json>' is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:169:13: warning: member 'm_value' of type 'const std::string' is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:169:13: warning: member 'm_value' of type 'const std::vector<json11::Json>' is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:169:13: warning: member variable 'm_value' has protected visibility [cppcoreguidelines-non-private-member-variables-in-classes]
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:229:16: warning: no header providing "std::shared_ptr" is directly included [misc-include-cleaner]
+   28 |     const std::shared_ptr<JsonValue> null = make_shared<JsonNull>();
+      |                ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:229:38: warning: member 'null' of type 'const std::shared_ptr<JsonValue>' is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+  229 |     const std::shared_ptr<JsonValue> null = make_shared<JsonNull>();
+      |                                      ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:230:38: warning: member 't' of type 'const std::shared_ptr<JsonValue>' is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+  230 |     const std::shared_ptr<JsonValue> t = make_shared<JsonBoolean>(true);
+      |                                      ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:231:38: warning: member 'f' of type 'const std::shared_ptr<JsonValue>' is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+  231 |     const std::shared_ptr<JsonValue> f = make_shared<JsonBoolean>(false);
+      |                                      ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:232:18: warning: member 'empty_string' of type 'const string' (aka 'const basic_string<char>') is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+  232 |     const string empty_string;
+      |                  ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:233:24: warning: member 'empty_vector' of type 'const vector<Json>' is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+  233 |     const vector<Json> empty_vector;
+      |                        ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:234:29: warning: member 'empty_map' of type 'const map<string, Json>' (aka 'const map<basic_string<char>, json11::Json>') is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+  234 |     const map<string, Json> empty_map;
+      |                             ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:238:24: warning: function 'statics' declared 'static', move to anonymous namespace instead [misc-use-anonymous-namespace]
+  238 | static const Statics & statics() {
+      |                        ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:243:21: warning: function 'static_null' declared 'static', move to anonymous namespace instead [misc-use-anonymous-namespace]
+  243 | static const Json & static_null() {
+      |                     ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:254:17: warning: no header providing "std::nullptr_t" is directly included [misc-include-cleaner]
+   25 | Json::Json(std::nullptr_t) noexcept    : m_ptr(statics().null) {}
+      |                 ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:286:56: warning: all parameters should be named in a function [readability-named-parameter]
+  286 | const Json &              JsonValue::operator[] (size_t)         const { return static_null(); }
+      |                                                        ^
+      |                                                         /*unused*/
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:287:64: warning: all parameters should be named in a function [readability-named-parameter]
+  287 | const Json &              JsonValue::operator[] (const string &) const { return static_null(); }
+      |                                                                ^
+      |                                                                 /*unused*/
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:295:5: warning: do not use 'else' after 'return' [readability-else-after-return]
+  295 |     else return m_value[i];
+      |     ^~~~~~~~~~~~~~~~~~~~~~
+      |     return m_value[i]
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:328:22: warning: function 'esc' declared 'static', move to anonymous namespace instead [misc-use-anonymous-namespace]
+  328 | static inline string esc(char c) {
+      |                      ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:329:5: warning: do not declare C-style arrays, use 'std::array' instead [cppcoreguidelines-avoid-c-arrays]
+  329 |     char buf[12];
+      |     ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:331:9: warning: do not call c-style vararg functions [cppcoreguidelines-pro-type-vararg]
+  331 |         snprintf(buf, sizeof buf, "'%c' (%d)", c, c);
+      |         ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:331:18: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+  331 |         snprintf(buf, sizeof buf, "'%c' (%d)", c, c);
+      |                  ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:333:9: warning: do not call c-style vararg functions [cppcoreguidelines-pro-type-vararg]
+  333 |         snprintf(buf, sizeof buf, "(%d)", c);
+      |         ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:333:18: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+  333 |         snprintf(buf, sizeof buf, "(%d)", c);
+      |                  ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:335:19: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+  335 |     return string(buf);
+      |                   ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:338:20: warning: function 'in_range' declared 'static', move to anonymous namespace instead [misc-use-anonymous-namespace]
+  338 | static inline bool in_range(long x, long lower, long upper) {
+      |                    ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:351:19: warning: member 'str' of type 'const string &' (aka 'const basic_string<char> &') is a reference [cppcoreguidelines-avoid-const-or-ref-data-members]
+  351 |     const string &str;
+      |                   ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:353:13: warning: member 'err' of type 'string &' (aka 'basic_string<char> &') is a reference [cppcoreguidelines-avoid-const-or-ref-data-members]
+  353 |     string &err;
+      |             ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:355:21: warning: member 'strategy' of type 'const JsonParse' is const qualified [cppcoreguidelines-avoid-const-or-ref-data-members]
+  355 |     const JsonParse strategy;
+      |                     ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:366:34: warning: the const qualified parameter 'err_ret' is copied for each invocation; consider making it a reference [performance-unnecessary-value-param]
+  366 |     T fail(string &&msg, const T err_ret) {
+      |                                  ^
+      |                                 &
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:370:16: warning: constness of 'err_ret' prevents automatic move [performance-no-automatic-move]
+  370 |         return err_ret;
+      |                ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:405:18: warning: boolean expression can be simplified by DeMorgan's theorem [readability-simplify-boolean-expr]
+  405 |           while (!(str[i] == '*' && str[i+1] == '/')) {
+      |                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                           !=     ||          !=
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:428:9: warning: avoid do-while loops [cppcoreguidelines-avoid-do-while]
+  428 |         do {
+      |         ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:455:10: warning: method 'encode_utf8' can be made static [readability-convert-member-functions-to-static]
+  455 |     void encode_utf8(long pt, string & out) {
+      |          ^
+      |     static 
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:526:17: warning: variable 'codepoint' of type 'long' can be declared 'const' [misc-const-correctness]
+  526 |                 long codepoint = strtol(esc.data(), nullptr, 16);
+      |                 ^
+      |                      const 
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:574:9: warning: variable 'start_pos' of type 'size_t' (aka 'unsigned long') can be declared 'const' [misc-const-correctness]
+  574 |         size_t start_pos = i;
+      |         ^
+      |                const 
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:594:42: warning: do not use pointer arithmetic [cppcoreguidelines-pro-bounds-pointer-arithmetic]
+  594 |             return std::atoi(str.c_str() + start_pos);
+      |                                          ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:621:40: warning: do not use pointer arithmetic [cppcoreguidelines-pro-bounds-pointer-arithmetic]
+  621 |         return std::strtod(str.c_str() + start_pos, nullptr);
+      |                                        ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:635:11: warning: do not use 'else' after 'return' [readability-else-after-return]
+  635 |         } else {
+      |           ^~~~~~
+  636 |             return fail("parse error: expected " + expected + ", got " + str.substr(i, expected.length()));
+      |             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  637 |         }
+      |         ~
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:644:10: warning: function 'parse_json' is within a recursive call chain [misc-no-recursion]
+  644 |     Json parse_json(int depth) {
+      |          ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:644:10: note: example recursive call chain, starting from function 'parse_json'
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:688:40: note: Frame #1: function 'parse_json' calls function 'parse_json' here:
+  688 |                 data[std::move(key)] = parse_json(depth + 1);
+      |                                        ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:688:40: note: ... which was the starting point of the recursive call chain; there may be other cycles
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:676:20: warning: implicit conversion 'int' -> 'bool' [readability-implicit-bool-conversion]
+  676 |             while (1) {
+      |                    ^
+      |                    true
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:709:20: warning: implicit conversion 'int' -> 'bool' [readability-implicit-bool-conversion]
+  709 |             while (1) {
+      |                    ^
+      |                    true
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:779:10: warning: 'auto &item' can be declared as 'const auto &item' [readability-qualified-auto]
+  779 |     for (auto & item : types) {
+      |          ^
+      |          const 
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.hpp:192:10: warning: function 'json11::Json::operator==' has a definition with different parameter names [readability-inconsistent-declaration-parameter-name]
+  192 |     bool operator== (const Json &rhs) const;
+      |          ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:302:12: note: the definition seen here
+  302 | bool Json::operator== (const Json &other) const {
+      |            ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.hpp:192:10: note: differing parameters are named here: ('rhs'), in definition: ('other')
+  192 |     bool operator== (const Json &rhs) const;
+      |          ^                       ~~~
+      |                                  other
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.hpp:193:10: warning: function 'json11::Json::operator<' has a definition with different parameter names [readability-inconsistent-declaration-parameter-name]
+  193 |     bool operator<  (const Json &rhs) const;
+      |          ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.cpp:311:12: note: the definition seen here
+  311 | bool Json::operator< (const Json &other) const {
+      |            ^
+/Users/mcieslak/projects/trx-cpp/third_party/json11/json11.hpp:193:10: note: differing parameters are named here: ('rhs'), in definition: ('other')
+  193 |     bool operator<  (const Json &rhs) const;
+      |          ^                       ~~~
+      |                                  other
+[ 60%] Linking CXX static library libtrx.a
+[ 60%] Built target trx
+[ 80%] Building CXX object examples/CMakeFiles/trxinfo.dir/trxinfo.cpp.o
+/Users/mcieslak/projects/trx-cpp/examples/trxinfo.cpp:9:1: warning: included header stdexcept is not used directly [misc-include-cleaner]
+    9 | #include <stdexcept>
+      | ^~~~~~~~~~~~~~~~~~~~
+   10 | #include <string>
+/Users/mcieslak/projects/trx-cpp/examples/trxinfo.cpp:24:14: warning: the const qualified variable 'items' is copy-constructed from a const reference; consider making it a const reference [performance-unnecessary-copy-initialization]
+   24 |   const auto items = value.array_items();
+      |              ^
+      |             &
+/Users/mcieslak/projects/trx-cpp/examples/trxinfo.cpp:45:14: warning: the const qualified variable 'items' is copy-constructed from a const reference; consider making it a const reference [performance-unnecessary-copy-initialization]
+   45 |   const auto items = row.array_items();
+      |              ^
+      |             &
+/Users/mcieslak/projects/trx-cpp/examples/trxinfo.cpp:93:18: warning: no header providing "Eigen::Index" is directly included [misc-include-cleaner]
+    1 |     const Eigen::Index count = lengths.size();
+      |                  ^
+/Users/mcieslak/projects/trx-cpp/examples/trxinfo.cpp:161:22: warning: member 'path' of type 'const std::string &' (aka 'const basic_string<char> &') is a reference [cppcoreguidelines-avoid-const-or-ref-data-members]
+  161 |   const std::string &path;
+      |                      ^
+/Users/mcieslak/projects/trx-cpp/examples/trxinfo.cpp:173:5: warning: an exception may be thrown in function 'main' which should not throw exceptions [bugprone-exception-escape]
+  173 | int main(int argc, char **argv) {
+      |     ^
+/Users/mcieslak/projects/trx-cpp/examples/trxinfo.cpp:185:10: warning: implicit conversion 'std::size_t' (aka 'unsigned long') -> 'bool' [readability-implicit-bool-conversion]
+  185 |     if (!result.count("path")) {
+      |         ~^                   
+      |                               == 0u
+/Users/mcieslak/projects/trx-cpp/examples/trxinfo.cpp:193:5: warning: variable 'printer' of type 'ReaderPrinter' can be declared 'const' [misc-const-correctness]
+  193 |     ReaderPrinter printer{path, is_dir, show_stats};
+      |     ^
+      |                   const 
+/Users/mcieslak/projects/trx-cpp/examples/trxinfo.cpp:199:23: warning: no header providing "std::exception" is directly included [misc-include-cleaner]
+    1 |   } catch (const std::exception &e) {
+      |                       ^
+[100%] Linking CXX executable trxinfo
+[100%] Built target trxinfo

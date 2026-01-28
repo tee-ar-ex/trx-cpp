@@ -24,6 +24,16 @@ if(TRX_ENABLE_CLANG_TIDY)
     find_program(TRX_CLANG_TIDY_EXE NAMES clang-tidy)
     if(TRX_CLANG_TIDY_EXE)
         set(CMAKE_CXX_CLANG_TIDY "${TRX_CLANG_TIDY_EXE}")
+        if(APPLE)
+            execute_process(
+                COMMAND xcrun --show-sdk-path
+                OUTPUT_VARIABLE TRX_APPLE_SDK_PATH
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            if(TRX_APPLE_SDK_PATH)
+                list(APPEND CMAKE_CXX_CLANG_TIDY "--extra-arg=-isysroot${TRX_APPLE_SDK_PATH}")
+            endif()
+        endif()
     else()
         message(WARNING "TRX_ENABLE_CLANG_TIDY is ON but clang-tidy was not found.")
     endif()
