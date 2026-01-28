@@ -1,5 +1,4 @@
-#include <Eigen/Core>
-#include <unsupported/Eigen/CXX11/Tensor>
+#include <Eigen/Core> // NOLINT(misc-include-cleaner)
 
 #include <algorithm>
 #include <array>
@@ -261,7 +260,7 @@ int _sizeof_dtype(const std::string &dtype) {
     return sizeof(float);
   if (dtype == "float64")
     return sizeof(double);
-  return sizeof(Eigen::half); // setting this as default for now but a better solution is needed
+  return sizeof(std::uint16_t); // default to 16-bit float size
 }
 
 std::string _get_dtype(const std::string &dtype) {

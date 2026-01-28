@@ -1,6 +1,6 @@
 #include <trx/trx.h>
 
-#include <Eigen/Core>
+#include <Eigen/Core> // NOLINT(misc-include-cleaner)
 
 #include <algorithm>
 #include <cstdint>
