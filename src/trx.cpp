@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <algorithm>
 #include <stdexcept>
+#include <random>
 #include <vector>
 #define SYSERROR() errno
 
@@ -121,73 +122,84 @@ namespace trxmmap
 
 	void populate_fps(const char *name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size)
 	{
-		DIR *dir;
-		struct dirent *entry;
-
-		if (!(dir = opendir(name)))
-			return;
-
-		while ((entry = readdir(dir)) != NULL)
+		trx::fs::path root(name);
+		std::error_code ec;
+		if (!trx::fs::exists(root, ec) || !trx::fs::is_directory(root, ec))
 		{
-			if (entry->d_name[0] == '.')
-				continue;
-			if (strcmp(entry->d_name, "__MACOSX") == 0)
-				continue;
-			if (entry->d_type == DT_DIR)
+			return;
+		}
+		ec.clear();
+		for (trx::fs::recursive_directory_iterator it(root, ec), end; it != end; it.increment(ec))
+		{
+			if (ec)
 			{
-				char path[1024];
-				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-					continue;
-				snprintf(path, sizeof(path), "%s/%s", name, entry->d_name);
-				populate_fps(path, files_pointer_size);
+				throw std::runtime_error("Failed to read directory: " + root.string());
+			}
+			const trx::fs::path entry_path = it->path();
+			const std::string filename = entry_path.filename().string();
+			if (!filename.empty() && filename[0] == '.')
+			{
+				if (it->is_directory(ec))
+				{
+					it.disable_recursion_pending();
+				}
+				continue;
+			}
+			if (filename == "__MACOSX")
+			{
+				if (it->is_directory(ec))
+				{
+					it.disable_recursion_pending();
+				}
+				continue;
+			}
+
+			std::error_code entry_ec;
+			if (!it->is_regular_file(entry_ec))
+			{
+				continue;
+			}
+
+			std::string elem_filename = entry_path.string();
+			std::string ext = get_ext(elem_filename);
+
+			if (strcmp(ext.c_str(), "json") == 0)
+			{
+				continue;
+			}
+
+			if (!_is_dtype_valid(ext))
+			{
+				throw std::invalid_argument(std::string("The dtype of ") + elem_filename + std::string(" is not supported"));
+			}
+
+			if (strcmp(ext.c_str(), "bit") == 0)
+			{
+				ext = "bool";
+			}
+
+			int dtype_size = _sizeof_dtype(ext);
+			std::error_code size_ec;
+			auto raw_size = trx::fs::file_size(entry_path, size_ec);
+			if (size_ec)
+			{
+				throw std::runtime_error("Failed to stat file: " + elem_filename);
+			}
+
+			if (raw_size % static_cast<std::uintmax_t>(dtype_size) == 0)
+			{
+				auto size = raw_size / static_cast<std::uintmax_t>(dtype_size);
+				files_pointer_size[elem_filename] = std::make_tuple(0, static_cast<long long>(size));
+			}
+			else if (raw_size == 1)
+			{
+				files_pointer_size[elem_filename] = std::make_tuple(0, 0);
 			}
 			else
 			{
-				std::string filename(entry->d_name);
-				std::string root(name);
-				std::string elem_filename = root + SEPARATOR + filename;
-				std::string ext = get_ext(elem_filename);
-
-				if (strcmp(ext.c_str(), "json") == 0)
-				{
-					continue;
-				}
-
-				if (!_is_dtype_valid(ext))
-				{
-					throw std::invalid_argument(std::string("The dtype of ") + elem_filename + std::string(" is not supported"));
-				}
-
-				if (strcmp(ext.c_str(), "bit") == 0)
-				{
-					ext = "bool";
-				}
-
-				int dtype_size = _sizeof_dtype(ext);
-
-				struct stat sb;
-				unsigned long size = 0;
-
-				if (stat(elem_filename.c_str(), &sb) == 0)
-				{
-					size = sb.st_size / dtype_size;
-				}
-
-				if (sb.st_size % dtype_size == 0)
-				{
-					files_pointer_size[elem_filename] = std::make_tuple(0, size);
-				}
-				else if (sb.st_size == 1)
-				{
-					files_pointer_size[elem_filename] = std::make_tuple(0, 0);
-				}
-				else
-				{
-					throw std::invalid_argument("Wrong size of datatype");
-				}
+				throw std::invalid_argument("Wrong size of datatype");
 			}
 		}
-		closedir(dir);
 	}
 	std::string get_base(const std::string &delimiter, const std::string &str)
 	{
@@ -297,9 +309,7 @@ bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent)
 	}
 	std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string filename)
 	{
-
-		// TODO: won't work on windows and not validating OS type
-		std::string base = get_base("/", filename);
+		std::string base = path_basename(filename);
 
 		size_t num_splits = std::count(base.begin(), base.end(), '.');
 		int dim;
@@ -309,7 +319,7 @@ bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent)
 			throw std::invalid_argument("Invalid filename");
 		}
 
-		std::string ext = get_ext(filename);
+		std::string ext = get_ext(base);
 
 		base = base.substr(0, base.length() - ext.length() - 1);
 
@@ -483,104 +493,84 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 
 	void copy_dir(const char *src, const char *dst)
 	{
-		DIR *dir;
-		struct dirent *entry;
-
-		if (!(dir = opendir(src)))
+		trx::fs::path src_path(src);
+		trx::fs::path dst_path(dst);
+		std::error_code ec;
+		if (!trx::fs::exists(src_path, ec) || !trx::fs::is_directory(src_path, ec))
+		{
 			return;
-
-		if (mkdir(dst, S_IRWXU) != 0)
-		{
-		throw std::runtime_error(std::string("Could not create directory ") + dst);
 		}
 
-		while ((entry = readdir(dir)) != NULL)
+		if (!trx::fs::create_directories(dst_path, ec) && ec)
 		{
-			if (entry->d_type == DT_DIR)
-			{
-				char path[1024];
-				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-					continue;
-				char dstpath[1024];
-				snprintf(path, sizeof(path), "%s%s%s", src, SEPARATOR.c_str(), entry->d_name);
-				snprintf(dstpath, sizeof(dstpath), "%s%s%s", dst, SEPARATOR.c_str(), entry->d_name);
-				copy_dir(path, dstpath);
-			}
-			else
-			{
-				char srcfile[1024];
-				char dstfile[1024];
-				snprintf(srcfile, sizeof(srcfile), "%s%s%s", src, SEPARATOR.c_str(), entry->d_name);
-				snprintf(dstfile, sizeof(dstfile), "%s%s%s", dst, SEPARATOR.c_str(), entry->d_name);
-				copy_file(srcfile, dstfile);
-			}
+			throw std::runtime_error(std::string("Could not create directory ") + dst);
 		}
-		closedir(dir);
+
+		ec.clear();
+		for (trx::fs::recursive_directory_iterator it(src_path, ec), end; it != end; it.increment(ec))
+		{
+			if (ec)
+			{
+				throw std::runtime_error("Failed to read directory: " + src_path.string());
+			}
+			const trx::fs::path current = it->path();
+			const trx::fs::path rel = current.lexically_relative(src_path);
+			const trx::fs::path target = dst_path / rel;
+			std::error_code entry_ec;
+			if (it->is_directory(entry_ec))
+			{
+				trx::fs::create_directories(target, entry_ec);
+				if (entry_ec)
+				{
+					throw std::runtime_error("Could not create directory " + target.string());
+				}
+				continue;
+			}
+			if (!it->is_regular_file(entry_ec))
+			{
+				continue;
+			}
+			copy_file(current.string().c_str(), target.string().c_str());
+		}
 	}
 
-	// modified from:https://stackoverflow.com/a/7267734
 	void copy_file(const char *src, const char *dst)
 	{
-		int src_fd, dst_fd, n, err;
-		unsigned char buffer[4096];
-
-		src_fd = trx_open(src, O_RDONLY);
-		dst_fd = trx_open(dst, O_CREAT | O_WRONLY, 0666); // maybe keep original permissions?
-
-		while (1)
+		std::ifstream in(src, std::ios::binary);
+		if (!in.is_open())
 		{
-			err = trx_read(src_fd, buffer, 4096);
-			if (err == -1)
-			{
-				printf("Error reading file.\n");
-				exit(1);
-			}
-			n = err;
-
-			if (n == 0)
-				break;
-
-			err = trx_write(dst_fd, buffer, n);
-			if (err == -1)
-			{
-				printf("Error writing to file.\n");
-				exit(1);
-			}
+			throw std::runtime_error(std::string("Failed to open source file ") + src);
 		}
-		trx_close(src_fd);
-		trx_close(dst_fd);
-	}
-	int rm_dir(const char *d)
-	{
-
-		DIR *dir;
-		struct dirent *entry;
-
-		if (!(dir = opendir(d)))
-			return -1;
-
-		while ((entry = readdir(dir)) != NULL)
+		std::ofstream out(dst, std::ios::binary | std::ios::trunc);
+		if (!out.is_open())
 		{
-			if (entry->d_type == DT_DIR)
+			throw std::runtime_error(std::string("Failed to open destination file ") + dst);
+		}
+
+		char buffer[4096];
+		while (in)
+		{
+			in.read(buffer, sizeof(buffer));
+			std::streamsize n = in.gcount();
+			if (n > 0)
 			{
-				char path[1024];
-				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-					continue;
-				snprintf(path, sizeof(path), "%s%s%s", d, SEPARATOR.c_str(), entry->d_name);
-				rm_dir(path);
-			}
-			else
-			{
-				char fn[1024];
-				snprintf(fn, sizeof(fn), "%s%s%s", d, SEPARATOR.c_str(), entry->d_name);
-				if (remove(fn) != 0)
+				out.write(buffer, n);
+				if (!out)
 				{
-					return -1;
+					throw std::runtime_error(std::string("Error writing to file ") + dst);
 				}
 			}
 		}
-		closedir(dir);
-		return rmdir(d);
+		if (!in.eof())
+		{
+			throw std::runtime_error(std::string("Error reading file ") + src);
+		}
+	}
+	int rm_dir(const char *d)
+	{
+		std::error_code ec;
+		trx::fs::remove_all(d, ec);
+		return ec ? -1 : 0;
 	}
 
 	std::string make_temp_dir(const std::string &prefix)
@@ -635,31 +625,41 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 	}
 	if (base_dir.empty())
 	{
+#if defined(_WIN32) || defined(_WIN64)
+		base_dir = ".";
+#else
 		base_dir = "/tmp";
+#endif
 	}
 
-	trx::fs::path tmpl = trx::fs::path(base_dir) / (prefix + "_XXXXXX");
-	std::string tmpl_str = tmpl.string();
-	std::vector<char> buf(tmpl_str.begin(), tmpl_str.end());
-	buf.push_back('\0');
-#if defined(_WIN32) || defined(_WIN64)
-	if (_mktemp_s(buf.data(), buf.size()) != 0)
+	trx::fs::path base_path(base_dir);
+	std::error_code ec;
+	if (!trx::fs::exists(base_path, ec))
 	{
-		throw std::runtime_error("Failed to create temporary directory");
+		ec.clear();
+		trx::fs::create_directories(base_path, ec);
+		if (ec)
+		{
+			throw std::runtime_error("Failed to create base temp directory: " + base_dir);
+		}
 	}
-	if (_mkdir(buf.data()) != 0)
+
+	static std::mt19937_64 rng(std::random_device{}());
+	std::uniform_int_distribution<uint64_t> dist;
+	for (int attempt = 0; attempt < 100; ++attempt)
 	{
-		throw std::runtime_error("Failed to create temporary directory");
+		trx::fs::path candidate = base_path / (prefix + "_" + std::to_string(dist(rng)));
+		ec.clear();
+		if (trx::fs::create_directory(candidate, ec))
+		{
+			return candidate.string();
+		}
+		if (ec && ec != std::errc::file_exists)
+		{
+			throw std::runtime_error("Failed to create temporary directory: " + ec.message());
+		}
 	}
-	return std::string(buf.data());
-#else
-	char *dirname = mkdtemp(buf.data());
-	if (dirname == nullptr)
-	{
-		throw std::runtime_error("Failed to create temporary directory");
-	}
-	return std::string(dirname);
-#endif
+	throw std::runtime_error("Failed to create temporary directory");
 	}
 
 	std::string extract_zip_to_directory(zip_t *zfolder)
@@ -763,50 +763,40 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 
 	void zip_from_folder(zip_t *zf, const std::string root, const std::string directory, zip_uint32_t compression_standard)
 	{
-		DIR *dir;
-		struct dirent *entry;
-
-		if (!(dir = opendir(directory.c_str())))
-			return;
-
-		while ((entry = readdir(dir)) != NULL)
+		std::error_code ec;
+		for (trx::fs::recursive_directory_iterator it(directory, ec), end; it != end; it.increment(ec))
 		{
-			if (entry->d_type == DT_DIR)
+			if (ec)
 			{
-				char path[1024];
-				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-					continue;
-				snprintf(path, sizeof(path), "%s%s%s", directory.c_str(), SEPARATOR.c_str(), entry->d_name);
-
-				std::string zip_fname(path);
-				zip_fname = rm_root(root, zip_fname);
-				zip_dir_add(zf, zip_fname.c_str(), ZIP_FL_ENC_GUESS);
-				zip_from_folder(zf, root, std::string(path), compression_standard);
+				throw std::runtime_error("Failed to read directory: " + directory);
 			}
-			else
+			const trx::fs::path current = it->path();
+			std::string zip_fname = rm_root(root, current.string());
+			std::error_code entry_ec;
+			if (it->is_directory(entry_ec))
 			{
-				std::string fn;
-				char fullpath[1024];
+				zip_dir_add(zf, zip_fname.c_str(), ZIP_FL_ENC_GUESS);
+				continue;
+			}
+			if (!it->is_regular_file(entry_ec))
+			{
+				continue;
+			}
 
-				snprintf(fullpath, sizeof(fullpath), "%s%s%s", directory.c_str(), SEPARATOR.c_str(), entry->d_name);
-				fn = rm_root(root, std::string(fullpath));
-
-				zip_source_t *s;
-
-				zip_int64_t file_idx = -1;
-				if ((s = zip_source_file(zf, fullpath, 0, 0)) == NULL ||
-				    (file_idx = zip_file_add(zf, fn.c_str(), s, ZIP_FL_ENC_UTF_8)) < 0)
-				{
-					zip_source_free(s);
-					throw std::runtime_error(std::string("Error adding file ") + fn + ": " + zip_strerror(zf));
-				}
-				else if (zip_set_file_compression(zf, file_idx, compression_standard, 0) < 0)
-				{
-					throw std::runtime_error(std::string("Error setting compression for ") + fn + ": " + zip_strerror(zf));
-				}
+			const std::string fullpath = current.string();
+			zip_source_t *s;
+			zip_int64_t file_idx = -1;
+			if ((s = zip_source_file(zf, fullpath.c_str(), 0, 0)) == NULL ||
+			    (file_idx = zip_file_add(zf, zip_fname.c_str(), s, ZIP_FL_ENC_UTF_8)) < 0)
+			{
+				zip_source_free(s);
+				throw std::runtime_error(std::string("Error adding file ") + zip_fname + ": " + zip_strerror(zf));
+			}
+			else if (zip_set_file_compression(zf, file_idx, compression_standard, 0) < 0)
+			{
+				throw std::runtime_error(std::string("Error setting compression for ") + zip_fname + ": " + zip_strerror(zf));
 			}
 		}
-		closedir(dir);
 	}
 
 	std::string rm_root(const std::string root, const std::string path)

@@ -12,8 +12,7 @@
 #include <type_traits>
 #include <math.h>
 #include <Eigen/Core>
-#include <trx/compat.h>
-#include <trx/filesystem.h>
+#include <filesystem>
 #include <limits.h>
 #include <stdlib.h>
 #include <stdexcept>
@@ -21,6 +20,11 @@
 
 #include <mio/mmap.hpp>
 #include <mio/shared_mmap.hpp>
+
+namespace trx
+{
+	namespace fs = std::filesystem;
+}
 
 using namespace Eigen;
 using json = json11::Json;

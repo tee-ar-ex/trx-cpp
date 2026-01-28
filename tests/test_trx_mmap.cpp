@@ -3,13 +3,13 @@
 #include <typeinfo>
 #include <stdexcept>
 #include <sys/stat.h>
-#include <trx/filesystem.h>
+#include <filesystem>
 #include <random>
 #include <system_error>
 
 using namespace Eigen;
 using namespace trxmmap;
-namespace fs = trx::fs;
+namespace fs = std::filesystem;
 
 namespace
 {

@@ -6,7 +6,7 @@
 #undef private
 
 #include <gtest/gtest.h>
-#include <trx/filesystem.h>
+#include <filesystem>
 
 #include <fstream>
 #include <random>
@@ -14,7 +14,7 @@
 
 using namespace Eigen;
 using namespace trxmmap;
-namespace fs = trx::fs;
+namespace fs = std::filesystem;
 
 namespace
 {

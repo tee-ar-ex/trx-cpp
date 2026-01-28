@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 cmake_policy(SET CMP0074 NEW)
 cmake_policy(SET CMP0079 NEW)
 
@@ -8,17 +8,20 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(FetchContent)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
 
-option(TRX_USE_CONAN "Should Conan package manager be used?" ON)
+option(TRX_USE_CONAN "Should Conan package manager be used?" OFF)
 option(TRX_BUILD_TESTS "Build trx tests" OFF)
 option(TRX_BUILD_EXAMPLES "Build trx example commandline programs" ON)
 
 if(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+    add_compile_definitions(NOMINMAX)
 endif()
 
 find_package(libzip REQUIRED)
@@ -56,6 +59,8 @@ add_library(trx
     third_party/json11/json11.cpp
 )
 add_library(trx-cpp::trx ALIAS trx)
+
+target_compile_features(trx PUBLIC cxx_std_17)
 
 if(TRX_USE_CONAN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ConanSetup.cmake")
     include(cmake/ConanSetup.cmake)
@@ -110,11 +115,11 @@ endif()
 
 if(TRX_BUILD_EXAMPLES)
     FetchContent_Declare(
-        CLI11
-        GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
-        GIT_TAG v2.4.2
+        cxxopts
+        GIT_REPOSITORY https://github.com/jarro2783/cxxopts.git
+        GIT_TAG v3.2.0
     )
-    FetchContent_MakeAvailable(CLI11)
+    FetchContent_MakeAvailable(cxxopts)
     add_subdirectory(examples)
 endif()
 

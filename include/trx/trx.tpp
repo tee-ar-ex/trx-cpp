@@ -272,12 +272,22 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 		if (init_as->data_per_vertex.size() > 0)
 		{
 			dpv_dirname = tmp_dir + "/dpv/";
-			mkdir(dpv_dirname.c_str(), S_IRWXU);
+			std::error_code ec;
+			trx::fs::create_directories(dpv_dirname, ec);
+			if (ec)
+			{
+				throw std::runtime_error("Could not create directory " + dpv_dirname);
+			}
 		}
 		if (init_as->data_per_streamline.size() > 0)
 		{
 			dps_dirname = tmp_dir + "/dps/";
-			mkdir(dps_dirname.c_str(), S_IRWXU);
+			std::error_code ec;
+			trx::fs::create_directories(dps_dirname, ec);
+			if (ec)
+			{
+				throw std::runtime_error("Could not create directory " + dps_dirname);
+			}
 		}
 
 		for (auto const &x : init_as->data_per_vertex)
@@ -391,7 +401,30 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			filename = elem_filename;
 		}
 
-		std::string folder = path_dirname(elem_filename);
+		trx::fs::path elem_path(elem_filename);
+		trx::fs::path folder_path = elem_path.parent_path();
+		std::string folder;
+		if (!root.empty())
+		{
+			trx::fs::path rel_path = elem_path.lexically_relative(trx::fs::path(root));
+			std::string rel_str = rel_path.string();
+			if (!rel_str.empty() && rel_str.rfind("..", 0) != 0)
+			{
+				folder = rel_path.parent_path().string();
+			}
+			else
+			{
+				folder = folder_path.string();
+			}
+		}
+		else
+		{
+			folder = folder_path.string();
+		}
+		if (folder == ".")
+		{
+			folder.clear();
+		}
 
 		// _split_ext_with_dimensionality
 		std::tuple<std::string, int, std::string> base_tuple = _split_ext_with_dimensionality(elem_filename);
@@ -406,25 +439,6 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 
 		long long mem_adress = std::get<0>(x->second);
 		long long size = std::get<1>(x->second);
-
-		std::string stripped = root;
-
-		// TODO : will not work on windows
-		if (stripped.rfind("/") == stripped.size() - 1)
-		{
-			stripped = stripped.substr(0, stripped.size() - 1);
-		}
-
-		if (root.compare("") != 0 && folder.rfind(stripped, stripped.size()) == 0)
-		{
-			// 1 for the first forward slash
-			folder = folder.replace(0, root.size(), "");
-
-			if (folder[0] == SEPARATOR.c_str()[0])
-			{
-				folder = folder.substr(1, folder.size());
-			}
-		}
 
 		if (base.compare("positions") == 0 && (folder.compare("") == 0 || folder.compare(".") == 0))
 		{
@@ -564,7 +578,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			}
 			else
 			{
-				shape = std::make_tuple(1, size);
+				shape = std::make_tuple(1, static_cast<int>(size));
 			}
 
 			std::string data_name = path_basename(base);
@@ -596,7 +610,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			}
 			else
 			{
-				shape = std::make_tuple(size, 1);
+				shape = std::make_tuple(static_cast<int>(size), 1);
 			}
 			trx->groups[base] = new MMappedMatrix<uint32_t>();
 			trx->groups[base]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
@@ -672,9 +686,13 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 	if (this->data_per_vertex.size() > 0)
 	{
 		std::string dpv_dirname = tmp_dir + SEPARATOR + "dpv" + SEPARATOR;
-		if (mkdir(dpv_dirname.c_str(), S_IRWXU) != 0)
 		{
-			throw std::runtime_error("Could not create directory " + dpv_dirname);
+			std::error_code ec;
+			trx::fs::create_directories(dpv_dirname, ec);
+			if (ec)
+			{
+				throw std::runtime_error("Could not create directory " + dpv_dirname);
+			}
 		}
 		for (auto const &x : this->data_per_vertex)
 		{
@@ -689,9 +707,13 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 	if (this->data_per_streamline.size() > 0)
 	{
 		std::string dps_dirname = tmp_dir + SEPARATOR + "dps" + SEPARATOR;
-		if (mkdir(dps_dirname.c_str(), S_IRWXU) != 0)
 		{
-			throw std::runtime_error("Could not create directory " + dps_dirname);
+			std::error_code ec;
+			trx::fs::create_directories(dps_dirname, ec);
+			if (ec)
+			{
+				throw std::runtime_error("Could not create directory " + dps_dirname);
+			}
 		}
 		for (auto const &x : this->data_per_streamline)
 		{
@@ -706,9 +728,13 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 	if (this->groups.size() > 0)
 	{
 		std::string groups_dirname = tmp_dir + SEPARATOR + "groups" + SEPARATOR;
-		if (mkdir(groups_dirname.c_str(), S_IRWXU) != 0)
 		{
-			throw std::runtime_error("Could not create directory " + groups_dirname);
+			std::error_code ec;
+			trx::fs::create_directories(groups_dirname, ec);
+			if (ec)
+			{
+				throw std::runtime_error("Could not create directory " + groups_dirname);
+			}
 		}
 
 		for (auto const &x : this->groups)
@@ -728,21 +754,25 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 			{
 				std::string dpg_dirname = tmp_dir + SEPARATOR + "dpg" + SEPARATOR;
 				std::string dpg_subdirname = dpg_dirname + x.first;
-				struct stat sb;
-
-				if (stat(dpg_dirname.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode))
+				std::error_code ec;
+				if (!trx::fs::exists(dpg_dirname, ec))
 				{
-					if (mkdir(dpg_dirname.c_str(), S_IRWXU) != 0)
-					{
-						throw std::runtime_error("Could not create directory " + dpg_dirname);
-					}
+					ec.clear();
+					trx::fs::create_directories(dpg_dirname, ec);
 				}
-				if (stat(dpg_subdirname.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode))
+				if (ec)
 				{
-					if (mkdir(dpg_subdirname.c_str(), S_IRWXU) != 0)
-					{
-						throw std::runtime_error("Could not create directory " + dpg_subdirname);
-					}
+					throw std::runtime_error("Could not create directory " + dpg_dirname);
+				}
+				ec.clear();
+				if (!trx::fs::exists(dpg_subdirname, ec))
+				{
+					ec.clear();
+					trx::fs::create_directories(dpg_subdirname, ec);
+				}
+				if (ec)
+				{
+					throw std::runtime_error("Could not create directory " + dpg_subdirname);
 				}
 
 				Matrix<DT, Dynamic, Dynamic> dpg_todump = this->data_per_group[x.first][y.first]->_matrix;
@@ -872,7 +902,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 {
 	if (!this->_copy_safe)
 	{
-		std::invalid_argument("Cannot resize a sliced dataset.");
+		throw std::invalid_argument("Cannot resize a sliced dataset.");
 	}
 
 	std::tuple<int, int> sp_end = this->_get_real_len();
@@ -919,9 +949,13 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 	if (this->groups.size() > 0)
 	{
 		std::string group_dir = tmp_dir + SEPARATOR + "groups" + SEPARATOR;
-		if (mkdir(group_dir.c_str(), S_IRWXU) != 0)
 		{
-			throw std::runtime_error("Could not create directory " + group_dir);
+			std::error_code ec;
+			trx::fs::create_directories(group_dir, ec);
+			if (ec)
+			{
+				throw std::runtime_error("Could not create directory " + group_dir);
+			}
 		}
 
 		for (auto const &x : this->groups)
@@ -975,19 +1009,22 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 	{
 		// really need to refactor all these mkdirs
 		std::string dpg_dir = tmp_dir + SEPARATOR + "dpg" + SEPARATOR;
-		if (mkdir(dpg_dir.c_str(), S_IRWXU) != 0)
 		{
-			throw std::runtime_error("Could not create directory " + dpg_dir);
+			std::error_code ec;
+			trx::fs::create_directories(dpg_dir, ec);
+			if (ec)
+			{
+				throw std::runtime_error("Could not create directory " + dpg_dir);
+			}
 		}
 
 		for (auto const &x : this->data_per_group)
 		{
 			std::string dpg_subdir = dpg_dir + x.first;
-			struct stat sb;
-
-			if (stat(dpg_subdir.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode))
 			{
-				if (mkdir(dpg_subdir.c_str(), S_IRWXU) != 0)
+				std::error_code ec;
+				trx::fs::create_directories(dpg_subdir, ec);
+				if (ec)
 				{
 					throw std::runtime_error("Could not create directory " + dpg_subdir);
 				}
@@ -1051,10 +1088,13 @@ template <typename DT>
 TrxFile<DT> *load_from_directory(std::string path)
 {
 	std::string directory = path;
-	char resolved[PATH_MAX];
-	if (realpath(path.c_str(), resolved) != nullptr)
 	{
-		directory = resolved;
+		std::error_code ec;
+		trx::fs::path resolved = trx::fs::weakly_canonical(trx::fs::path(path), ec);
+		if (!ec)
+		{
+			directory = resolved.string();
+		}
 	}
 	std::string header_name = directory + SEPARATOR + "header.json";
 
@@ -1194,15 +1234,12 @@ void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression
 	}
 	else
 	{
-		struct stat sb;
-
-		struct stat tmp_sb;
-		if (stat(tmp_dir_name.c_str(), &tmp_sb) != 0 || !S_ISDIR(tmp_sb.st_mode))
+		std::error_code ec;
+		if (!trx::fs::exists(tmp_dir_name, ec) || !trx::fs::is_directory(tmp_dir_name, ec))
 		{
 			throw std::runtime_error("Temporary TRX directory does not exist: " + tmp_dir_name);
 		}
-
-		if (stat(filename.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode))
+		if (trx::fs::exists(filename, ec) && trx::fs::is_directory(filename, ec))
 		{
 			if (rm_dir(filename.c_str()) != 0)
 			{
@@ -1221,7 +1258,8 @@ void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression
 			}
 		}
 		copy_dir(tmp_dir_name.c_str(), filename.c_str());
-		if (stat(filename.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode))
+		ec.clear();
+		if (!trx::fs::exists(filename, ec) || !trx::fs::is_directory(filename, ec))
 		{
 			throw std::runtime_error("Failed to create output directory: " + filename);
 		}
