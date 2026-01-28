@@ -20,6 +20,7 @@ jobs:
           libeigen3-dev \
           libzip-dev \
           zipcmp \
+          zipmerge \
           zlib1g-dev \
           ninja-build
 
