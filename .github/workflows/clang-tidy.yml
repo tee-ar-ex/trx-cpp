@@ -21,6 +21,7 @@ jobs:
           libzip-dev \
           zipcmp \
           zipmerge \
+          ziptool \
           zlib1g-dev \
           ninja-build
 

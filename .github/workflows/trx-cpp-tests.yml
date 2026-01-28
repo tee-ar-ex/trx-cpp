@@ -31,7 +31,8 @@ jobs:
             libeigen3-dev \
             libzip-dev \
             zipcmp \
-            zipmerge
+            zipmerge \
+            ziptool
 
       - name: Build and install GoogleTest
         run: |
