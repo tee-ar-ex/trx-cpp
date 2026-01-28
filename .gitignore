@@ -12,5 +12,9 @@ tests/data
 test_package/build/
 test_package/CMakeUserPresets.json
 
+docs/_build
+docs/_build/doxygen/
+
 test_package/build
 test_package/CMakeUserPresets.json
+.DS_Store

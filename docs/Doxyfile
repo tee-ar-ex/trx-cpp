@@ -1,0 +1,19 @@
+PROJECT_NAME           = "TRX-cpp"
+PROJECT_BRIEF          = "C++11 library for the TRX file format"
+OUTPUT_DIRECTORY       = docs/_build
+
+INPUT                  = include src
+RECURSIVE              = YES
+FILE_PATTERNS          = *.h *.hpp *.tpp *.cpp
+EXCLUDE_PATTERNS       = */third_party/*
+
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+GENERATE_HTML          = NO
+
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_ANON_NSPACES    = YES
+QUIET                  = YES
+
