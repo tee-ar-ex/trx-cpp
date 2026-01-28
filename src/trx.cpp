@@ -309,9 +309,7 @@ bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent)
 	}
 	std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string filename)
 	{
-
-		// TODO: won't work on windows and not validating OS type
-		std::string base = get_base("/", filename);
+		std::string base = path_basename(filename);
 
 		size_t num_splits = std::count(base.begin(), base.end(), '.');
 		int dim;
@@ -321,7 +319,7 @@ bool _is_path_within(const trx::fs::path &child, const trx::fs::path &parent)
 			throw std::invalid_argument("Invalid filename");
 		}
 
-		std::string ext = get_ext(filename);
+		std::string ext = get_ext(base);
 
 		base = base.substr(0, base.length() - ext.length() - 1);
 

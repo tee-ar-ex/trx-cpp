@@ -401,7 +401,30 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 			filename = elem_filename;
 		}
 
-		std::string folder = path_dirname(elem_filename);
+		trx::fs::path elem_path(elem_filename);
+		trx::fs::path folder_path = elem_path.parent_path();
+		std::string folder;
+		if (!root.empty())
+		{
+			trx::fs::path rel_path = elem_path.lexically_relative(trx::fs::path(root));
+			std::string rel_str = rel_path.string();
+			if (!rel_str.empty() && rel_str.rfind("..", 0) != 0)
+			{
+				folder = rel_path.parent_path().string();
+			}
+			else
+			{
+				folder = folder_path.string();
+			}
+		}
+		else
+		{
+			folder = folder_path.string();
+		}
+		if (folder == ".")
+		{
+			folder.clear();
+		}
 
 		// _split_ext_with_dimensionality
 		std::tuple<std::string, int, std::string> base_tuple = _split_ext_with_dimensionality(elem_filename);
@@ -416,25 +439,6 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 
 		long long mem_adress = std::get<0>(x->second);
 		long long size = std::get<1>(x->second);
-
-		std::string stripped = root;
-
-		// TODO : will not work on windows
-		if (stripped.rfind("/") == stripped.size() - 1)
-		{
-			stripped = stripped.substr(0, stripped.size() - 1);
-		}
-
-		if (root.compare("") != 0 && folder.rfind(stripped, stripped.size()) == 0)
-		{
-			// 1 for the first forward slash
-			folder = folder.replace(0, root.size(), "");
-
-			if (folder[0] == SEPARATOR.c_str()[0])
-			{
-				folder = folder.substr(1, folder.size());
-			}
-		}
 
 		if (base.compare("positions") == 0 && (folder.compare("") == 0 || folder.compare(".") == 0))
 		{
