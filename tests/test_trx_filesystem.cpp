@@ -101,9 +101,15 @@ TEST(TrxFilesystem, FileSizeAndRemoveAll)
 
 	std::error_code size_ec;
 	auto size = fs::file_size(root, size_ec);
-	EXPECT_TRUE(size_ec);
-	EXPECT_EQ(size, static_cast<std::uintmax_t>(-1));
-	EXPECT_TRUE(size_ec == std::errc::is_a_directory || size_ec == std::errc::invalid_argument);
+	if (size_ec)
+	{
+		EXPECT_TRUE(size_ec == std::errc::is_a_directory || size_ec == std::errc::invalid_argument);
+	}
+	else
+	{
+		// Some platforms report size 0 for directories without error.
+		EXPECT_EQ(size, 0u);
+	}
 
 	std::error_code ec;
 	fs::remove_all(root, ec);
