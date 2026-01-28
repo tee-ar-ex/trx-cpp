@@ -386,7 +386,7 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 
 		if (mkdir(dst, S_IRWXU) != 0)
 		{
-			spdlog::error("Could not create directory {}", dst);
+		throw std::runtime_error(std::string("Could not create directory ") + dst);
 		}
 
 		while ((entry = readdir(dir)) != NULL)
@@ -470,7 +470,6 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 				snprintf(fn, sizeof(fn), "%s%s%s", d, SEPARATOR.c_str(), entry->d_name);
 				if (remove(fn) != 0)
 				{
-					spdlog::error("Could not remove file {}", fn);
 					return -1;
 				}
 			}
@@ -694,11 +693,11 @@ mio::shared_mmap_sink _create_memmap(std::string filename, std::tuple<int, int> 
 				    (file_idx = zip_file_add(zf, fn.c_str(), s, ZIP_FL_ENC_UTF_8)) < 0)
 				{
 					zip_source_free(s);
-					spdlog::error("error adding file {}: {}", fn, zip_strerror(zf));
+					throw std::runtime_error(std::string("Error adding file ") + fn + ": " + zip_strerror(zf));
 				}
 				else if (zip_set_file_compression(zf, file_idx, compression_standard, 0) < 0)
 				{
-					spdlog::error("error setting compression for {}: {}", fn, zip_strerror(zf));
+					throw std::runtime_error(std::string("Error setting compression for ") + fn + ": " + zip_strerror(zf));
 				}
 			}
 		}

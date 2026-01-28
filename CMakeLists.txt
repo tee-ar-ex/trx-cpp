@@ -41,7 +41,6 @@ if (NOT TARGET Eigen3::Eigen AND EXISTS "${EIGEN3_INCLUDE_DIR}")
         INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_INCLUDE_DIR}"
     )
 endif()
-find_package(spdlog CONFIG REQUIRED)
 set(TRX_HAVE_MIO_TARGET OFF)
 set(MIO_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/mio/include")
 if (NOT EXISTS "${MIO_INCLUDE_DIR}/mio/mmap.hpp")
@@ -76,7 +75,6 @@ TARGET_LINK_LIBRARIES(trx
     PUBLIC
         ${TRX_LIBZIP_TARGET}
         Eigen3::Eigen
-        spdlog::spdlog
         $<$<BOOL:${TRX_HAVE_MIO_TARGET}>:mio::mio>
 )
 target_include_directories(trx

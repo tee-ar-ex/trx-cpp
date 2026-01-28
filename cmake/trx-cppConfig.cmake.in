@@ -3,7 +3,6 @@
 include(CMakeFindDependencyMacro)
 find_dependency(libzip)
 find_dependency(Eigen3)
-find_dependency(spdlog)
 # mio is header-only; try to locate if packaged
 find_dependency(mio QUIET)
 

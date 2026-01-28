@@ -36,6 +36,7 @@ void ediff1d(Matrix<DT, Dynamic, 1> &lengths, Matrix<DT, Dynamic, Dynamic> &tmp,
 }
 
 template <typename DT>
+// Caveat: if filename has an extension, it will be replaced by the generated dtype extension.
 std::string _generate_filename_from_data(const MatrixBase<DT> &arr, std::string filename)
 {
 
@@ -46,7 +47,6 @@ std::string _generate_filename_from_data(const MatrixBase<DT> &arr, std::string 
 
 	if (ext.size() != 0)
 	{
-		spdlog::warn("Will overwrite provided extension if needed.");
 		base = base.substr(0, base.length() - ext.length() - 1);
 	}
 
@@ -138,8 +138,6 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 	// TODO: add else if for get_reference_info
 	else
 	{
-		spdlog::debug("No reference provided, using blank space attributes, please update them later.");
-
 		// identity matrix
 		for (int i = 0; i < 4; i++)
 		{
@@ -157,7 +155,6 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 			throw std::invalid_argument("Can't us init_as without declaring nb_vertices and nb_streamlines");
 		}
 
-		spdlog::debug("Initializing empty TrxFile.");
 		// will remove as completely unecessary. using as placeholders
 		this->header = {};
 		this->streamlines = nullptr;
@@ -173,7 +170,6 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 	}
 	else if (nb_vertices > 0 && nb_streamlines > 0)
 	{
-		spdlog::debug("Preallocating TrxFile with size {} streamlines and {} vertices.", nb_streamlines, nb_vertices);
 		TrxFile<DT> *trx = _initialize_empty_trx<DT>(nb_streamlines, nb_vertices, init_as);
 		this->streamlines = trx->streamlines;
 		this->groups = trx->groups;
@@ -209,8 +205,6 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 
 	std::string tmp_dir = make_temp_dir("trx");
 
-	spdlog::info("Temporary folder for memmaps: {}", tmp_dir);
-
 	json header = json::object();
 	if (init_as != NULL)
 	{
@@ -237,10 +231,6 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 		offsets_dtype = dtype_from_scalar<uint64_t>();
 		lengths_dtype = dtype_from_scalar<uint32_t>();
 	}
-	spdlog::debug("Initializing positions with dtype: {}", positions_dtype);
-	spdlog::debug("Initializing offsets with dtype: {}", offsets_dtype);
-	spdlog::debug("Initializing lengths with dtype: {}", lengths_dtype);
-
 	std::string positions_filename(tmp_dir);
 	positions_filename += "/positions.3." + positions_dtype;
 
@@ -311,8 +301,6 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 				dpv_filename = dpv_dirname + x.first + "." + std::to_string(cols) + "." + dpv_dtype;
 			}
 
-			spdlog::debug("Initializing {} (dpv) with dtype: {}", x.first, dpv_dtype);
-
 			std::tuple<int, int> dpv_shape = std::make_tuple(rows, cols);
 			trx->data_per_vertex[x.first] = new ArraySequence<DT>();
 			trx->data_per_vertex[x.first]->mmap_pos = trxmmap::_create_memmap(dpv_filename, dpv_shape, "w+", dpv_dtype);
@@ -353,8 +341,6 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 
 				dps_filename = dps_dirname + x.first + "." + std::to_string(cols) + "." + dps_dtype;
 			}
-
-			spdlog::debug("Initializing {} (dps) with dtype: {}", x.first, dps_dtype);
 
 			std::tuple<int, int> dps_shape = std::make_tuple(rows, cols);
 			trx->data_per_streamline[x.first] = new trxmmap::MMappedMatrix<DT>();
@@ -618,7 +604,7 @@ TrxFile<DT> *TrxFile<DT>::_create_trx_from_pointer(json header, std::map<std::st
 		}
 		else
 		{
-			spdlog::error("{} is not part of a valid structure.", elem_filename);
+			throw std::invalid_argument("Entry is not part of a valid TRX structure: " + elem_filename);
 		}
 	}
 	if (trx->streamlines->_data.size() == 0 || trx->streamlines->_offsets.size() == 0)
@@ -688,7 +674,7 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 		std::string dpv_dirname = tmp_dir + SEPARATOR + "dpv" + SEPARATOR;
 		if (mkdir(dpv_dirname.c_str(), S_IRWXU) != 0)
 		{
-			spdlog::error("Could not create directory {}", dpv_dirname);
+			throw std::runtime_error("Could not create directory " + dpv_dirname);
 		}
 		for (auto const &x : this->data_per_vertex)
 		{
@@ -705,7 +691,7 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 		std::string dps_dirname = tmp_dir + SEPARATOR + "dps" + SEPARATOR;
 		if (mkdir(dps_dirname.c_str(), S_IRWXU) != 0)
 		{
-			spdlog::error("Could not create directory {}", dps_dirname);
+			throw std::runtime_error("Could not create directory " + dps_dirname);
 		}
 		for (auto const &x : this->data_per_streamline)
 		{
@@ -722,7 +708,7 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 		std::string groups_dirname = tmp_dir + SEPARATOR + "groups" + SEPARATOR;
 		if (mkdir(groups_dirname.c_str(), S_IRWXU) != 0)
 		{
-			spdlog::error("Could not create directory {}", groups_dirname);
+			throw std::runtime_error("Could not create directory " + groups_dirname);
 		}
 
 		for (auto const &x : this->groups)
@@ -748,14 +734,14 @@ TrxFile<DT> *TrxFile<DT>::deepcopy()
 				{
 					if (mkdir(dpg_dirname.c_str(), S_IRWXU) != 0)
 					{
-						spdlog::error("Could not create directory {}", dpg_dirname);
+						throw std::runtime_error("Could not create directory " + dpg_dirname);
 					}
 				}
 				if (stat(dpg_subdirname.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode))
 				{
 					if (mkdir(dpg_subdirname.c_str(), S_IRWXU) != 0)
 					{
-						spdlog::error("Could not create directory {}", dpg_subdirname);
+						throw std::runtime_error("Could not create directory " + dpg_subdirname);
 					}
 				}
 
@@ -858,7 +844,6 @@ void TrxFile<DT>::close()
 {
 	this->_cleanup_temporary_directory();
 	*this = TrxFile<DT>(); // probably dangerous to do
-	spdlog::debug("Deleted memmaps and initialized empty TrxFile.");
 }
 
 template <typename DT>
@@ -868,13 +853,13 @@ TrxFile<DT>::~TrxFile()
 }
 
 template <typename DT>
+// Caveat: cleanup is best-effort; filesystem errors are ignored.
 void TrxFile<DT>::_cleanup_temporary_directory()
 {
 	if (this->_owns_uncompressed_folder && !this->_uncompressed_folder_handle.empty())
 	{
 		if (rm_dir(this->_uncompressed_folder_handle.c_str()) != 0)
 		{
-			spdlog::warn("Could not remove temporary folder {}", this->_uncompressed_folder_handle);
 		}
 		this->_uncompressed_folder_handle.clear();
 		this->_owns_uncompressed_folder = false;
@@ -882,6 +867,7 @@ void TrxFile<DT>::_cleanup_temporary_directory()
 }
 
 template <typename DT>
+// Caveats: downsizing vertices is not supported; reducing streamlines truncates data; same-size resize is a no-op.
 void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 {
 	if (!this->_copy_safe)
@@ -896,7 +882,6 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 	if (nb_streamlines != -1 && nb_streamlines < strs_end)
 	{
 		strs_end = nb_streamlines;
-		spdlog::info("Resizing (down) memmaps, less streamlines than it actually contains");
 	}
 
 	if (nb_vertices == -1)
@@ -906,7 +891,6 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 	}
 	else if (nb_vertices < ptrs_end)
 	{
-		spdlog::warn("Cannot resize (down) vertices for consistency.");
 		return;
 	}
 
@@ -918,14 +902,10 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 	if (nb_streamlines == this->header["NB_STREAMLINES"].int_value() &&
 	    nb_vertices == this->header["NB_VERTICES"].int_value())
 	{
-		spdlog::debug("TrxFile of the right size, no resizing.");
 		return;
 	}
 
 	TrxFile<DT> *trx = _initialize_empty_trx(nb_streamlines, nb_vertices, this);
-
-	spdlog::info("Resizing streamlines from size {} to {}", this->streamlines->_lengths.size(), nb_streamlines);
-	spdlog::info("Resizing vertices from size {} to  {}", this->streamlines->_data.rows(), nb_vertices);
 
 	if (nb_streamlines < this->header["NB_STREAMLINES"].int_value())
 		trx->_copy_fixed_arrays_from(this, -1, -1, nb_streamlines);
@@ -941,7 +921,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 		std::string group_dir = tmp_dir + SEPARATOR + "groups" + SEPARATOR;
 		if (mkdir(group_dir.c_str(), S_IRWXU) != 0)
 		{
-			spdlog::error("Could not create directory {}", group_dir);
+			throw std::runtime_error("Could not create directory " + group_dir);
 		}
 
 		for (auto const &x : this->groups)
@@ -974,8 +954,6 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 			trx->groups[x.first]->mmap = trxmmap::_create_memmap(group_name, group_shape, "w+", group_dtype);
 			new (&(trx->groups[x.first]->_matrix)) Map<Matrix<uint32_t, Dynamic, Dynamic>>(reinterpret_cast<uint32_t *>(trx->groups[x.first]->mmap.data()), std::get<0>(group_shape), std::get<1>(group_shape));
 
-			spdlog::debug("{} group went from {} items to {}", x.first, ori_length, tmp.size());
-
 			// update values
 			for (int i = 0; i < trx->groups[x.first]->_matrix.rows(); ++i)
 			{
@@ -999,7 +977,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 		std::string dpg_dir = tmp_dir + SEPARATOR + "dpg" + SEPARATOR;
 		if (mkdir(dpg_dir.c_str(), S_IRWXU) != 0)
 		{
-			spdlog::error("Could not create directory {}", dpg_dir);
+			throw std::runtime_error("Could not create directory " + dpg_dir);
 		}
 
 		for (auto const &x : this->data_per_group)
@@ -1011,7 +989,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg)
 			{
 				if (mkdir(dpg_subdir.c_str(), S_IRWXU) != 0)
 				{
-					spdlog::error("Could not create directory {}", dpg_subdir);
+					throw std::runtime_error("Could not create directory " + dpg_subdir);
 				}
 			}
 
@@ -1122,14 +1100,14 @@ void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression
 		zip_t *zf;
 		if ((zf = zip_open(filename.c_str(), ZIP_CREATE + ZIP_TRUNCATE, &errorp)) == NULL)
 		{
-			spdlog::error("Could not open file {} due to error: {}", filename, strerror(errorp));
+			throw std::runtime_error("Could not open archive " + filename + ": " + strerror(errorp));
 		}
 		else
 		{
 			zip_from_folder(zf, tmp_dir_name, tmp_dir_name, compression_standard);
 			if (zip_close(zf) != 0)
 			{
-				spdlog::error("Unable to close archive {} due to : {}", filename, strerror(errorp));
+				throw std::runtime_error("Unable to close archive " + filename + ": " + zip_strerror(zf));
 			}
 		}
 	}
@@ -1147,7 +1125,7 @@ void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression
 		{
 			if (rm_dir(filename.c_str()) != 0)
 			{
-				spdlog::error("Could not remove existing directory {}", filename);
+				throw std::runtime_error("Could not remove existing directory " + filename);
 			}
 		}
 		trx::fs::path dest_path(filename);
