@@ -8,7 +8,6 @@ set(CMAKE_BUILD_TYPE Debug)
 
 find_package(libzip REQUIRED)
 find_package (Eigen3 CONFIG REQUIRED)
-find_package(spdlog CONFIG REQUIRED)
 
 include_directories(../src)
 include_directories(../third_party/json11)
@@ -24,8 +23,6 @@ add_executable(load_trx
 TARGET_LINK_LIBRARIES(load_trx
 	Eigen3::Eigen
 	libzip::zip
-	spdlog::spdlog
-	spdlog::spdlog_header_only
 )
 
 

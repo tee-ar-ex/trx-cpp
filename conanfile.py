@@ -41,7 +41,6 @@ class TrxCppConan(ConanFile):
     def requirements(self):
         self.requires("libzip/1.10.1")
         self.requires("eigen/3.4.0")
-        self.requires("spdlog/1.12.0")
 
     def build_requirements(self):
         if self.options.with_tests:
@@ -84,14 +83,6 @@ class TrxCppConan(ConanFile):
         mio_include = os.path.join(self.source_folder, "third_party", "mio", "include")
         copy(self, "mio/*", src=mio_include, dst=os.path.join(self.package_folder, "include"))
 
-        spdlog_dep = self.dependencies.get("spdlog")
-        if spdlog_dep and spdlog_dep.package_folder:
-            spdlog_include = os.path.join(spdlog_dep.package_folder, "include")
-            copy(self, "spdlog/*", src=spdlog_include, dst=os.path.join(self.package_folder, "include"))
-        fmt_dep = self.dependencies.get("fmt")
-        if fmt_dep and fmt_dep.package_folder:
-            fmt_include = os.path.join(fmt_dep.package_folder, "include")
-            copy(self, "fmt/*", src=fmt_include, dst=os.path.join(self.package_folder, "include"))
 
     def package_info(self):
         self.cpp_info.set_property("cmake_file_name", "trx-cpp")
@@ -102,7 +93,6 @@ class TrxCppConan(ConanFile):
         self.cpp_info.components["trx"].libs = ["trx"]
         self.cpp_info.components["trx"].requires = [
             "libzip::libzip",
-            "spdlog::spdlog",
             "eigen::Eigen3::Eigen",
         ]
         extra_includes = []

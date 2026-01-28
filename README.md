@@ -10,7 +10,6 @@ Required:
 - C++11 compiler and CMake (>= 3.10)
 - libzip
 - Eigen3
-- spdlog
 
 Optional:
 - GTest (for building tests)
