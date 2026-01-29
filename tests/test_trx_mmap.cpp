@@ -254,6 +254,50 @@ TEST(TrxFileMemmap, detect_positions_dtype_normalizes_slashes) {
   EXPECT_EQ(trxmmap::detect_positions_dtype(root_dir.string()), "float64");
 }
 
+TEST(TrxFileMemmap, detect_positions_scalar_type_directory) {
+  auto make_dir_with_positions = [](const std::string &suffix) {
+    const fs::path root_dir = make_temp_test_dir("trx_scalar_type");
+    const fs::path positions_path = root_dir / ("positions.3." + suffix);
+    std::ofstream out(positions_path.string());
+    if (!out.is_open()) {
+      throw std::runtime_error("Failed to write positions file");
+    }
+    out.close();
+    return root_dir;
+  };
+
+  const fs::path float16_dir = make_dir_with_positions("float16");
+  const fs::path float32_dir = make_dir_with_positions("float32");
+  const fs::path float64_dir = make_dir_with_positions("float64");
+
+  EXPECT_EQ(trxmmap::detect_positions_scalar_type(float16_dir.string(), TrxScalarType::Float64),
+            TrxScalarType::Float16);
+  EXPECT_EQ(trxmmap::detect_positions_scalar_type(float32_dir.string(), TrxScalarType::Float16),
+            TrxScalarType::Float32);
+  EXPECT_EQ(trxmmap::detect_positions_scalar_type(float64_dir.string(), TrxScalarType::Float32),
+            TrxScalarType::Float64);
+}
+
+TEST(TrxFileMemmap, detect_positions_scalar_type_fallback) {
+  const fs::path empty_dir = make_temp_test_dir("trx_scalar_empty");
+  EXPECT_EQ(trxmmap::detect_positions_scalar_type(empty_dir.string(), TrxScalarType::Float16),
+            TrxScalarType::Float16);
+
+  const fs::path invalid_dir = make_temp_test_dir("trx_scalar_invalid");
+  const fs::path invalid_positions = invalid_dir / "positions.3.txt";
+  std::ofstream out(invalid_positions.string());
+  ASSERT_TRUE(out.is_open());
+  out.close();
+
+  EXPECT_EQ(trxmmap::detect_positions_scalar_type(invalid_dir.string(), TrxScalarType::Float64),
+            TrxScalarType::Float64);
+}
+
+TEST(TrxFileMemmap, detect_positions_scalar_type_missing_path) {
+  const fs::path missing = fs::path(make_temp_test_dir("trx_scalar_missing")) / "nope";
+  EXPECT_THROW(trxmmap::detect_positions_scalar_type(missing.string(), TrxScalarType::Float32), std::runtime_error);
+}
+
 // Mirrors trx/tests/test_memmap.py::test__split_ext_with_dimensionality.
 TEST(TrxFileMemmap, __split_ext_with_dimensionality) {
   std::tuple<std::string, int, std::string> output;
