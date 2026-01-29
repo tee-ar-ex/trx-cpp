@@ -1102,17 +1102,15 @@ template <typename DT> void save(TrxFile<DT> &trx, const std::string filename, z
 }
 
 template <typename DT>
-void add_dps_from_text(TrxFile<DT> &trx,
-                       const std::string &name,
-                       const std::string &dtype,
-                       const std::string &path) {
+void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::string &dtype, const std::string &path) {
   if (name.empty()) {
     throw std::invalid_argument("DPS name cannot be empty");
   }
 
   std::string dtype_norm = dtype;
-  std::transform(dtype_norm.begin(), dtype_norm.end(), dtype_norm.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  std::transform(dtype_norm.begin(), dtype_norm.end(), dtype_norm.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
 
   if (!_is_dtype_valid(dtype_norm)) {
     throw std::invalid_argument("Unsupported DPS dtype: " + dtype);
@@ -1148,8 +1146,8 @@ void add_dps_from_text(TrxFile<DT> &trx,
   }
 
   if (values.size() != nb_streamlines) {
-    throw std::runtime_error("DPS values (" + std::to_string(values.size()) +
-                             ") do not match number of streamlines (" + std::to_string(nb_streamlines) + ")");
+    throw std::runtime_error("DPS values (" + std::to_string(values.size()) + ") do not match number of streamlines (" +
+                             std::to_string(nb_streamlines) + ")");
   }
 
   std::string dps_dirname = trx._uncompressed_folder_handle + SEPARATOR + "dps" + SEPARATOR;
@@ -1209,17 +1207,15 @@ void add_dps_from_text(TrxFile<DT> &trx,
 }
 
 template <typename DT>
-void add_dpv_from_tsf(TrxFile<DT> &trx,
-                      const std::string &name,
-                      const std::string &dtype,
-                      const std::string &path) {
+void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::string &dtype, const std::string &path) {
   if (name.empty()) {
     throw std::invalid_argument("DPV name cannot be empty");
   }
 
   std::string dtype_norm = dtype;
-  std::transform(dtype_norm.begin(), dtype_norm.end(), dtype_norm.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  std::transform(dtype_norm.begin(), dtype_norm.end(), dtype_norm.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
 
   if (!_is_dtype_valid(dtype_norm)) {
     throw std::invalid_argument("Unsupported DPV dtype: " + dtype);
@@ -1277,8 +1273,8 @@ void add_dpv_from_tsf(TrxFile<DT> &trx,
     }
   }
   if (values.size() != nb_vertices) {
-    throw std::runtime_error("TSF values (" + std::to_string(values.size()) +
-                             ") do not match number of vertices (" + std::to_string(nb_vertices) + ")");
+    throw std::runtime_error("TSF values (" + std::to_string(values.size()) + ") do not match number of vertices (" +
+                             std::to_string(nb_vertices) + ")");
   }
 
   std::string dpv_dirname = trx._uncompressed_folder_handle + SEPARATOR + "dpv" + SEPARATOR;
@@ -1334,10 +1330,9 @@ void add_dpv_from_tsf(TrxFile<DT> &trx,
     }
   }
 
-  new (&(seq->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(
-      trx.streamlines->_offsets.data(),
-      static_cast<int>(trx.streamlines->_offsets.rows()),
-      static_cast<int>(trx.streamlines->_offsets.cols()));
+  new (&(seq->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(trx.streamlines->_offsets.data(),
+                                                                 static_cast<int>(trx.streamlines->_offsets.rows()),
+                                                                 static_cast<int>(trx.streamlines->_offsets.cols()));
   seq->_lengths = trx.streamlines->_lengths;
 
   trx.data_per_vertex[name] = seq;

@@ -3,10 +3,10 @@
 
 #include <Eigen/Core>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -525,16 +525,10 @@ template <typename DT>
 void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
 
 template <typename DT>
-void add_dps_from_text(TrxFile<DT> &trx,
-                       const std::string &name,
-                       const std::string &dtype,
-                       const std::string &path);
+void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::string &dtype, const std::string &path);
 
 template <typename DT>
-void add_dpv_from_tsf(TrxFile<DT> &trx,
-                      const std::string &name,
-                      const std::string &dtype,
-                      const std::string &path);
+void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::string &dtype, const std::string &path);
 
 /**
  * @brief Utils function to zip on-disk memmaps
