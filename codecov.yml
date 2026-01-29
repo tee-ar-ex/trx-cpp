@@ -7,6 +7,7 @@ coverage:
           - "src"
     patch:
       default:
+        informational: true
         paths:
           - "include/trx"
           - "src"

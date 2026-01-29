@@ -18,6 +18,30 @@ endif()
 option(TRX_USE_CONAN "Should Conan package manager be used?" OFF)
 option(TRX_BUILD_TESTS "Build trx tests" OFF)
 option(TRX_BUILD_EXAMPLES "Build trx example commandline programs" ON)
+option(TRX_ENABLE_CLANG_TIDY "Run clang-tidy during builds" OFF)
+
+if(TRX_ENABLE_CLANG_TIDY)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+    find_program(TRX_CLANG_TIDY_EXE NAMES clang-tidy)
+    if(TRX_CLANG_TIDY_EXE)
+        set(CMAKE_CXX_CLANG_TIDY "${TRX_CLANG_TIDY_EXE}")
+        if(APPLE)
+            execute_process(
+                COMMAND xcrun --show-sdk-path
+                OUTPUT_VARIABLE TRX_APPLE_SDK_PATH
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            if(TRX_APPLE_SDK_PATH)
+                if(NOT CMAKE_OSX_SYSROOT)
+                    set(CMAKE_OSX_SYSROOT "${TRX_APPLE_SDK_PATH}" CACHE STRING "macOS SDK" FORCE)
+                endif()
+                list(APPEND CMAKE_CXX_CLANG_TIDY "--extra-arg=-isysroot${TRX_APPLE_SDK_PATH}")
+            endif()
+        endif()
+    else()
+        message(WARNING "TRX_ENABLE_CLANG_TIDY is ON but clang-tidy was not found.")
+    endif()
+endif()
 
 if(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
@@ -58,6 +82,7 @@ add_library(trx
     include/trx/trx.tpp
     third_party/json11/json11.cpp
 )
+set_source_files_properties(third_party/json11/json11.cpp PROPERTIES SKIP_LINTING ON)
 add_library(trx-cpp::trx ALIAS trx)
 
 target_compile_features(trx PUBLIC cxx_std_17)

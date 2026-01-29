@@ -1,0 +1,178 @@
+#!/bin/bash
+
+# Copyright (c) 2008-2026 the MRtrix3 contributors.
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# Covered Software is provided under this License on an "as is"
+# basis, without warranty of any kind, either expressed, implied, or
+# statutory, including, without limitation, warranties that the
+# Covered Software is free of defects, merchantable, fit for a
+# particular purpose or non-infringing.
+# See the Mozilla Public License v. 2.0 for more details.
+#
+# For more details, see http://www.mrtrix.org/.
+
+LOG=syntax.log
+echo -n "Checking syntax... "
+echo "Checking syntax..." > $LOG
+echo "" >> $LOG
+
+grep=grep
+v=`grep --version`
+if [[ "$OSTYPE" == darwin* ]] && [[ $v == *"BSD"* ]]; then
+  if ! hash ggrep 2>/dev/null; then
+    echo 'Aborting, this script requires gnu-grep which you can install for instance via "brew install grep"'
+    exit 1
+  else
+    grep=ggrep
+  fi
+fi
+
+retval=0
+
+rm -f .check_syntax1.tmp .check_syntax2.tmp .check_syntax3.tmp .check_syntax4.tmp
+
+paths=()
+for dir in src include tests examples; do
+  if [[ -d "$dir" ]]; then
+    paths+=("$dir")
+  fi
+done
+
+if [[ ${#paths[@]} -eq 0 ]]; then
+  echo "No source directories found."
+  echo "no issues detected" >> $LOG
+  exit 0
+fi
+
+for f in $(find "${paths[@]}" -type f \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.cc' -o -name '*.tpp' \) | sort); do
+
+######################################################################
+# Version of source code file omitting lines nominated to be ignored #
+######################################################################
+  cat $f | \
+  $grep -vP '//.*\bcheck_syntax\s+off' > .check_syntax1.tmp
+
+# Check for use of #define for constants
+# Intended to catch integers, floats, scientific notation, hexadecimal, bitwise, and strings
+  res=$(
+    cat .check_syntax1.tmp | \
+    $grep -Po '^#define\s+[a-zA-Z_][a-zA-Z0-9_]*\s+(0x[\dA-F]+|0b[01]+|\".*\"|[-+]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][-+]?[0-9]+)?)'
+  )
+
+# detect deprecated use of "#ifdef __headerpath__"
+  res="$res"$(
+    cat .check_syntax1.tmp | \
+    perl -pe 's|//.*$||' | \
+    tr '\n' ' ' | \
+    perl -pe 's|\s+| |g' | \
+    perl -pe 's|/\*.*?\*/||g' |
+    $grep -Po '\#ifndef\s+__.*__\s+\#define\s+__.*__'
+  )
+
+#############################################################
+# Process the file to strip macros and single-line comments #
+#############################################################
+  cat .check_syntax1.tmp | \
+  $grep -v '^#' | \
+  perl -pe 's|//.*$||' > .check_syntax2.tmp
+
+######################################
+# Further processing of file content #
+######################################
+  cat .check_syntax2.tmp | \
+# remove all newlines to make file one long line:
+  tr '\n' ' ' | \
+# remove any duplicate spaces:
+  perl -pe 's|\s+| |g' | \
+# remove C-style comments:
+  perl -pe 's|/\*.*?\*/||g' > .check_syntax3.tmp
+
+# Detect any instances of definition of C-style arrays
+# Note: Need to use version without removal of quoted strings
+#   so that keyval["key"] isn't a hit
+  res="$res"$(
+    cat .check_syntax3.tmp | \
+    $grep -Po '\b\w+(::\w+)*(?<!\breturn)(?<!\bnew)\s\w+(\[\d*\])+\s*[=;,]'
+  )
+
+#########################
+# Remove quoted strings #
+#########################
+  cat .check_syntax3.tmp | \
+  perl -pe 's/(")(\\"|.)*?"//g' > .check_syntax4.tmp
+
+# - Detect any instances of char* or char item[],
+#   which does not look like a cast for compatibility with external code
+  res="$res"$(
+    cat .check_syntax4.tmp | \
+    $grep -Po '(const\s+|)char(\s?\*([\s]*const|)\s?(?![>\(\)])|\s+[a-zA-Z_][a-zA-Z0-9_]*\[(\d*\]|))'
+  )
+
+# - Detect any instances of C-style string manipulation functions
+#   (need to permit strerror() for interfacing with external libraries)
+  res="$res"$(
+    cat .check_syntax4.tmp | \
+    $grep -Po '\b(strcpy|strncpy|strcat|strncat|strxfrm|strlen|strcmp|strncmp|strcoll|strchr|strrchr|strspn|strcspn|strpbrk|strstr|strtok|wcscpy|wcsncpy|wcscat|wcsncat|wcsxfrm|wcslen|wcscmp|wcsncmp|wcscoll|wcschr|wcsrchr|wcsspn|wcscspn|wcspbrk|wcsstr|wcstok)\s*\('
+  )
+
+# - Detect namespaces that could have been nested
+  res="$res"$(
+    cat .check_syntax4.tmp | \
+    $grep -Po '\bnamespace [\w\:]+\s*\{(namespace [\w\:]+\s*\{)+'
+  )
+
+# - Detect any instances of "using namespace std;":
+  res="$res"$(
+    cat .check_syntax4.tmp | \
+    $grep -Po '\busing\snamespace\sstd\s?;'
+  )
+
+# - Detect any instances of C-style casts
+  res="$res"$(
+    cat .check_syntax4.tmp | \
+    $grep -Po '(\((?!void\))[a-zA-Z][a-zA-Z0-9_]*\)[a-zA-Z][a-zA-Z0-9_]*|\([a-zA-Z][a-zA-Z0-9_]*\s?\*(\s?const)?\)[a-zA-Z][a-zA-Z0-9_]*|(?<!\bstd::function<)\b(GLint|GLfloat|c?float|c?double|(default|value|index)_type|[^\w_](unsigned\s+)?int|u?int(8|16|32|64)_t|s?size_t|ValueType|(?<!Scalar)::Scalar)\(\(*\**(?![\d\.]*\)))'
+  )
+
+# - Detect any instances of macros NULL, NAN, INFINITY
+  res="$res"$(
+    cat .check_syntax4.tmp | \
+    $grep -Po '\b(NAN|INFINITY|NULL)\b'
+  )
+
+# delete intermediate files
+rm -f .check_syntax1.tmp .check_syntax2.tmp .check_syntax3.tmp .check_syntax4.tmp
+
+# if anything is left after that, show it:
+  if [[ ! -z $res ]]; then
+    echo "################################### $f" >> $LOG
+    echo "$res" >> $LOG
+    retval=1
+  fi
+
+done
+
+
+# set exit code:
+if [[ $retval == 0 ]]; then
+  echo "OK"
+  echo "no issues detected" >> $LOG
+else
+  echo "FAIL (see syntax.log for details)"
+
+  echo "" >> $LOG
+  echo "Please check the following syntax requirements:
+  - Use #pragma once rather than #ifndef __headername__;
+  - Use nested namespaces rather than sequentially-defined namespaces;
+  - Define numerical constants using constexpr rather than preprocessor macros;
+  - Use static_cast<>() rather than C-style casts;
+  - Use std::string (and optionally std::string_view) rather than C-style char* and relevant functions;
+  - Do not use \"using namespace std\";
+  - Use std::numeric_limits<> rather than macros NAN / INFINITY;
+  - Use nullptr rather than NULL macro;
+  - Do not use C-style arrays (replace with eg. std::array<>)." >> $LOG
+  exit 1
+fi

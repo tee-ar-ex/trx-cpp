@@ -33,9 +33,64 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-### mio include path
+## Style checks
 
-`mio` is vendored under `third_party/mio/include` and used directly from there.
+This repo includes `.clang-tidy` and `.clang-format` at the root, plus
+MRtrix-inspired helper scripts for formatting and style checks.
+
+### Prerequisites
+
+- `clang-format` available on `PATH`
+  - macOS (Homebrew): `brew install llvm` (or `llvm@17`) and ensure `clang-format` is on `PATH`
+  - Ubuntu: `sudo apt-get install clang-format`
+- For `check_syntax` on macOS, GNU grep is required (`brew install grep`, then it will use `ggrep`).
+
+### clang-format (bulk formatting)
+
+Run the formatter across repo sources:
+
+```
+./clang-format-all
+```
+
+You can target a specific clang-format binary:
+
+```
+./clang-format-all --executable /path/to/clang-format
+```
+
+### check_syntax (style rules)
+
+Run the MRtrix-style checks against the C++ sources:
+
+```
+./check_syntax
+```
+
+Results are written to `syntax.log` when issues are found.
+
+### clang-tidy
+
+Generate a build with compile commands, then run clang-tidy (matches CI):
+
+```
+cmake -S . -B build \
+  -DTRX_USE_CONAN=OFF \
+  -DTRX_BUILD_EXAMPLES=ON \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+run-clang-tidy -p build $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
+```
+
+To run clang-tidy automatically during builds:
+
+```
+cmake -S . -B build -DTRX_ENABLE_CLANG_TIDY=ON
+cmake --build build
+```
+
+If you have `run-clang-tidy` installed (LLVM extras), you can lint everything
+tracked by the repo (excluding `third_party`), which matches CI.
+
 
 ## Third-party notices
 
@@ -43,11 +98,9 @@ ctest --test-dir build --output-on-failure
   `third_party/mio`. See `third_party/mio/LICENSE` for the license text.
 - `json11` by Dropbox (https://github.com/dropbox/json11) is vendored in
   `third_party/json11`. See `third_party/json11/LICENSE` for the license text.
-
-### Filesystem shim
-
-The project relies on the built-in lightweight filesystem shim and does not
-depend on Boost.
+- `clang-format-all` and `check_syntax` are adapted from MRtrix3
+  (https://github.com/MRtrix3/mrtrix3) and retain their original copyright
+  notices under the Mozilla Public License 2.0.
 
 ## Usage Examples
 

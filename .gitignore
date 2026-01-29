@@ -9,8 +9,10 @@
 libtrx.a
 tests/data
 .vscode
+.cache
 test_package/build/
 test_package/CMakeUserPresets.json
+syntax.log
 
 test_package/build
 test_package/CMakeUserPresets.json
