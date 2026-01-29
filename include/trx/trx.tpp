@@ -946,8 +946,13 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
 }
 
 template <typename DT> TrxFile<DT> *load_from_zip(std::string filename) {
+  const trx::fs::path zip_path(filename);
+  const std::string normalized = zip_path.generic_string();
   int errorp = 0;
-  zip_t *zf = zip_open(filename.c_str(), 0, &errorp);
+  zip_t *zf = zip_open(normalized.c_str(), 0, &errorp);
+  if (zf == nullptr && normalized != filename) {
+    zf = zip_open(filename.c_str(), 0, &errorp);
+  }
   if (zf == nullptr) {
     throw std::runtime_error("Could not open zip file: " + filename);
   }

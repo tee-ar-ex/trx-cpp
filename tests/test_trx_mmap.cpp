@@ -83,8 +83,8 @@ TestTrxFixture create_fixture() {
   }
 
   fixture.root_dir = root_dir;
-  fixture.path = (root_dir / "small.trx").string();
-  fixture.dir_path = trx_dir.string();
+  fixture.path = (root_dir / "small.trx").generic_string();
+  fixture.dir_path = trx_dir.generic_string();
   fixture.nb_vertices = 12;
   fixture.nb_streamlines = 4;
 
