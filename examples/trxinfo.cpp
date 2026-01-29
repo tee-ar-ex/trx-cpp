@@ -92,7 +92,7 @@ void print_trx_info(
 
   if (show_stats && trx->streamlines != nullptr) {
     const auto &lengths = trx->streamlines->_lengths;
-    const Eigen::Index count = lengths.size();
+    const Eigen::Index count = lengths.size(); // NOLINT(misc-include-cleaner)
     if (count > 0) {
       uint64_t min_len = lengths(0);
       uint64_t max_len = lengths(0);

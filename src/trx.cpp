@@ -441,8 +441,8 @@ json assignHeader(const json &root) {
 }
 
 void get_reference_info(const std::string &reference,
-                        const MatrixXf &affine,
-                        const RowVectorXi &dimensions) { // NOLINT(misc-use-internal-linkage)
+                        const MatrixXf &affine,       // NOLINT(misc-include-cleaner)
+                        const RowVectorXi &dimensions) { // NOLINT(misc-use-internal-linkage,misc-include-cleaner)
   static_cast<void>(affine);
   static_cast<void>(dimensions);
   // TODO: find a library to use for nifti and trk (MRtrix??)
