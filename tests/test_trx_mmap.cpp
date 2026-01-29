@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <random>
 #include <stdexcept>
@@ -238,6 +239,21 @@ TEST(TrxFileMemmap, __generate_filename_from_data) {
   output_fn.clear();
 }
 
+TEST(TrxFileMemmap, detect_positions_dtype_normalizes_slashes) {
+  const fs::path root_dir = make_temp_test_dir("trx_norm_slash");
+  const fs::path weird_dir = root_dir / "subdir\\nested";
+  std::error_code ec;
+  fs::create_directories(weird_dir, ec);
+  ASSERT_FALSE(ec);
+
+  const fs::path positions_path = weird_dir / "positions.3.float64";
+  std::ofstream out(positions_path.string());
+  ASSERT_TRUE(out.is_open());
+  out.close();
+
+  EXPECT_EQ(trxmmap::detect_positions_dtype(root_dir.string()), "float64");
+}
+
 // Mirrors trx/tests/test_memmap.py::test__split_ext_with_dimensionality.
 TEST(TrxFileMemmap, __split_ext_with_dimensionality) {
   std::tuple<std::string, int, std::string> output;
@@ -357,6 +373,41 @@ TEST(TrxFileMemmap, __is_dtype_valid) {
 TEST(TrxFileMemmap, __sizeof_dtype_ushort_alias) {
   EXPECT_EQ(trxmmap::_sizeof_dtype("ushort"), sizeof(uint16_t));
   EXPECT_EQ(trxmmap::_sizeof_dtype("ushort"), trxmmap::_sizeof_dtype("uint16"));
+}
+
+// asserts dtype size mapping and default.
+TEST(TrxFileMemmap, __sizeof_dtype_values) {
+  EXPECT_EQ(trxmmap::_sizeof_dtype("bit"), 1);
+  EXPECT_EQ(trxmmap::_sizeof_dtype("uint8"), sizeof(uint8_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("uint16"), sizeof(uint16_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("uint32"), sizeof(uint32_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("uint64"), sizeof(uint64_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("int8"), sizeof(int8_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("int16"), sizeof(int16_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("int32"), sizeof(int32_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("int64"), sizeof(int64_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("float32"), sizeof(float));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("float64"), sizeof(double));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("unknown"), sizeof(uint16_t));
+}
+
+// asserts dtype code mapping.
+TEST(TrxFileMemmap, __get_dtype_codes) {
+  EXPECT_EQ(trxmmap::_get_dtype("b"), "bit");
+  EXPECT_EQ(trxmmap::_get_dtype("h"), "uint8");
+  EXPECT_EQ(trxmmap::_get_dtype("t"), "uint16");
+  EXPECT_EQ(trxmmap::_get_dtype("j"), "uint32");
+  EXPECT_EQ(trxmmap::_get_dtype("m"), "uint64");
+  EXPECT_EQ(trxmmap::_get_dtype("y"), "uint64");
+  EXPECT_EQ(trxmmap::_get_dtype("a"), "int8");
+  EXPECT_EQ(trxmmap::_get_dtype("s"), "int16");
+  EXPECT_EQ(trxmmap::_get_dtype("i"), "int32");
+  EXPECT_EQ(trxmmap::_get_dtype("l"), "int64");
+  EXPECT_EQ(trxmmap::_get_dtype("x"), "int64");
+  EXPECT_EQ(trxmmap::_get_dtype("f"), "float32");
+  EXPECT_EQ(trxmmap::_get_dtype("d"), "float64");
+  EXPECT_EQ(trxmmap::_get_dtype("z"), "float16");
+  EXPECT_EQ(trxmmap::_get_dtype("foo"), "float16");
 }
 
 // Mirrors trx/tests/test_memmap.py::test__dichotomic_search.
