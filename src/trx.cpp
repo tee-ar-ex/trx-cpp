@@ -108,7 +108,7 @@ std::string detect_positions_dtype(const std::string &path) {
   }
 
   int err = 0;
-  zip_t *zf = zip_open(path.c_str(), 0, &err);
+  zip_t *zf = open_zip_for_read(path, err);
   if (zf == nullptr) {
     throw std::runtime_error("Could not open zip file: " + path);
   }

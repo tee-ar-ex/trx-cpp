@@ -73,6 +73,40 @@ inline std::string path_dirname(const std::string &path) {
   return path.substr(0, sep);
 }
 
+inline std::string to_utf8_string(const trx::fs::path &path) {
+#if defined(__cpp_lib_char8_t)
+  const auto u8 = path.u8string();
+  return std::string(reinterpret_cast<const char *>(u8.data()), u8.size());
+#else
+  return path.u8string();
+#endif
+}
+
+inline zip_t *open_zip_for_read(const std::string &path, int &errorp) {
+  zip_t *zf = zip_open(path.c_str(), 0, &errorp);
+  if (zf != nullptr) {
+    return zf;
+  }
+
+  const trx::fs::path fs_path(path);
+  const std::string generic = fs_path.generic_string();
+  if (generic != path) {
+    zf = zip_open(generic.c_str(), 0, &errorp);
+    if (zf != nullptr) {
+      return zf;
+    }
+  }
+
+#if defined(_WIN32) || defined(_WIN64)
+  const std::string u8 = to_utf8_string(fs_path);
+  if (!u8.empty() && u8 != path && u8 != generic) {
+    zf = zip_open(u8.c_str(), 0, &errorp);
+  }
+#endif
+
+  return zf;
+}
+
 template <typename T> struct DTypeName {
   static constexpr std::string_view value() { return "float16"; }
 };

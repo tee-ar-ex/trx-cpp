@@ -83,8 +83,8 @@ TestTrxFixture create_fixture() {
   }
 
   fixture.root_dir = root_dir;
-  fixture.path = (root_dir / "small.trx").generic_string();
-  fixture.dir_path = trx_dir.generic_string();
+  fixture.path = (root_dir / "small.trx").string();
+  fixture.dir_path = trx_dir.string();
   fixture.nb_vertices = 12;
   fixture.nb_streamlines = 4;
 
@@ -153,7 +153,7 @@ TestTrxFixture create_fixture() {
 
   // Validate zip entry sizes
   int zip_err = 0;
-  zip_t *verify_zip = zip_open(fixture.path.c_str(), 0, &zip_err);
+  zip_t *verify_zip = trxmmap::open_zip_for_read(fixture.path, zip_err);
   if (verify_zip == nullptr) {
     throw std::runtime_error("Failed to reopen trx zip file");
   }
@@ -407,7 +407,7 @@ TEST(TrxFileMemmap, __create_memmap_empty) {
 TEST(TrxFileMemmap, load_header) {
   const auto &fixture = get_fixture();
   int errorp = 0;
-  zip_t *zf = zip_open(fixture.path.c_str(), 0, &errorp);
+  zip_t *zf = trxmmap::open_zip_for_read(fixture.path, errorp);
   json root = trxmmap::load_header(zf);
 
   EXPECT_EQ(root, fixture.expected_header);
@@ -517,7 +517,7 @@ TEST(TrxFileMemmap, TrxFile) {
 
   const auto &fixture = get_fixture();
   int errorp = 0;
-  zip_t *zf = zip_open(fixture.path.c_str(), 0, &errorp);
+  zip_t *zf = trxmmap::open_zip_for_read(fixture.path, errorp);
   json root = trxmmap::load_header(zf);
   TrxFile<half> *root_init = new TrxFile<half>();
   root_init->header = root;
