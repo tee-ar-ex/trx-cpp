@@ -1242,8 +1242,9 @@ void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::stri
 
   auto trim = [](std::string note) {
     const auto is_space = [](unsigned char ch) { return std::isspace(ch) != 0; };
-    note.erase(note.begin(), std::find_if(note.begin(), note.end(), [&](unsigned char ch) { return !is_space(ch); }));
-    note.erase(std::find_if(note.rbegin(), note.rend(), [&](unsigned char ch) { return !is_space(ch); }).base(),
+    note.erase(note.begin(),
+               std::find_if(note.begin(), note.end(), [is_space](unsigned char ch) { return !is_space(ch); }));
+    note.erase(std::find_if(note.rbegin(), note.rend(), [is_space](unsigned char ch) { return !is_space(ch); }).base(),
                note.end());
     return note;
   };
@@ -1568,7 +1569,7 @@ void export_dpv_to_tsf(const TrxFile<DT> &trx,
   out.write(header.data(), static_cast<std::streamsize>(header.size()));
   const size_t pad = (4 - (header.size() % 4)) % 4;
   if (pad > 0) {
-    const std::array<char, 4> zeros{{0, 0, 0, 0}};
+    const std::array<char, 4> zeros{0, 0, 0, 0};
     out.write(zeros.data(), static_cast<std::streamsize>(pad));
   }
 
@@ -1582,13 +1583,32 @@ void export_dpv_to_tsf(const TrxFile<DT> &trx,
     }
   };
 
+  const size_t total_vertices = static_cast<size_t>(seq->_data.rows());
   size_t offset = 0;
   for (size_t s = 0; s < nb_streamlines; ++s) {
     const uint32_t len = lengths(static_cast<Eigen::Index>(s));
-    for (uint32_t i = 0; i < len; ++i) {
-      write_value(static_cast<double>(seq->_data(static_cast<Eigen::Index>(offset + i), 0)));
+    if (offset > total_vertices) {
+      throw std::runtime_error("DPV length metadata exceeds vertex count");
     }
-    offset += len;
+    if (len > std::numeric_limits<size_t>::max() - offset) {
+      throw std::runtime_error("DPV length metadata exceeds vertex count");
+    }
+    if (offset + static_cast<size_t>(len) > total_vertices) {
+      throw std::runtime_error("DPV length metadata exceeds vertex count");
+    }
+    offset += static_cast<size_t>(len);
+  }
+  offset = 0;
+  for (size_t s = 0; s < nb_streamlines; ++s) {
+    const uint32_t len = lengths(static_cast<Eigen::Index>(s));
+    for (uint32_t i = 0; i < len; ++i) {
+      const size_t idx = offset + static_cast<size_t>(i);
+      if (idx > static_cast<size_t>(std::numeric_limits<Eigen::Index>::max())) {
+        throw std::runtime_error("DPV length metadata exceeds vertex count");
+      }
+      write_value(static_cast<double>(seq->_data(static_cast<Eigen::Index>(idx), 0)));
+    }
+    offset += static_cast<size_t>(len);
     if (s + 1 < nb_streamlines) {
       write_value(std::numeric_limits<double>::quiet_NaN());
     }

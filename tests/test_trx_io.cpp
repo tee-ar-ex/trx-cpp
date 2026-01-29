@@ -296,9 +296,13 @@ TsfHeader read_tsf_header(const fs::path &path) {
       std::string dot;
       iss >> dot >> header.offset;
     } else if (key == "count") {
-      header.count = static_cast<size_t>(std::stoull(value));
+      std::string trimmed = value;
+      trimmed.erase(0, trimmed.find_first_not_of(' '));
+      header.count = static_cast<size_t>(std::stoull(trimmed));
     } else if (key == "total_count") {
-      header.total_count = static_cast<size_t>(std::stoull(value));
+      std::string trimmed = value;
+      trimmed.erase(0, trimmed.find_first_not_of(' '));
+      header.total_count = static_cast<size_t>(std::stoull(trimmed));
     }
   }
   return header;
@@ -317,7 +321,7 @@ std::vector<float> read_tsf_float32_data(const fs::path &path, size_t offset, si
 
 class ScopedLocale {
 public:
-  explicit ScopedLocale(const std::locale &loc) : previous_(std::locale()) { std::locale::global(loc); }
+  explicit ScopedLocale(const std::locale &loc) : previous_(std::locale::global(loc)) {}
 
   ~ScopedLocale() { std::locale::global(previous_); }
 
@@ -326,6 +330,8 @@ private:
 };
 
 void set_streamline_lengths(ArraySequence<float> *streamlines, const std::vector<uint32_t> &lengths) {
+  // Intentional white-box access: ArraySequence has no public API for setting
+  // lengths/offsets in tests, and we need consistent metadata for fixtures.
   streamlines->_lengths.resize(static_cast<Eigen::Index>(lengths.size()));
   uint64_t offset = 0;
   for (Eigen::Index i = 0; i < streamlines->_lengths.size(); ++i) {
@@ -673,6 +679,9 @@ TEST(TrxFileIo, add_dpv_from_tsf_errors) {
 
   trxmmap::TrxFile<float> no_dir(4, 2);
   set_streamline_lengths(no_dir.streamlines, {2, 2});
+  // Intentional white-box access: there is no public API to construct a TrxFile
+  // with valid streamlines but without an uncompressed folder. This test verifies
+  // that add_dpv_from_tsf fails in that specific internal state.
   no_dir._uncompressed_folder_handle.clear();
   EXPECT_THROW(trxmmap::add_dpv_from_tsf(no_dir, "signal", "float32", input_path.string()), std::runtime_error);
 }
