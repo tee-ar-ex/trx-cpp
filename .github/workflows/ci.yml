@@ -86,7 +86,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: >
-          OpenCppCoverage.exe
+          & "$env:ProgramFiles\OpenCppCoverage\OpenCppCoverage.exe"
           --export_type cobertura:coverage.xml
           --sources ${{ github.workspace }}
           -- ctest --test-dir build --output-on-failure -C Release
@@ -96,7 +96,7 @@ jobs:
         run: |
           lcov --capture --directory build \
             --rc geninfo_unexecuted_blocks=1 \
-            --ignore-errors mismatch \
+            --ignore-errors mismatch,inconsistent,unsupported \
             --output-file coverage.info
           lcov --summary coverage.info
 
