@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <sys/stat.h>
 #include <system_error>
+#include <zip.h>
 #include <trx/trx.h>
 #include <typeinfo>
 
@@ -289,13 +290,50 @@ TEST(TrxFileMemmap, detect_positions_scalar_type_fallback) {
   ASSERT_TRUE(out.is_open());
   out.close();
 
-  EXPECT_EQ(trxmmap::detect_positions_scalar_type(invalid_dir.string(), TrxScalarType::Float64),
-            TrxScalarType::Float64);
+  EXPECT_THROW(trxmmap::detect_positions_scalar_type(invalid_dir.string(), TrxScalarType::Float64),
+               std::invalid_argument);
 }
 
 TEST(TrxFileMemmap, detect_positions_scalar_type_missing_path) {
   const fs::path missing = fs::path(make_temp_test_dir("trx_scalar_missing")) / "nope";
   EXPECT_THROW(trxmmap::detect_positions_scalar_type(missing.string(), TrxScalarType::Float32), std::runtime_error);
+}
+
+TEST(TrxFileMemmap, open_zip_for_read_generic_fallback) {
+#if defined(_WIN32) || defined(_WIN64)
+  const fs::path root_dir = make_temp_test_dir("trx_zip_generic");
+  const fs::path zip_path = root_dir / "sample.trx";
+
+  int errorp = 0;
+  zip_t *zf = zip_open(zip_path.string().c_str(), ZIP_CREATE | ZIP_TRUNCATE, &errorp);
+  ASSERT_NE(zf, nullptr);
+  const char payload[] = "data";
+  zip_source_t *source = zip_source_buffer(zf, payload, sizeof(payload) - 1, 0);
+  ASSERT_NE(source, nullptr);
+  ASSERT_GE(zip_file_add(zf, "dummy.txt", source, ZIP_FL_OVERWRITE), 0);
+  ASSERT_EQ(zip_close(zf), 0);
+
+  std::string alt_path = zip_path.string();
+  std::replace(alt_path.begin(), alt_path.end(), '/', '\\');
+  const std::string generic = fs::path(alt_path).generic_string();
+  if (generic == alt_path) {
+    GTEST_SKIP() << "Generic string did not change on this platform";
+  }
+
+  errorp = 0;
+  zip_t *direct = zip_open(alt_path.c_str(), 0, &errorp);
+  if (direct != nullptr) {
+    zip_close(direct);
+    GTEST_SKIP() << "libzip accepts backslash paths; fallback not exercised";
+  }
+
+  errorp = 0;
+  zip_t *fallback = trxmmap::open_zip_for_read(alt_path, errorp);
+  ASSERT_NE(fallback, nullptr);
+  zip_close(fallback);
+#else
+  GTEST_SKIP() << "Generic path fallback is Windows-only";
+#endif
 }
 
 // Mirrors trx/tests/test_memmap.py::test__split_ext_with_dimensionality.
