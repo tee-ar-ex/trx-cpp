@@ -46,6 +46,10 @@ jobs:
             gtest `
             --triplet x64-windows
 
+      - name: Setup MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Configure (macOS)
         if: runner.os == 'macOS'
         run: |
