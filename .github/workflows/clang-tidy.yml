@@ -30,7 +30,7 @@ jobs:
 
     - name: Run CMake
       run: |
-        cmake -S . -B build -DTRX_ENABLE_CLANG_TIDY=ON \
+        cmake -S . -B build -G Ninja -DTRX_ENABLE_CLANG_TIDY=ON \
           -DCMAKE_C_COMPILER=clang-19 \
           -DCMAKE_CXX_COMPILER=clang++-19
 
