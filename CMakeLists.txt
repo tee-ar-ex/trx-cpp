@@ -8,6 +8,11 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(FetchContent)
 
+set(TRX_IS_TOP_LEVEL OFF)
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    set(TRX_IS_TOP_LEVEL ON)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -19,6 +24,7 @@ option(TRX_USE_CONAN "Should Conan package manager be used?" OFF)
 option(TRX_BUILD_TESTS "Build trx tests" OFF)
 option(TRX_BUILD_EXAMPLES "Build trx example commandline programs" ON)
 option(TRX_ENABLE_CLANG_TIDY "Run clang-tidy during builds" OFF)
+option(TRX_ENABLE_INSTALL "Install trx-cpp targets" ${TRX_IS_TOP_LEVEL})
 
 if(TRX_ENABLE_CLANG_TIDY)
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -149,44 +155,46 @@ if(TRX_BUILD_EXAMPLES)
 endif()
 
 # Installation and package config
-set(TRX_INSTALL_CONFIGDIR "${CMAKE_INSTALL_LIBDIR}/cmake/trx-cpp")
+if(TRX_ENABLE_INSTALL)
+    set(TRX_INSTALL_CONFIGDIR "${CMAKE_INSTALL_LIBDIR}/cmake/trx-cpp")
 
-install(TARGETS trx
-    EXPORT trx-cppTargets
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
+    install(TARGETS trx
+        EXPORT trx-cppTargets
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
 
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(DIRECTORY third_party/mio/include/mio DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES third_party/json11/json11.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(DIRECTORY third_party/mio/include/mio DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(FILES third_party/json11/json11.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-install(EXPORT trx-cppTargets
-    FILE trx-cppTargets.cmake
-    NAMESPACE trx-cpp::
-    DESTINATION ${TRX_INSTALL_CONFIGDIR}
-)
+    install(EXPORT trx-cppTargets
+        FILE trx-cppTargets.cmake
+        NAMESPACE trx-cpp::
+        DESTINATION ${TRX_INSTALL_CONFIGDIR}
+    )
 
-configure_package_config_file(
-    cmake/trx-cppConfig.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/trx-cppConfig.cmake
-    INSTALL_DESTINATION ${TRX_INSTALL_CONFIGDIR}
-)
+    configure_package_config_file(
+        cmake/trx-cppConfig.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/trx-cppConfig.cmake
+        INSTALL_DESTINATION ${TRX_INSTALL_CONFIGDIR}
+    )
 
-write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/trx-cppConfigVersion.cmake
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMinorVersion
-)
+    write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/trx-cppConfigVersion.cmake
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMinorVersion
+    )
 
-install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/trx-cppConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/trx-cppConfigVersion.cmake
-    DESTINATION ${TRX_INSTALL_CONFIGDIR}
-)
+    install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/trx-cppConfig.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/trx-cppConfigVersion.cmake
+        DESTINATION ${TRX_INSTALL_CONFIGDIR}
+    )
 
-set(CPACK_PROJECT_NAME ${PROJECT_NAME})
-set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
-include(CPack)
+    set(CPACK_PROJECT_NAME ${PROJECT_NAME})
+    set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
+    include(CPack)
+endif()

@@ -3,8 +3,7 @@
 include(CMakeFindDependencyMacro)
 find_dependency(libzip)
 find_dependency(Eigen3)
-# mio is header-only; try to locate if packaged
-find_dependency(mio QUIET)
+# mio is header-only and vendored; no package required
 
 include("${CMAKE_CURRENT_LIST_DIR}/trx-cppTargets.cmake")
 
