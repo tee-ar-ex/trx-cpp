@@ -37,7 +37,37 @@ struct TestTrxFixture {
   int nb_vertices;
   int nb_streamlines;
 
-  ~TestTrxFixture() {
+  TestTrxFixture() = default;
+  TestTrxFixture(const TestTrxFixture &) = delete;
+  TestTrxFixture &operator=(const TestTrxFixture &) = delete;
+
+  TestTrxFixture(TestTrxFixture &&other) noexcept
+      : root_dir(std::move(other.root_dir)),
+        path(std::move(other.path)),
+        dir_path(std::move(other.dir_path)),
+        expected_header(std::move(other.expected_header)),
+        nb_vertices(other.nb_vertices),
+        nb_streamlines(other.nb_streamlines) {
+    other.root_dir.clear();
+  }
+
+  TestTrxFixture &operator=(TestTrxFixture &&other) noexcept {
+    if (this != &other) {
+      cleanup();
+      root_dir = std::move(other.root_dir);
+      path = std::move(other.path);
+      dir_path = std::move(other.dir_path);
+      expected_header = std::move(other.expected_header);
+      nb_vertices = other.nb_vertices;
+      nb_streamlines = other.nb_streamlines;
+      other.root_dir.clear();
+    }
+    return *this;
+  }
+
+  ~TestTrxFixture() { cleanup(); }
+
+  void cleanup() {
     std::error_code ec;
     if (!root_dir.empty()) {
       fs::remove_all(root_dir, ec);
