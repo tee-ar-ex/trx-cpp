@@ -98,9 +98,11 @@ jobs:
             --rc geninfo_unexecuted_blocks=1 \
             --ignore-errors mismatch,inconsistent,unsupported,format \
             --output-file coverage.info
-          lcov --remove coverage.info "/opt/homebrew/*" "/Users/runner/work/trx-cpp/trx-cpp/third_party/*" \
+          lcov --remove coverage.info "/opt/homebrew/*" "/Applications/Xcode_*.app/*" \
+            "/Users/runner/work/trx-cpp/trx-cpp/third_party/*" \
+            --ignore-errors mismatch,inconsistent,unsupported,format \
             --output-file coverage.info
-          lcov --summary coverage.info
+          lcov --summary coverage.info --ignore-errors mismatch,inconsistent,unsupported,format
 
       - name: Upload coverage to Codecov (macOS)
         if: runner.os == 'macOS'
