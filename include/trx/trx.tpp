@@ -1240,32 +1240,177 @@ void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::stri
     throw std::runtime_error("Failed to open TSF file: " + path);
   }
 
+  auto trim = [](std::string note) {
+    const auto is_space = [](unsigned char ch) { return std::isspace(ch) != 0; };
+    note.erase(note.begin(),
+               std::find_if(note.begin(), note.end(), [is_space](unsigned char ch) { return !is_space(ch); }));
+    note.erase(std::find_if(note.rbegin(), note.rend(), [is_space](unsigned char ch) { return !is_space(ch); }).base(),
+               note.end());
+    return note;
+  };
+
+  std::streampos start_pos = input.tellg();
+  std::string line;
+  bool binary_mode = false;
+  size_t data_offset = 0;
+  std::string datatype;
+  if (std::getline(input, line)) {
+    const std::string first_line = trim(line);
+    if (first_line == "mrtrix track scalars") {
+      bool found_end = false;
+      while (std::getline(input, line)) {
+        const std::string trimmed = trim(line);
+        if (trimmed == "END") {
+          found_end = true;
+          break;
+        }
+        const auto pos = trimmed.find(':');
+        if (pos == std::string::npos) {
+          continue;
+        }
+        const std::string key = trim(trimmed.substr(0, pos));
+        const std::string value = trim(trimmed.substr(pos + 1));
+        if (key == "datatype") {
+          datatype = value;
+        } else if (key == "file") {
+          std::istringstream iss(value);
+          std::string dot;
+          iss >> dot >> data_offset;
+          if (!iss.fail()) {
+            binary_mode = true;
+          }
+        }
+      }
+      if (!found_end) {
+        throw std::runtime_error("Failed to parse TSF header: missing END");
+      }
+    } else {
+      input.clear();
+      input.seekg(start_pos);
+    }
+  } else {
+    throw std::runtime_error("Failed to parse TSF file: " + path);
+  }
+
   std::vector<double> values;
   values.reserve(nb_vertices);
   size_t streamline_index = 0;
   uint32_t expected_vertices = nb_streamlines > 0 ? lengths(0) : 0;
   uint32_t current_vertices = 0;
-  double value = 0.0;
-  while (input >> value) {
-    if (std::isinf(value)) {
-      break;
+
+  if (binary_mode) {
+    if (datatype != "Float32LE" && datatype != "Float32BE" && datatype != "Float64LE" && datatype != "Float64BE") {
+      throw std::runtime_error("Unsupported TSF datatype: " + datatype);
     }
-    if (std::isnan(value)) {
-      if (current_vertices != expected_vertices) {
-        throw std::runtime_error("TSF streamline length does not match TRX streamlines");
+
+    auto is_little_endian = []() {
+      const uint16_t value = 1;
+      return *reinterpret_cast<const uint8_t *>(&value) == 1;
+    };
+    const bool little_endian = is_little_endian();
+    const bool data_little_endian = datatype.find("LE") != std::string::npos;
+
+    input.clear();
+    input.seekg(static_cast<std::streamoff>(data_offset));
+    while (input.good()) {
+      double value = 0.0;
+      if (datatype == "Float32LE" || datatype == "Float32BE") {
+        uint32_t raw = 0;
+        input.read(reinterpret_cast<char *>(&raw), sizeof(raw));
+        if (!input) {
+          break;
+        }
+        if (little_endian != data_little_endian) {
+          raw = (raw >> 24) | ((raw >> 8) & 0x0000FF00) | ((raw << 8) & 0x00FF0000) | (raw << 24);
+        }
+        float v = 0.0f;
+        std::memcpy(&v, &raw, sizeof(v));
+        value = static_cast<double>(v);
+      } else {
+        uint64_t raw = 0;
+        input.read(reinterpret_cast<char *>(&raw), sizeof(raw));
+        if (!input) {
+          break;
+        }
+        if (little_endian != data_little_endian) {
+          raw = ((raw & 0x00000000000000FFULL) << 56) | ((raw & 0x000000000000FF00ULL) << 40) |
+                ((raw & 0x0000000000FF0000ULL) << 24) | ((raw & 0x00000000FF000000ULL) << 8) |
+                ((raw & 0x000000FF00000000ULL) >> 8) | ((raw & 0x0000FF0000000000ULL) >> 24) |
+                ((raw & 0x00FF000000000000ULL) >> 40) | ((raw & 0xFF00000000000000ULL) >> 56);
+        }
+        double v = 0.0;
+        std::memcpy(&v, &raw, sizeof(v));
+        value = v;
       }
-      if (streamline_index + 1 < nb_streamlines) {
-        ++streamline_index;
-        expected_vertices = lengths(streamline_index);
-        current_vertices = 0;
+
+      if (std::isinf(value)) {
+        break;
       }
-      continue;
+      if (std::isnan(value)) {
+        if (current_vertices != expected_vertices) {
+          throw std::runtime_error("TSF streamline length does not match TRX streamlines");
+        }
+        if (streamline_index + 1 < nb_streamlines) {
+          ++streamline_index;
+          expected_vertices = lengths(streamline_index);
+          current_vertices = 0;
+        }
+        continue;
+      }
+      values.push_back(value);
+      ++current_vertices;
     }
-    values.push_back(value);
-    ++current_vertices;
-  }
-  if (!input.eof() && input.fail()) {
-    throw std::runtime_error("Failed to parse TSF file: " + path);
+  } else {
+    std::string token;
+    while (input >> token) {
+      std::string token_norm = token;
+      std::transform(token_norm.begin(), token_norm.end(), token_norm.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+      });
+      if (token_norm.rfind("nan", 0) == 0) {
+        if (current_vertices != expected_vertices) {
+          throw std::runtime_error("TSF streamline length does not match TRX streamlines");
+        }
+        if (streamline_index + 1 < nb_streamlines) {
+          ++streamline_index;
+          expected_vertices = lengths(streamline_index);
+          current_vertices = 0;
+        }
+        continue;
+      }
+      if (token_norm.rfind("inf", 0) == 0) {
+        break;
+      }
+      double value = 0.0;
+      try {
+        size_t idx = 0;
+        value = std::stod(token, &idx);
+        if (idx != token.size()) {
+          throw std::invalid_argument("invalid token");
+        }
+      } catch (const std::exception &) {
+        throw std::runtime_error("Failed to parse TSF file: " + path);
+      }
+      if (std::isinf(value)) {
+        break;
+      }
+      if (std::isnan(value)) {
+        if (current_vertices != expected_vertices) {
+          throw std::runtime_error("TSF streamline length does not match TRX streamlines");
+        }
+        if (streamline_index + 1 < nb_streamlines) {
+          ++streamline_index;
+          expected_vertices = lengths(streamline_index);
+          current_vertices = 0;
+        }
+        continue;
+      }
+      values.push_back(value);
+      ++current_vertices;
+    }
+    if (!input.eof() && input.fail()) {
+      throw std::runtime_error("Failed to parse TSF file: " + path);
+    }
   }
   if (nb_streamlines > 0) {
     if (streamline_index != nb_streamlines - 1 || current_vertices != expected_vertices) {
@@ -1336,6 +1481,143 @@ void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::stri
   seq->_lengths = trx.streamlines->_lengths;
 
   trx.data_per_vertex[name] = seq;
+}
+
+template <typename DT>
+void export_dpv_to_tsf(const TrxFile<DT> &trx,
+                       const std::string &name,
+                       const std::string &path,
+                       const std::string &timestamp,
+                       const std::string &dtype) {
+  if (name.empty()) {
+    throw std::invalid_argument("DPV name cannot be empty");
+  }
+  if (timestamp.empty()) {
+    throw std::invalid_argument("TSF timestamp cannot be empty");
+  }
+
+  std::string dtype_norm = dtype;
+  std::transform(dtype_norm.begin(), dtype_norm.end(), dtype_norm.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+
+  if (!_is_dtype_valid(dtype_norm)) {
+    throw std::invalid_argument("Unsupported TSF dtype: " + dtype);
+  }
+  if (dtype_norm != "float32" && dtype_norm != "float64") {
+    throw std::invalid_argument("Unsupported TSF dtype for output: " + dtype);
+  }
+
+  if (!trx.streamlines) {
+    throw std::runtime_error("TRX file has no streamlines to export DPV data");
+  }
+
+  const auto dpv_it = trx.data_per_vertex.find(name);
+  if (dpv_it == trx.data_per_vertex.end()) {
+    throw std::runtime_error("DPV entry not found: " + name);
+  }
+
+  const auto *seq = dpv_it->second;
+  if (seq->_data.cols() != 1) {
+    throw std::runtime_error("DPV must be 1D to export as TSF: " + name);
+  }
+
+  const auto &lengths = trx.streamlines->_lengths;
+  const size_t nb_streamlines = static_cast<size_t>(lengths.size());
+  const size_t nb_vertices = static_cast<size_t>(seq->_data.rows());
+  if (nb_vertices != static_cast<size_t>(trx.streamlines->_data.rows())) {
+    throw std::runtime_error("DPV vertex count does not match streamlines data");
+  }
+
+  const auto is_little_endian = []() {
+    const uint16_t value = 1;
+    return *reinterpret_cast<const uint8_t *>(&value) == 1;
+  };
+  const bool little_endian = is_little_endian();
+  const std::string dtype_spec = dtype_norm == "float64" ? (little_endian ? "Float64LE" : "Float64BE")
+                                                         : (little_endian ? "Float32LE" : "Float32BE");
+
+  auto build_header = [&](size_t data_offset) {
+    std::ostringstream header;
+    header << "mrtrix track scalars\n";
+    header << "timestamp: " << timestamp << "\n";
+    header << "datatype: " << dtype_spec << "\n";
+    header << "file: . " << data_offset << "\n";
+    header << "count: " << nb_streamlines << "\n";
+    header << "total_count: " << nb_streamlines << "\n";
+    header << "END\n";
+    return header.str();
+  };
+
+  size_t data_offset = 0;
+  for (int i = 0; i < 4; ++i) {
+    const std::string header = build_header(data_offset);
+    size_t padded = header.size();
+    const size_t pad = (4 - (padded % 4)) % 4;
+    padded += pad;
+    if (padded == data_offset) {
+      break;
+    }
+    data_offset = padded;
+  }
+  const std::string header = build_header(data_offset);
+
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  if (!out.is_open()) {
+    throw std::runtime_error("Failed to open TSF file for writing: " + path);
+  }
+  out.write(header.data(), static_cast<std::streamsize>(header.size()));
+  const size_t pad = (4 - (header.size() % 4)) % 4;
+  if (pad > 0) {
+    const std::array<char, 4> zeros{0, 0, 0, 0};
+    out.write(zeros.data(), static_cast<std::streamsize>(pad));
+  }
+
+  const auto write_value = [&](double value) {
+    if (dtype_norm == "float64") {
+      const double cast = value;
+      out.write(reinterpret_cast<const char *>(&cast), sizeof(cast));
+    } else {
+      const float cast = static_cast<float>(value);
+      out.write(reinterpret_cast<const char *>(&cast), sizeof(cast));
+    }
+  };
+
+  const size_t total_vertices = static_cast<size_t>(seq->_data.rows());
+  size_t offset = 0;
+  for (size_t s = 0; s < nb_streamlines; ++s) {
+    const uint32_t len = lengths(static_cast<Eigen::Index>(s));
+    if (offset > total_vertices) {
+      throw std::runtime_error("DPV length metadata exceeds vertex count");
+    }
+    if (len > std::numeric_limits<size_t>::max() - offset) {
+      throw std::runtime_error("DPV length metadata exceeds vertex count");
+    }
+    if (offset + static_cast<size_t>(len) > total_vertices) {
+      throw std::runtime_error("DPV length metadata exceeds vertex count");
+    }
+    offset += static_cast<size_t>(len);
+  }
+  offset = 0;
+  for (size_t s = 0; s < nb_streamlines; ++s) {
+    const uint32_t len = lengths(static_cast<Eigen::Index>(s));
+    for (uint32_t i = 0; i < len; ++i) {
+      const size_t idx = offset + static_cast<size_t>(i);
+      if (idx > static_cast<size_t>(std::numeric_limits<Eigen::Index>::max())) {
+        throw std::runtime_error("DPV length metadata exceeds vertex count");
+      }
+      write_value(static_cast<double>(seq->_data(static_cast<Eigen::Index>(idx), 0)));
+    }
+    offset += static_cast<size_t>(len);
+    if (s + 1 < nb_streamlines) {
+      write_value(std::numeric_limits<double>::quiet_NaN());
+    }
+  }
+  write_value(std::numeric_limits<double>::infinity());
+
+  if (!out.good()) {
+    throw std::runtime_error("Failed to write TSF file: " + path);
+  }
 }
 
 template <typename DT> std::ostream &operator<<(std::ostream &out, const TrxFile<DT> &trx) {

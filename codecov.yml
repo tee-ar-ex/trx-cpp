@@ -1,4 +1,7 @@
 coverage:
+  ignore:
+    - "third_party"
+    - "examples"
   status:
     project:
       default:

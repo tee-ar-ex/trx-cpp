@@ -1,9 +1,11 @@
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <random>
 #include <stdexcept>
 #include <sys/stat.h>
 #include <system_error>
+#include <zip.h>
 #include <trx/trx.h>
 #include <typeinfo>
 
@@ -238,6 +240,102 @@ TEST(TrxFileMemmap, __generate_filename_from_data) {
   output_fn.clear();
 }
 
+TEST(TrxFileMemmap, detect_positions_dtype_normalizes_slashes) {
+  const fs::path root_dir = make_temp_test_dir("trx_norm_slash");
+  const fs::path weird_dir = root_dir / "subdir\\nested";
+  std::error_code ec;
+  fs::create_directories(weird_dir, ec);
+  ASSERT_FALSE(ec);
+
+  const fs::path positions_path = weird_dir / "positions.3.float64";
+  std::ofstream out(positions_path.string());
+  ASSERT_TRUE(out.is_open());
+  out.close();
+
+  EXPECT_EQ(trxmmap::detect_positions_dtype(root_dir.string()), "float64");
+}
+
+TEST(TrxFileMemmap, detect_positions_scalar_type_directory) {
+  auto make_dir_with_positions = [](const std::string &suffix) {
+    const fs::path root_dir = make_temp_test_dir("trx_scalar_type");
+    const fs::path positions_path = root_dir / ("positions.3." + suffix);
+    std::ofstream out(positions_path.string());
+    if (!out.is_open()) {
+      throw std::runtime_error("Failed to write positions file");
+    }
+    out.close();
+    return root_dir;
+  };
+
+  const fs::path float16_dir = make_dir_with_positions("float16");
+  const fs::path float32_dir = make_dir_with_positions("float32");
+  const fs::path float64_dir = make_dir_with_positions("float64");
+
+  EXPECT_EQ(trxmmap::detect_positions_scalar_type(float16_dir.string(), TrxScalarType::Float64),
+            TrxScalarType::Float16);
+  EXPECT_EQ(trxmmap::detect_positions_scalar_type(float32_dir.string(), TrxScalarType::Float16),
+            TrxScalarType::Float32);
+  EXPECT_EQ(trxmmap::detect_positions_scalar_type(float64_dir.string(), TrxScalarType::Float32),
+            TrxScalarType::Float64);
+}
+
+TEST(TrxFileMemmap, detect_positions_scalar_type_fallback) {
+  const fs::path empty_dir = make_temp_test_dir("trx_scalar_empty");
+  EXPECT_EQ(trxmmap::detect_positions_scalar_type(empty_dir.string(), TrxScalarType::Float16),
+            TrxScalarType::Float16);
+
+  const fs::path invalid_dir = make_temp_test_dir("trx_scalar_invalid");
+  const fs::path invalid_positions = invalid_dir / "positions.3.txt";
+  std::ofstream out(invalid_positions.string());
+  ASSERT_TRUE(out.is_open());
+  out.close();
+
+  EXPECT_THROW(trxmmap::detect_positions_scalar_type(invalid_dir.string(), TrxScalarType::Float64),
+               std::invalid_argument);
+}
+
+TEST(TrxFileMemmap, detect_positions_scalar_type_missing_path) {
+  const fs::path missing = fs::path(make_temp_test_dir("trx_scalar_missing")) / "nope";
+  EXPECT_THROW(trxmmap::detect_positions_scalar_type(missing.string(), TrxScalarType::Float32), std::runtime_error);
+}
+
+TEST(TrxFileMemmap, open_zip_for_read_generic_fallback) {
+#if defined(_WIN32) || defined(_WIN64)
+  const fs::path root_dir = make_temp_test_dir("trx_zip_generic");
+  const fs::path zip_path = root_dir / "sample.trx";
+
+  int errorp = 0;
+  zip_t *zf = zip_open(zip_path.string().c_str(), ZIP_CREATE | ZIP_TRUNCATE, &errorp);
+  ASSERT_NE(zf, nullptr);
+  const char payload[] = "data";
+  zip_source_t *source = zip_source_buffer(zf, payload, sizeof(payload) - 1, 0);
+  ASSERT_NE(source, nullptr);
+  ASSERT_GE(zip_file_add(zf, "dummy.txt", source, ZIP_FL_OVERWRITE), 0);
+  ASSERT_EQ(zip_close(zf), 0);
+
+  std::string alt_path = zip_path.string();
+  std::replace(alt_path.begin(), alt_path.end(), '/', '\\');
+  const std::string generic = fs::path(alt_path).generic_string();
+  if (generic == alt_path) {
+    GTEST_SKIP() << "Generic string did not change on this platform";
+  }
+
+  errorp = 0;
+  zip_t *direct = zip_open(alt_path.c_str(), 0, &errorp);
+  if (direct != nullptr) {
+    zip_close(direct);
+    GTEST_SKIP() << "libzip accepts backslash paths; fallback not exercised";
+  }
+
+  errorp = 0;
+  zip_t *fallback = trxmmap::open_zip_for_read(alt_path, errorp);
+  ASSERT_NE(fallback, nullptr);
+  zip_close(fallback);
+#else
+  GTEST_SKIP() << "Generic path fallback is Windows-only";
+#endif
+}
+
 // Mirrors trx/tests/test_memmap.py::test__split_ext_with_dimensionality.
 TEST(TrxFileMemmap, __split_ext_with_dimensionality) {
   std::tuple<std::string, int, std::string> output;
@@ -357,6 +455,41 @@ TEST(TrxFileMemmap, __is_dtype_valid) {
 TEST(TrxFileMemmap, __sizeof_dtype_ushort_alias) {
   EXPECT_EQ(trxmmap::_sizeof_dtype("ushort"), sizeof(uint16_t));
   EXPECT_EQ(trxmmap::_sizeof_dtype("ushort"), trxmmap::_sizeof_dtype("uint16"));
+}
+
+// asserts dtype size mapping and default.
+TEST(TrxFileMemmap, __sizeof_dtype_values) {
+  EXPECT_EQ(trxmmap::_sizeof_dtype("bit"), 1);
+  EXPECT_EQ(trxmmap::_sizeof_dtype("uint8"), sizeof(uint8_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("uint16"), sizeof(uint16_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("uint32"), sizeof(uint32_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("uint64"), sizeof(uint64_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("int8"), sizeof(int8_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("int16"), sizeof(int16_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("int32"), sizeof(int32_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("int64"), sizeof(int64_t));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("float32"), sizeof(float));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("float64"), sizeof(double));
+  EXPECT_EQ(trxmmap::_sizeof_dtype("unknown"), sizeof(uint16_t));
+}
+
+// asserts dtype code mapping.
+TEST(TrxFileMemmap, __get_dtype_codes) {
+  EXPECT_EQ(trxmmap::_get_dtype("b"), "bit");
+  EXPECT_EQ(trxmmap::_get_dtype("h"), "uint8");
+  EXPECT_EQ(trxmmap::_get_dtype("t"), "uint16");
+  EXPECT_EQ(trxmmap::_get_dtype("j"), "uint32");
+  EXPECT_EQ(trxmmap::_get_dtype("m"), "uint64");
+  EXPECT_EQ(trxmmap::_get_dtype("y"), "uint64");
+  EXPECT_EQ(trxmmap::_get_dtype("a"), "int8");
+  EXPECT_EQ(trxmmap::_get_dtype("s"), "int16");
+  EXPECT_EQ(trxmmap::_get_dtype("i"), "int32");
+  EXPECT_EQ(trxmmap::_get_dtype("l"), "int64");
+  EXPECT_EQ(trxmmap::_get_dtype("x"), "int64");
+  EXPECT_EQ(trxmmap::_get_dtype("f"), "float32");
+  EXPECT_EQ(trxmmap::_get_dtype("d"), "float64");
+  EXPECT_EQ(trxmmap::_get_dtype("z"), "float16");
+  EXPECT_EQ(trxmmap::_get_dtype("foo"), "float16");
 }
 
 // Mirrors trx/tests/test_memmap.py::test__dichotomic_search.

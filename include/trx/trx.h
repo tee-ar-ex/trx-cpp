@@ -3,16 +3,20 @@
 
 #include <Eigen/Core>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <json11.hpp>
 #include <limits.h>
+#include <limits>
 #include <math.h>
+#include <sstream>
 #include <stdexcept>
 #include <stdlib.h>
 #include <string.h>
@@ -529,6 +533,13 @@ void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::str
 
 template <typename DT>
 void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::string &dtype, const std::string &path);
+
+template <typename DT>
+void export_dpv_to_tsf(const TrxFile<DT> &trx,
+                       const std::string &name,
+                       const std::string &path,
+                       const std::string &timestamp,
+                       const std::string &dtype = "float32");
 
 /**
  * @brief Utils function to zip on-disk memmaps

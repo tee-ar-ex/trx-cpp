@@ -29,13 +29,14 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install libzip eigen googletest ninja
+          brew install libzip eigen googletest ninja lcov
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           choco install ninja -y
+          choco install opencppcoverage -y
           New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\vcpkg_cache" | Out-Null
           git clone https://github.com/microsoft/vcpkg "$env:GITHUB_WORKSPACE\vcpkg"
           & "$env:GITHUB_WORKSPACE\vcpkg\bootstrap-vcpkg.bat"
@@ -59,7 +60,10 @@ jobs:
             -DTRX_USE_CONAN=OFF \
             -DTRX_BUILD_TESTS=ON \
             -DTRX_BUILD_EXAMPLES=ON \
-            -DCMAKE_PREFIX_PATH="${BREW_PREFIX}"
+            -DCMAKE_PREFIX_PATH="${BREW_PREFIX}" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="--coverage" \
+            -DCMAKE_CXX_FLAGS="--coverage"
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
@@ -68,10 +72,52 @@ jobs:
           -G Ninja
           -DTRX_USE_CONAN=OFF
           -DTRX_BUILD_TESTS=ON
+          -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
 
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Test
+      - name: Test (macOS)
+        if: runner.os == 'macOS'
         run: ctest --test-dir build --output-on-failure -C Release
+
+      - name: Test with coverage (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >
+          & "$env:ProgramFiles\OpenCppCoverage\OpenCppCoverage.exe"
+          --export_type cobertura:coverage.xml
+          --sources ${{ github.workspace }}
+          -- ctest --test-dir build --output-on-failure -C Release
+
+      - name: Generate coverage summary (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          lcov --capture --directory build \
+            --rc geninfo_unexecuted_blocks=1 \
+            --ignore-errors mismatch,inconsistent,unsupported,format \
+            --output-file coverage.info
+          lcov --remove coverage.info "/opt/homebrew/*" "/Applications/Xcode_*.app/*" \
+            "/Users/runner/work/trx-cpp/trx-cpp/third_party/*" \
+            --ignore-errors mismatch,inconsistent,unsupported,format \
+            --output-file coverage.info
+          lcov --summary coverage.info --ignore-errors mismatch,inconsistent,unsupported,format
+
+      - name: Upload coverage to Codecov (macOS)
+        if: runner.os == 'macOS'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.info
+          flags: macos
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage to Codecov (Windows)
+        if: runner.os == 'Windows'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          flags: windows
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
