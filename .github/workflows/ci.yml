@@ -96,7 +96,9 @@ jobs:
         run: |
           lcov --capture --directory build \
             --rc geninfo_unexecuted_blocks=1 \
-            --ignore-errors mismatch,inconsistent,unsupported \
+            --ignore-errors mismatch,inconsistent,unsupported,format \
+            --output-file coverage.info
+          lcov --remove coverage.info "/opt/homebrew/*" "/Users/runner/work/trx-cpp/trx-cpp/third_party/*" \
             --output-file coverage.info
           lcov --summary coverage.info
 
