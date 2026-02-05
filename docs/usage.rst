@@ -11,7 +11,9 @@ entry point when you only have a TRX path.
 `TrxFile<DT>` is the typed API. It is templated on the positions dtype
 (`half`, `float`, or `double`) and maps data directly into Eigen matrices of
 that type. It provides stronger compile-time guarantees but requires knowing
-the dtype at compile time or doing manual dispatch.
+the dtype at compile time or doing manual dispatch. The recommended typed entry
+point is :func:`trx::with_trx_reader`, which performs dtype detection and
+dispatches to the matching `TrxReader<DT>`.
 
 See the API reference for details: :class:`trx::AnyTrxFile` and
 :class:`trx::TrxFile`.
