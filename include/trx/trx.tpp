@@ -1537,7 +1537,10 @@ void export_dpv_to_tsf(const TrxFile<DT> &trx,
     throw std::runtime_error("DPV entry not found: " + name);
   }
 
-  const auto *seq = dpv_it->second;
+  const auto *seq = dpv_it->second.get();
+  if (!seq) {
+    throw std::runtime_error("DPV entry is null: " + name);
+  }
   if (seq->_data.cols() != 1) {
     throw std::runtime_error("DPV must be 1D to export as TSF: " + name);
   }
