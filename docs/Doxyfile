@@ -1,0 +1,16 @@
+PROJECT_NAME           = "trx-cpp"
+PROJECT_BRIEF          = "C++ library for reading and writing the TRX format."
+
+OUTPUT_DIRECTORY       = _build/doxygen
+
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+
+INPUT                  = ../include ../src
+RECURSIVE              = YES
+FILE_PATTERNS          = *.h *.hpp *.cpp *.tpp
+
+EXTRACT_ALL            = YES
+QUIET                  = YES

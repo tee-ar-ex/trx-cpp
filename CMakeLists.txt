@@ -25,6 +25,7 @@ option(TRX_BUILD_TESTS "Build trx tests" OFF)
 option(TRX_BUILD_EXAMPLES "Build trx example commandline programs" ON)
 option(TRX_ENABLE_CLANG_TIDY "Run clang-tidy during builds" OFF)
 option(TRX_ENABLE_INSTALL "Install trx-cpp targets" ${TRX_IS_TOP_LEVEL})
+option(TRX_BUILD_DOCS "Build API documentation with Doxygen/Sphinx" ${TRX_IS_TOP_LEVEL})
 
 if(TRX_ENABLE_CLANG_TIDY)
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -152,6 +153,25 @@ if(TRX_BUILD_EXAMPLES)
     )
     FetchContent_MakeAvailable(cxxopts)
     add_subdirectory(examples)
+endif()
+
+if(TRX_BUILD_DOCS)
+    find_package(Doxygen QUIET)
+    find_program(TRX_SPHINX_BUILD_EXE NAMES sphinx-build)
+    if(DOXYGEN_FOUND AND TRX_SPHINX_BUILD_EXE)
+        add_custom_target(docs
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/docs/_build/doxygen
+            COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/docs/Doxyfile
+            COMMAND ${TRX_SPHINX_BUILD_EXE} -b html
+                    ${CMAKE_CURRENT_SOURCE_DIR}/docs
+                    ${CMAKE_CURRENT_SOURCE_DIR}/docs/_build/html
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/docs
+            COMMENT "Building Doxygen XML and Sphinx HTML docs"
+            VERBATIM
+        )
+    else()
+        message(STATUS "Docs disabled: Doxygen or sphinx-build not found.")
+    endif()
 endif()
 
 # Installation and package config

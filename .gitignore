@@ -13,6 +13,8 @@ tests/data
 test_package/build/
 test_package/CMakeUserPresets.json
 syntax.log
+docs/_build/
+docs/api/
 
 test_package/build
 test_package/CMakeUserPresets.json

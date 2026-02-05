@@ -4,92 +4,22 @@
 TRX-cpp is a C++11 library for reading, writing, and memory-mapping the TRX
 tractography file format (zip archives or on-disk directories of memmaps).
 
-## Dependencies
+## Documentation
 
-Required:
-- C++11 compiler and CMake (>= 3.10)
-- libzip
-- Eigen3
-
-Optional:
-- GTest (for building tests)
-
-## Build and Install
-
-### Quick build (no tests)
+Project documentation lives in `docs/` and includes build/usage instructions
+plus the API reference. Build the site locally with the `docs` CMake target:
 
 ```
+# Install prerequisites (Ubuntu example)
+sudo apt-get install -y doxygen python3-pip
+python3 -m pip install --user -r docs/requirements.txt
+
+# Configure once, then build the docs target
 cmake -S . -B build
-cmake --build build
+cmake --build build --target docs
 ```
 
-### Build with tests
-
-```
-cmake -S . -B build \
-  -DTRX_BUILD_TESTS=ON \
-  -DGTest_DIR=/path/to/GTestConfig.cmake
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-## Style checks
-
-This repo includes `.clang-tidy` and `.clang-format` at the root, plus
-MRtrix-inspired helper scripts for formatting and style checks.
-
-### Prerequisites
-
-- `clang-format` available on `PATH`
-  - macOS (Homebrew): `brew install llvm` (or `llvm@17`) and ensure `clang-format` is on `PATH`
-  - Ubuntu: `sudo apt-get install clang-format`
-- For `check_syntax` on macOS, GNU grep is required (`brew install grep`, then it will use `ggrep`).
-
-### clang-format (bulk formatting)
-
-Run the formatter across repo sources:
-
-```
-./clang-format-all
-```
-
-You can target a specific clang-format binary:
-
-```
-./clang-format-all --executable /path/to/clang-format
-```
-
-### check_syntax (style rules)
-
-Run the MRtrix-style checks against the C++ sources:
-
-```
-./check_syntax
-```
-
-Results are written to `syntax.log` when issues are found.
-
-### clang-tidy
-
-Generate a build with compile commands, then run clang-tidy (matches CI):
-
-```
-cmake -S . -B build \
-  -DTRX_USE_CONAN=OFF \
-  -DTRX_BUILD_EXAMPLES=ON \
-  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-run-clang-tidy -p build $(git ls-files '*.cpp' '*.h' '*.hpp' '*.tpp' ':!third_party/**')
-```
-
-To run clang-tidy automatically during builds:
-
-```
-cmake -S . -B build -DTRX_ENABLE_CLANG_TIDY=ON
-cmake --build build
-```
-
-If you have `run-clang-tidy` installed (LLVM extras), you can lint everything
-tracked by the repo (excluding `third_party`), which matches CI.
+Open `docs/_build/html/index.html` in a browser.
 
 
 ## Third-party notices
@@ -104,72 +34,5 @@ tracked by the repo (excluding `third_party`), which matches CI.
 
 ## Usage Examples
 
-All examples assume:
-
-```
-#include <trx/trx.h>
-
-using namespace trxmmap;
-```
-
-### Read a TRX zip and inspect data
-
-```
-auto trx = load_from_zip<half>("tracks.trx");
-
-// Access streamlines: vertices are stored as an Eigen matrix
-const auto num_vertices = trx->streamlines->_data.size() / 3;
-const auto num_streamlines = trx->streamlines->_offsets.size() - 1;
-
-std::cout << "Vertices: " << num_vertices << "\n";
-std::cout << "Streamlines: " << num_streamlines << "\n";
-std::cout << "First vertex (x,y,z): "
-          << trx->streamlines->_data(0, 0) << ","
-          << trx->streamlines->_data(0, 1) << ","
-          << trx->streamlines->_data(0, 2) << "\n";
-
-// Data-per-streamline and data-per-vertex are stored in maps
-for (const auto &kv : trx->data_per_streamline) {
-  std::cout << "DPS '" << kv.first << "' elements: "
-            << kv.second->_matrix.size() << "\n";
-}
-for (const auto &kv : trx->data_per_vertex) {
-  std::cout << "DPV '" << kv.first << "' elements: "
-            << kv.second->_data.size() << "\n";
-}
-
-trx->close(); // cleans up temporary on-disk data
-```
-
-### Read from an on-disk TRX directory
-
-```
-auto trx = load_from_directory<float>("/path/to/trx_dir");
-std::cout << "Header JSON:\n" << trx->header.dump() << "\n";
-trx->close();
-```
-
-### Write a TRX file
-
-You can modify a loaded `TrxFile` and save it to a new archive:
-
-```
-auto trx = load_from_zip<half>("tracks.trx");
-
-// Example: update header metadata
-auto header_obj = trx->header.object_items();
-header_obj["COMMENT"] = "saved by trx-cpp";
-trx->header = json(header_obj);
-
-// Save with no compression (ZIP_CM_STORE) or another libzip compression level
-save(*trx, "tracks_copy.trx", ZIP_CM_STORE);
-
-trx->close();
-```
-
-### Notes on memory mapping
-
-`TrxFile` uses memory-mapped arrays under the hood for large datasets. The
-`close()` method cleans up any temporary folders created during zip extraction.
-If you skip `close()`, temporary directories may be left behind.
+See the documentation in `docs/` for examples and API details.
 
