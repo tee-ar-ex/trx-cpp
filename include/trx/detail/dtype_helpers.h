@@ -6,7 +6,7 @@
 #include <string>
 #include <tuple>
 
-namespace trxmmap {
+namespace trx {
 namespace detail {
 
 int _sizeof_dtype(const std::string &dtype);
@@ -55,6 +55,6 @@ inline int _dichotomic_search(const Eigen::MatrixBase<DT> &x, int l_bound = -1, 
 }
 
 } // namespace detail
-} // namespace trxmmap
+} // namespace trx
 
 #endif // TRX_DETAIL_DTYPE_HELPERS_H

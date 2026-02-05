@@ -57,7 +57,7 @@ std::string format_matrix_row(const json &row) {
 
 template <typename DT>
 void print_trx_info(
-    trxmmap::TrxFile<DT> *trx, const std::string &path, bool is_dir, trxmmap::TrxScalarType dtype, bool show_stats) {
+    trx::TrxFile<DT> *trx, const std::string &path, bool is_dir, trx::TrxScalarType dtype, bool show_stats) {
   trx_cli::Colors colors;
   colors.enabled = trx_cli::stdout_supports_color();
 
@@ -65,7 +65,7 @@ void print_trx_info(
   std::cout << trx_cli::colorize(colors, colors.cyan, "Path") << ": " << path << "\n";
   std::cout << trx_cli::colorize(colors, colors.cyan, "Storage") << ": " << (is_dir ? "directory" : "zip archive")
             << "\n";
-  std::cout << trx_cli::colorize(colors, colors.cyan, "Positions dtype") << ": " << trxmmap::scalar_type_name(dtype)
+  std::cout << trx_cli::colorize(colors, colors.cyan, "Positions dtype") << ": " << trx::scalar_type_name(dtype)
             << "\n";
 
   const json &header = trx->header;
@@ -164,7 +164,7 @@ struct ReaderPrinter {
   bool is_dir;
   bool show_stats;
 
-  template <typename ReaderT> int operator()(ReaderT &reader, trxmmap::TrxScalarType dtype) const {
+  template <typename ReaderT> int operator()(ReaderT &reader, trx::TrxScalarType dtype) const {
     print_trx_info(reader.get(), path, is_dir, dtype, show_stats);
     return 0;
   }
@@ -192,9 +192,9 @@ int main(int argc, char **argv) { // check_syntax off
     path = result["path"].as<std::string>();
     show_stats = result["stats"].as<bool>();
 
-    const bool is_dir = trxmmap::is_trx_directory(path);
+    const bool is_dir = trx::is_trx_directory(path);
     const ReaderPrinter printer{path, is_dir, show_stats};
-    return trxmmap::with_trx_reader(path, printer);
+    return trx::with_trx_reader(path, printer);
   } catch (const cxxopts::exceptions::exception &e) {
     std::cerr << "trxinfo: " << e.what() << "\n";
     if (!help_text.empty()) {

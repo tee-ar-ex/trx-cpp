@@ -38,7 +38,7 @@ using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
 
-namespace trxmmap {
+namespace trx {
 namespace {
 inline int sys_error() { return errno; }
 
@@ -55,7 +55,7 @@ std::string normalize_slashes(std::string path) {
 bool parse_positions_dtype(const std::string &filename, std::string &out_dtype) {
   const std::string normalized = normalize_slashes(filename);
   try {
-    const auto tuple = trxmmap::detail::_split_ext_with_dimensionality(normalized);
+    const auto tuple = trx::detail::_split_ext_with_dimensionality(normalized);
     const std::string &base = std::get<0>(tuple);
     if (base == "positions") {
       out_dtype = std::get<2>(tuple);
@@ -97,7 +97,7 @@ std::string detect_positions_dtype(const std::string &path) {
   std::error_code ec;
   if (trx::fs::is_directory(input, ec) && !ec) {
     std::map<std::string, std::tuple<long long, long long>> files;
-    trxmmap::populate_fps(path, files);
+    trx::populate_fps(path, files);
     for (const auto &kv : files) {
       std::string dtype;
       if (parse_positions_dtype(kv.first, dtype)) {
@@ -188,7 +188,7 @@ void populate_fps(const string &name, std::map<std::string, std::tuple<long long
       continue;
     }
 
-    if (!trxmmap::detail::_is_dtype_valid(ext)) {
+    if (!trx::detail::_is_dtype_valid(ext)) {
       throw std::invalid_argument(std::string("The dtype of ") + elem_filename + std::string(" is not supported"));
     }
 
@@ -196,7 +196,7 @@ void populate_fps(const string &name, std::map<std::string, std::tuple<long long
       ext = "bool";
     }
 
-    const int dtype_size = trxmmap::detail::_sizeof_dtype(ext);
+    const int dtype_size = trx::detail::_sizeof_dtype(ext);
     std::error_code size_ec;
     auto raw_size = trx::fs::file_size(entry_path, size_ec);
     if (size_ec) {
@@ -292,7 +292,7 @@ mio::shared_mmap_sink _create_memmap(std::string filename,
 
   const std::size_t filesize = static_cast<std::size_t>(std::get<0>(shape)) *
                                static_cast<std::size_t>(std::get<1>(shape)) *
-                               static_cast<std::size_t>(trxmmap::detail::_sizeof_dtype(dtype));
+                               static_cast<std::size_t>(trx::detail::_sizeof_dtype(dtype));
   // if file does not exist, create and allocate it
 
   struct stat buffer {};
@@ -591,4 +591,4 @@ std::string rm_root(const std::string &root, const std::string &path) {
   }
   return stripped;
 }
-}; // namespace trxmmap
+}; // namespace trx

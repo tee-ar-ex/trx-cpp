@@ -4,7 +4,7 @@
 #define TRX_TPP_OPEN_NAMESPACE
 #include <trx/trx.h>
 #undef TRX_TPP_STANDALONE
-namespace trxmmap {
+namespace trx {
 #endif
 using Eigen::Dynamic;
 using Eigen::half;
@@ -179,7 +179,7 @@ std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_ve
   std::tuple<int, int> shape = std::make_tuple(nb_vertices, 3);
 
   trx->streamlines = std::make_unique<ArraySequence<DT>>();
-  trx->streamlines->mmap_pos = trxmmap::_create_memmap(positions_filename, shape, "w+", positions_dtype);
+  trx->streamlines->mmap_pos = trx::_create_memmap(positions_filename, shape, "w+", positions_dtype);
 
   // TODO: find a better way to get the dtype than using all these switch cases. Also refactor
   // into function as per specifications, positions can only be floats
@@ -199,7 +199,7 @@ std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_ve
 
   std::tuple<int, int> shape_off = std::make_tuple(nb_streamlines + 1, 1);
 
-  trx->streamlines->mmap_off = trxmmap::_create_memmap(offsets_filename, shape_off, "w+", offsets_dtype);
+  trx->streamlines->mmap_off = trx::_create_memmap(offsets_filename, shape_off, "w+", offsets_dtype);
   new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(
       reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape_off), std::get<1>(shape_off));
 
@@ -245,7 +245,7 @@ std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_ve
 
       std::tuple<int, int> dpv_shape = std::make_tuple(rows, cols);
       trx->data_per_vertex[x.first] = std::make_unique<ArraySequence<DT>>();
-      trx->data_per_vertex[x.first]->mmap_pos = trxmmap::_create_memmap(dpv_filename, dpv_shape, "w+", dpv_dtype);
+      trx->data_per_vertex[x.first]->mmap_pos = trx::_create_memmap(dpv_filename, dpv_shape, "w+", dpv_dtype);
       if (dpv_dtype.compare("float16") == 0) {
         new (&(trx->data_per_vertex[x.first]->_data)) Map<Matrix<half, Dynamic, Dynamic>>(
             reinterpret_cast<half *>(trx->data_per_vertex[x.first]->mmap_pos.data()), rows, cols);
@@ -282,9 +282,9 @@ std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_ve
       }
 
       std::tuple<int, int> dps_shape = std::make_tuple(rows, cols);
-      trx->data_per_streamline[x.first] = std::make_unique<trxmmap::MMappedMatrix<DT>>();
+      trx->data_per_streamline[x.first] = std::make_unique<trx::MMappedMatrix<DT>>();
       trx->data_per_streamline[x.first]->mmap =
-          trxmmap::_create_memmap(dps_filename, dps_shape, std::string("w+"), dps_dtype);
+          trx::_create_memmap(dps_filename, dps_shape, std::string("w+"), dps_dtype);
 
       if (dps_dtype.compare("float16") == 0) {
         new (&(trx->data_per_streamline[x.first]->_matrix)) Map<Matrix<half, Dynamic, Dynamic>>(
@@ -312,7 +312,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
                                       std::map<std::string, std::tuple<long long, long long>> dict_pointer_size,
                                       std::string root_zip,
                                       std::string root) {
-  auto trx = std::make_unique<trxmmap::TrxFile<DT>>();
+  auto trx = std::make_unique<trx::TrxFile<DT>>();
   trx->header = header;
   trx->streamlines = std::make_unique<ArraySequence<DT>>();
 
@@ -348,7 +348,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
     // _split_ext_with_dimensionality
     std::tuple<std::string, int, std::string> base_tuple =
-        trxmmap::detail::_split_ext_with_dimensionality(elem_filename);
+        trx::detail::_split_ext_with_dimensionality(elem_filename);
     std::string base(std::get<0>(base_tuple));
     int dim = std::get<1>(base_tuple);
     std::string ext(std::get<2>(base_tuple));
@@ -368,7 +368,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
       std::tuple<int, int> shape = std::make_tuple(static_cast<int>(trx->header["NB_VERTICES"].int_value()), 3);
       trx->streamlines->mmap_pos =
-          trxmmap::_create_memmap(filename, shape, "r+", ext.substr(1, ext.size() - 1), mem_adress);
+          trx::_create_memmap(filename, shape, "r+", ext.substr(1, ext.size() - 1), mem_adress);
 
       // TODO: find a better way to get the dtype than using all these switch cases. Also
       // refactor into function as per specifications, positions can only be floats
@@ -394,7 +394,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
       const int nb_str = static_cast<int>(trx->header["NB_STREAMLINES"].int_value());
       std::tuple<int, int> shape = std::make_tuple(nb_str + 1, 1);
-      trx->streamlines->mmap_off = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      trx->streamlines->mmap_off = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
       if (ext.compare("uint64") == 0) {
         new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(
@@ -412,7 +412,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
       Matrix<uint64_t, Dynamic, 1> offsets = trx->streamlines->_offsets;
       trx->streamlines->_lengths =
-          trxmmap::detail::_compute_lengths(offsets, static_cast<int>(trx->header["NB_VERTICES"].int_value()));
+          trx::detail::_compute_lengths(offsets, static_cast<int>(trx->header["NB_VERTICES"].int_value()));
     }
 
     else if (folder.compare("dps") == 0) {
@@ -426,7 +426,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       } else {
         shape = std::make_tuple(static_cast<int>(trx->header["NB_STREAMLINES"].int_value()), nb_scalar);
       }
-      trx->data_per_streamline[base]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      trx->data_per_streamline[base]->mmap = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
       if (ext.compare("float16") == 0) {
         new (&(trx->data_per_streamline[base]->_matrix))
@@ -457,7 +457,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       } else {
         shape = std::make_tuple(static_cast<int>(trx->header["NB_VERTICES"].int_value()), nb_scalar);
       }
-      trx->data_per_vertex[base]->mmap_pos = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      trx->data_per_vertex[base]->mmap_pos = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
       if (ext.compare("float16") == 0) {
         new (&(trx->data_per_vertex[base]->_data))
@@ -496,7 +496,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
       trx->data_per_group[sub_folder][data_name] = std::make_unique<MMappedMatrix<DT>>();
       trx->data_per_group[sub_folder][data_name]->mmap =
-          trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
+          trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
       if (ext.compare("float16") == 0) {
         new (&(trx->data_per_group[sub_folder][data_name]->_matrix)) Map<Matrix<half, Dynamic, Dynamic>>(
@@ -524,7 +524,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
         shape = std::make_tuple(static_cast<int>(size), 1);
       }
       trx->groups[base] = std::make_unique<MMappedMatrix<uint32_t>>();
-      trx->groups[base]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      trx->groups[base]->mmap = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
       new (&(trx->groups[base]->_matrix)) Map<Matrix<uint32_t, Dynamic, Dynamic>>(
           reinterpret_cast<uint32_t *>(trx->groups[base]->mmap.data()), std::get<0>(shape), std::get<1>(shape));
     } else {
@@ -542,7 +542,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 // TODO: Major refactoring
 template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::deepcopy() {
   if (!this->streamlines || this->streamlines->_data.size() == 0 || this->streamlines->_offsets.size() == 0) {
-    auto empty_copy = std::make_unique<trxmmap::TrxFile<DT>>();
+    auto empty_copy = std::make_unique<trx::TrxFile<DT>>();
     empty_copy->header = this->header;
     return empty_copy;
   }
@@ -684,7 +684,7 @@ template <typename DT> std::tuple<int, int> TrxFile<DT>::_get_real_len() {
   if (this->streamlines->_lengths.size() == 0)
     return std::make_tuple(0, 0);
 
-  int last_elem_pos = trxmmap::detail::_dichotomic_search(this->streamlines->_lengths);
+  int last_elem_pos = trx::detail::_dichotomic_search(this->streamlines->_lengths);
 
   if (last_elem_pos != -1) {
     int strs_end = last_elem_pos + 1;
@@ -865,7 +865,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
       std::tuple<int, int> group_shape = std::make_tuple(tmp.size(), 1);
 
       trx->groups[x.first] = std::make_unique<MMappedMatrix<uint32_t>>();
-      trx->groups[x.first]->mmap = trxmmap::_create_memmap(group_name, group_shape, "w+", group_dtype);
+      trx->groups[x.first]->mmap = trx::_create_memmap(group_name, group_shape, "w+", group_dtype);
       new (&(trx->groups[x.first]->_matrix))
           Map<Matrix<uint32_t, Dynamic, Dynamic>>(reinterpret_cast<uint32_t *>(trx->groups[x.first]->mmap.data()),
                                                   std::get<0>(group_shape),
@@ -1097,7 +1097,7 @@ void TrxFile<DT>::add_dps_from_text(const std::string &name, const std::string &
     return static_cast<char>(std::tolower(c));
   });
 
-  if (!trxmmap::detail::_is_dtype_valid(dtype_norm)) {
+  if (!trx::detail::_is_dtype_valid(dtype_norm)) {
     throw std::invalid_argument("Unsupported DPS dtype: " + dtype);
   }
   if (dtype_norm != "float16" && dtype_norm != "float32" && dtype_norm != "float64") {
@@ -1161,8 +1161,8 @@ void TrxFile<DT>::add_dps_from_text(const std::string &name, const std::string &
   const int cols = 1;
   std::tuple<int, int> shape = std::make_tuple(rows, cols);
 
-  auto matrix = std::make_unique<trxmmap::MMappedMatrix<DT>>();
-  matrix->mmap = trxmmap::_create_memmap(dps_filename, shape, "w+", dtype_norm);
+  auto matrix = std::make_unique<trx::MMappedMatrix<DT>>();
+  matrix->mmap = trx::_create_memmap(dps_filename, shape, "w+", dtype_norm);
 
   if (dtype_norm == "float16") {
     auto *data = reinterpret_cast<half *>(matrix->mmap.data());
@@ -1201,7 +1201,7 @@ void TrxFile<DT>::add_dpv_from_tsf(const std::string &name, const std::string &d
     return static_cast<char>(std::tolower(c));
   });
 
-  if (!trxmmap::detail::_is_dtype_valid(dtype_norm)) {
+  if (!trx::detail::_is_dtype_valid(dtype_norm)) {
     throw std::invalid_argument("Unsupported DPV dtype: " + dtype);
   }
   if (dtype_norm != "float16" && dtype_norm != "float32" && dtype_norm != "float64") {
@@ -1432,8 +1432,8 @@ void TrxFile<DT>::add_dpv_from_tsf(const std::string &name, const std::string &d
   const int cols = 1;
   std::tuple<int, int> shape = std::make_tuple(rows, cols);
 
-  auto seq = std::make_unique<trxmmap::ArraySequence<DT>>();
-  seq->mmap_pos = trxmmap::_create_memmap(dpv_filename, shape, "w+", dtype_norm);
+  auto seq = std::make_unique<trx::ArraySequence<DT>>();
+  seq->mmap_pos = trx::_create_memmap(dpv_filename, shape, "w+", dtype_norm);
 
   if (dtype_norm == "float16") {
     auto *data = reinterpret_cast<half *>(seq->mmap_pos.data());
@@ -1483,7 +1483,7 @@ void TrxFile<DT>::export_dpv_to_tsf(const std::string &name,
     return static_cast<char>(std::tolower(c));
   });
 
-  if (!trxmmap::detail::_is_dtype_valid(dtype_norm)) {
+  if (!trx::detail::_is_dtype_valid(dtype_norm)) {
     throw std::invalid_argument("Unsupported TSF dtype: " + dtype);
   }
   if (dtype_norm != "float32" && dtype_norm != "float64") {
@@ -1613,6 +1613,6 @@ template <typename DT> std::ostream &operator<<(std::ostream &out, const TrxFile
 }
 
 #ifdef TRX_TPP_OPEN_NAMESPACE
-} // namespace trxmmap
+} // namespace trx
 #undef TRX_TPP_OPEN_NAMESPACE
 #endif

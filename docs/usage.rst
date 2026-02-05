@@ -8,7 +8,7 @@ Read a TRX zip and inspect data
 
    #include <trx/trx.h>
 
-   using namespace trxmmap;
+   using namespace trx;
 
    auto trx = load_from_zip<half>("tracks.trx");
 

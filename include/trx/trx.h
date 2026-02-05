@@ -32,7 +32,7 @@ namespace fs = std::filesystem;
 
 using json = json11::Json;
 
-namespace trxmmap {
+namespace trx {
 inline json::object _json_object(const json &value) {
   if (value.is_object()) {
     return value.object_items();
@@ -542,14 +542,14 @@ std::string rm_root(const std::string &root, const std::string &path);
 #ifndef TRX_TPP_STANDALONE
 #endif
 
-} // namespace trxmmap
+} // namespace trx
 
 #include <trx/detail/dtype_helpers.h>
 
-namespace trxmmap {
+namespace trx {
 #ifndef TRX_TPP_STANDALONE
 #include <trx/trx.tpp>
 #endif
-} // namespace trxmmap
+} // namespace trx
 
 #endif /* TRX_H */

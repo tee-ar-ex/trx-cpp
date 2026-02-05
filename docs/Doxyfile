@@ -10,8 +10,10 @@ XML_OUTPUT             = xml
 
 INPUT                  = ../include ../src
 RECURSIVE              = YES
-FILE_PATTERNS          = *.h *.hpp *.cpp *.tpp
+FILE_PATTERNS          = *.h *.hpp *.tpp
 
 EXTRACT_ALL            = YES
 EXTRACT_ANON_NSPACES   = NO
+HIDE_UNDOC_NAMESPACES  = YES
+EXCLUDE_SYMBOLS        = Eigen* trx::detail*
 QUIET                  = YES

@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace trxmmap {
+namespace trx {
 constexpr int kMinNbPoints = 5;
 
 inline float round_to_precision(float value, int precision) {
@@ -150,6 +150,6 @@ perform_streamlines_operation(
 
   return {output, indices};
 }
-} // namespace trxmmap
+} // namespace trx
 
 #endif
