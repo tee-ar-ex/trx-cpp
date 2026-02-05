@@ -6,7 +6,7 @@ int main(int argc, char **argv) { // check_syntax off
     return 1;
   }
 
-  auto trx = trxmmap::load_from_zip<Eigen::half>(argv[1]);
+  auto trx = trxmmap::TrxFile<Eigen::half>::load_from_zip(argv[1]);
 
   std::cout << "Vertices: " << trx->streamlines->_data.size() / 3 << "\n";
   std::cout << "First vertex (x,y,z): " << trx->streamlines->_data(0, 0) << "," << trx->streamlines->_data(0, 1) << ","

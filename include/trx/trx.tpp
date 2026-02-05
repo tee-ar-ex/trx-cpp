@@ -74,44 +74,6 @@ std::string _generate_filename_from_data(const Eigen::MatrixBase<DT> &arr, std::
 }
 
 template <typename DT>
-Matrix<uint32_t, Dynamic, 1> _compute_lengths(const Eigen::MatrixBase<DT> &offsets, int nb_vertices) {
-  if (offsets.size() > 1) {
-    const auto casted = offsets.template cast<uint64_t>();
-    const Eigen::Index len = offsets.size() - 1;
-    Matrix<uint32_t, Dynamic, 1> lengths(len);
-    for (Eigen::Index i = 0; i < len; ++i) {
-      lengths(i) = static_cast<uint32_t>(casted(i + 1) - casted(i));
-    }
-    return lengths;
-  }
-  // If offsets are empty or only contain the sentinel, there are zero streamlines.
-  return Matrix<uint32_t, Dynamic, 1>(0);
-}
-
-template <typename DT> int _dichotomic_search(const Eigen::MatrixBase<DT> &x, int l_bound, int r_bound) {
-  if (l_bound == -1 && r_bound == -1) {
-    l_bound = 0;
-    r_bound = static_cast<int>(x.size()) - 1;
-  }
-
-  if (l_bound == r_bound) {
-    int val;
-    if (x(l_bound) != 0)
-      val = l_bound;
-    else
-      val = -1;
-    return val;
-  }
-
-  int mid_bound = (l_bound + r_bound + 1) / 2;
-
-  if (x(mid_bound) == 0)
-    return _dichotomic_search(x, l_bound, mid_bound - 1);
-  else
-    return _dichotomic_search(x, mid_bound, r_bound);
-}
-
-template <typename DT>
 TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *init_as, std::string reference) {
   std::vector<std::vector<float>> affine(4);
   std::vector<uint16_t> dimensions(3);
@@ -385,7 +347,8 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
     }
 
     // _split_ext_with_dimensionality
-    std::tuple<std::string, int, std::string> base_tuple = _split_ext_with_dimensionality(elem_filename);
+    std::tuple<std::string, int, std::string> base_tuple =
+        trxmmap::detail::_split_ext_with_dimensionality(elem_filename);
     std::string base(std::get<0>(base_tuple));
     int dim = std::get<1>(base_tuple);
     std::string ext(std::get<2>(base_tuple));
@@ -448,7 +411,8 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       }
 
       Matrix<uint64_t, Dynamic, 1> offsets = trx->streamlines->_offsets;
-      trx->streamlines->_lengths = _compute_lengths(offsets, static_cast<int>(trx->header["NB_VERTICES"].int_value()));
+      trx->streamlines->_lengths =
+          trxmmap::detail::_compute_lengths(offsets, static_cast<int>(trx->header["NB_VERTICES"].int_value()));
     }
 
     else if (folder.compare("dps") == 0) {
@@ -707,7 +671,7 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::deepcopy() {
     }
   }
 
-  auto copy_trx = load_from_directory<DT>(tmp_dir);
+  auto copy_trx = TrxFile<DT>::load_from_directory(tmp_dir);
   copy_trx->_uncompressed_folder_handle = tmp_dir;
   copy_trx->_owns_uncompressed_folder = true;
 
@@ -720,7 +684,7 @@ template <typename DT> std::tuple<int, int> TrxFile<DT>::_get_real_len() {
   if (this->streamlines->_lengths.size() == 0)
     return std::make_tuple(0, 0);
 
-  int last_elem_pos = _dichotomic_search(this->streamlines->_lengths);
+  int last_elem_pos = trxmmap::detail::_dichotomic_search(this->streamlines->_lengths);
 
   if (last_elem_pos != -1) {
     int strs_end = last_elem_pos + 1;
@@ -980,7 +944,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
   }
 }
 
-template <typename DT> std::unique_ptr<TrxFile<DT>> load_from_zip(const std::string &filename) {
+template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::load_from_zip(const std::string &filename) {
   int errorp = 0;
   zip_t *zf = open_zip_for_read(filename, errorp);
   if (zf == nullptr) {
@@ -990,13 +954,13 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> load_from_zip(const std::str
   std::string temp_dir = extract_zip_to_directory(zf);
   zip_close(zf);
 
-  auto trx = load_from_directory<DT>(temp_dir);
+  auto trx = TrxFile<DT>::load_from_directory(temp_dir);
   trx->_uncompressed_folder_handle = temp_dir;
   trx->_owns_uncompressed_folder = true;
   return trx;
 }
 
-template <typename DT> std::unique_ptr<TrxFile<DT>> load_from_directory(const std::string &path) {
+template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::load_from_directory(const std::string &path) {
   std::string directory = path;
   {
     std::error_code ec;
@@ -1026,19 +990,19 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> load_from_directory(const st
   return TrxFile<DT>::_create_trx_from_pointer(header, files_pointer_size, "", directory);
 }
 
-template <typename DT> std::unique_ptr<TrxFile<DT>> load(const std::string &path) {
+template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::load(const std::string &path) {
   trx::fs::path input(path);
   if (!trx::fs::exists(input)) {
     throw std::runtime_error("Input path does not exist: " + path);
   }
   std::error_code ec;
   if (trx::fs::is_directory(input, ec) && !ec) {
-    return load_from_directory<DT>(path);
+    return TrxFile<DT>::load_from_directory(path);
   }
-  return load_from_zip<DT>(path);
+  return TrxFile<DT>::load_from_zip(path);
 }
 
-template <typename DT> TrxReader<DT>::TrxReader(const std::string &path) { trx_ = load<DT>(path); }
+template <typename DT> TrxReader<DT>::TrxReader(const std::string &path) { trx_ = TrxFile<DT>::load(path); }
 
 template <typename DT> TrxReader<DT>::TrxReader(TrxReader &&other) noexcept : trx_(std::move(other.trx_)) {}
 
@@ -1070,14 +1034,14 @@ auto with_trx_reader(const std::string &path, Fn &&fn)
   }
 }
 
-template <typename DT> void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression_standard) {
+template <typename DT> void TrxFile<DT>::save(const std::string &filename, zip_uint32_t compression_standard) {
   std::string ext = get_ext(filename);
 
   if (ext.size() > 0 && (ext != "zip" && ext != "trx")) {
     throw std::invalid_argument("Unsupported extension." + ext);
   }
 
-  auto copy_trx = trx.deepcopy();
+  auto copy_trx = this->deepcopy();
   copy_trx->resize();
   std::string tmp_dir_name = copy_trx->_uncompressed_folder_handle;
 
@@ -1124,7 +1088,9 @@ template <typename DT> void save(TrxFile<DT> &trx, const std::string filename, z
 }
 
 template <typename DT>
-void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::string &dtype, const std::string &path) {
+void TrxFile<DT>::add_dps_from_text(const std::string &name,
+                                    const std::string &dtype,
+                                    const std::string &path) {
   if (name.empty()) {
     throw std::invalid_argument("DPS name cannot be empty");
   }
@@ -1134,22 +1100,22 @@ void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::str
     return static_cast<char>(std::tolower(c));
   });
 
-  if (!_is_dtype_valid(dtype_norm)) {
+  if (!trxmmap::detail::_is_dtype_valid(dtype_norm)) {
     throw std::invalid_argument("Unsupported DPS dtype: " + dtype);
   }
   if (dtype_norm != "float16" && dtype_norm != "float32" && dtype_norm != "float64") {
     throw std::invalid_argument("Unsupported DPS dtype for text input: " + dtype);
   }
 
-  if (trx._uncompressed_folder_handle.empty()) {
+  if (this->_uncompressed_folder_handle.empty()) {
     throw std::runtime_error("TRX file has no backing directory to store DPS data");
   }
 
   size_t nb_streamlines = 0;
-  if (trx.streamlines) {
-    nb_streamlines = static_cast<size_t>(trx.streamlines->_lengths.size());
-  } else if (trx.header["NB_STREAMLINES"].is_number()) {
-    nb_streamlines = static_cast<size_t>(trx.header["NB_STREAMLINES"].int_value());
+  if (this->streamlines) {
+    nb_streamlines = static_cast<size_t>(this->streamlines->_lengths.size());
+  } else if (this->header["NB_STREAMLINES"].is_number()) {
+    nb_streamlines = static_cast<size_t>(this->header["NB_STREAMLINES"].int_value());
   }
 
   std::ifstream input(path);
@@ -1172,7 +1138,7 @@ void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::str
                              std::to_string(nb_streamlines) + ")");
   }
 
-  std::string dps_dirname = trx._uncompressed_folder_handle + SEPARATOR + "dps" + SEPARATOR;
+  std::string dps_dirname = this->_uncompressed_folder_handle + SEPARATOR + "dps" + SEPARATOR;
   {
     std::error_code ec;
     trx::fs::create_directories(dps_dirname, ec);
@@ -1189,9 +1155,9 @@ void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::str
     }
   }
 
-  auto existing = trx.data_per_streamline.find(name);
-  if (existing != trx.data_per_streamline.end()) {
-    trx.data_per_streamline.erase(existing);
+  auto existing = this->data_per_streamline.find(name);
+  if (existing != this->data_per_streamline.end()) {
+    this->data_per_streamline.erase(existing);
   }
 
   const int rows = static_cast<int>(nb_streamlines);
@@ -1224,11 +1190,13 @@ void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::str
     }
   }
 
-  trx.data_per_streamline[name] = std::move(matrix);
+  this->data_per_streamline[name] = std::move(matrix);
 }
 
 template <typename DT>
-void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::string &dtype, const std::string &path) {
+void TrxFile<DT>::add_dpv_from_tsf(const std::string &name,
+                                   const std::string &dtype,
+                                   const std::string &path) {
   if (name.empty()) {
     throw std::invalid_argument("DPV name cannot be empty");
   }
@@ -1238,23 +1206,23 @@ void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::stri
     return static_cast<char>(std::tolower(c));
   });
 
-  if (!_is_dtype_valid(dtype_norm)) {
+  if (!trxmmap::detail::_is_dtype_valid(dtype_norm)) {
     throw std::invalid_argument("Unsupported DPV dtype: " + dtype);
   }
   if (dtype_norm != "float16" && dtype_norm != "float32" && dtype_norm != "float64") {
     throw std::invalid_argument("Unsupported DPV dtype for TSF input: " + dtype);
   }
 
-  if (!trx.streamlines) {
+  if (!this->streamlines) {
     throw std::runtime_error("TRX file has no streamlines to attach DPV data");
   }
-  if (trx._uncompressed_folder_handle.empty()) {
+  if (this->_uncompressed_folder_handle.empty()) {
     throw std::runtime_error("TRX file has no backing directory to store DPV data");
   }
 
-  const auto &lengths = trx.streamlines->_lengths;
+  const auto &lengths = this->streamlines->_lengths;
   const size_t nb_streamlines = static_cast<size_t>(lengths.size());
-  const size_t nb_vertices = static_cast<size_t>(trx.streamlines->_data.rows());
+  const size_t nb_vertices = static_cast<size_t>(this->streamlines->_data.rows());
 
   std::ifstream input(path);
   if (!input.is_open()) {
@@ -1443,7 +1411,7 @@ void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::stri
                              std::to_string(nb_vertices) + ")");
   }
 
-  std::string dpv_dirname = trx._uncompressed_folder_handle + SEPARATOR + "dpv" + SEPARATOR;
+  std::string dpv_dirname = this->_uncompressed_folder_handle + SEPARATOR + "dpv" + SEPARATOR;
   {
     std::error_code ec;
     trx::fs::create_directories(dpv_dirname, ec);
@@ -1460,9 +1428,9 @@ void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::stri
     }
   }
 
-  auto existing = trx.data_per_vertex.find(name);
-  if (existing != trx.data_per_vertex.end()) {
-    trx.data_per_vertex.erase(existing);
+  auto existing = this->data_per_vertex.find(name);
+  if (existing != this->data_per_vertex.end()) {
+    this->data_per_vertex.erase(existing);
   }
 
   const int rows = static_cast<int>(nb_vertices);
@@ -1495,20 +1463,19 @@ void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::stri
     }
   }
 
-  new (&(seq->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(trx.streamlines->_offsets.data(),
-                                                                 static_cast<int>(trx.streamlines->_offsets.rows()),
-                                                                 static_cast<int>(trx.streamlines->_offsets.cols()));
-  seq->_lengths = trx.streamlines->_lengths;
+  new (&(seq->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(this->streamlines->_offsets.data(),
+                                                                 static_cast<int>(this->streamlines->_offsets.rows()),
+                                                                 static_cast<int>(this->streamlines->_offsets.cols()));
+  seq->_lengths = this->streamlines->_lengths;
 
-  trx.data_per_vertex[name] = std::move(seq);
+  this->data_per_vertex[name] = std::move(seq);
 }
 
 template <typename DT>
-void export_dpv_to_tsf(const TrxFile<DT> &trx,
-                       const std::string &name,
-                       const std::string &path,
-                       const std::string &timestamp,
-                       const std::string &dtype) {
+void TrxFile<DT>::export_dpv_to_tsf(const std::string &name,
+                                   const std::string &path,
+                                   const std::string &timestamp,
+                                   const std::string &dtype) const {
   if (name.empty()) {
     throw std::invalid_argument("DPV name cannot be empty");
   }
@@ -1521,19 +1488,19 @@ void export_dpv_to_tsf(const TrxFile<DT> &trx,
     return static_cast<char>(std::tolower(c));
   });
 
-  if (!_is_dtype_valid(dtype_norm)) {
+  if (!trxmmap::detail::_is_dtype_valid(dtype_norm)) {
     throw std::invalid_argument("Unsupported TSF dtype: " + dtype);
   }
   if (dtype_norm != "float32" && dtype_norm != "float64") {
     throw std::invalid_argument("Unsupported TSF dtype for output: " + dtype);
   }
 
-  if (!trx.streamlines) {
+  if (!this->streamlines) {
     throw std::runtime_error("TRX file has no streamlines to export DPV data");
   }
 
-  const auto dpv_it = trx.data_per_vertex.find(name);
-  if (dpv_it == trx.data_per_vertex.end()) {
+  const auto dpv_it = this->data_per_vertex.find(name);
+  if (dpv_it == this->data_per_vertex.end()) {
     throw std::runtime_error("DPV entry not found: " + name);
   }
 
@@ -1545,10 +1512,10 @@ void export_dpv_to_tsf(const TrxFile<DT> &trx,
     throw std::runtime_error("DPV must be 1D to export as TSF: " + name);
   }
 
-  const auto &lengths = trx.streamlines->_lengths;
+  const auto &lengths = this->streamlines->_lengths;
   const size_t nb_streamlines = static_cast<size_t>(lengths.size());
   const size_t nb_vertices = static_cast<size_t>(seq->_data.rows());
-  if (nb_vertices != static_cast<size_t>(trx.streamlines->_data.rows())) {
+  if (nb_vertices != static_cast<size_t>(this->streamlines->_data.rows())) {
     throw std::runtime_error("DPV vertex count does not match streamlines data");
   }
 

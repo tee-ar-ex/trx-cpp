@@ -230,6 +230,8 @@ public:
                            std::string root_zip = "",
                            std::string root = "");
 
+  template <typename> friend class TrxReader;
+
   /**
    * @brief Create a deepcopy of the TrxFile
    *
@@ -247,6 +249,21 @@ public:
   void resize(int nb_streamlines = -1, int nb_vertices = -1, bool delete_dpg = false);
 
   /**
+   * @brief Save a TrxFile
+   *
+   * @param filename  The path to save the TrxFile to
+   * @param compression_standard The compression standard to use, as defined by libzip (default: no compression)
+   */
+  void save(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+
+  void add_dps_from_text(const std::string &name, const std::string &dtype, const std::string &path);
+  void add_dpv_from_tsf(const std::string &name, const std::string &dtype, const std::string &path);
+  void export_dpv_to_tsf(const std::string &name,
+                         const std::string &path,
+                         const std::string &timestamp,
+                         const std::string &dtype = "float32") const;
+
+  /**
    * @brief Cleanup on-disk temporary folder and initialize an empty TrxFile
    *
    */
@@ -254,6 +271,26 @@ public:
   void _cleanup_temporary_directory();
 
 private:
+  /**
+   * @brief Load a TrxFile from a zip archive.
+   *
+   * Internal: prefer TrxReader / with_trx_reader in public API.
+   */
+  static std::unique_ptr<TrxFile<DT>> load_from_zip(const std::string &path);
+
+  /**
+   * @brief Load a TrxFile from an on-disk directory.
+   *
+   * Internal: prefer TrxReader / with_trx_reader in public API.
+   */
+  static std::unique_ptr<TrxFile<DT>> load_from_directory(const std::string &path);
+
+  /**
+   * @brief Load a TrxFile from either a zip archive or directory.
+   *
+   * Internal: prefer TrxReader / with_trx_reader in public API.
+   */
+  static std::unique_ptr<TrxFile<DT>> load(const std::string &path);
   /**
    * @brief Get the real size of data (ignoring zeros of preallocation)
    *
@@ -285,32 +322,6 @@ private:
  * */
 json assignHeader(const json &root);
 
-/**
- * Returns the properly formatted datatype name
- *
- * @param[in] dtype the returned Eigen datatype
- * @param[out] fmt_dtype the formatted datatype
- *
- * */
-std::string _get_dtype(const std::string &dtype);
-
-/**
- * @brief Get the size of the datatype
- *
- * @param dtype the string name of the datatype
- * @return int corresponding to the size of the datatype
- */
-int _sizeof_dtype(const std::string &dtype);
-
-/**
- * Determine whether the extension is a valid extension
- *
- *
- * @param[in] ext a string consisting of the extension starting by a .
- * @param[out] is_valid a boolean denoting whether the extension is valid.
- *
- * */
-bool _is_dtype_valid(const std::string &ext);
 
 /**
  * This function loads the header json file
@@ -468,29 +479,6 @@ mio::shared_mmap_sink _create_memmap(std::string filename,
 
 template <typename DT>
 std::string _generate_filename_from_data(const Eigen::MatrixBase<DT> &arr, const std::string filename);
-std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string &filename);
-
-/**
- * @brief Compute the lengths from offsets and header information
- *
- * @tparam DT The datatype (used for the input matrix)
- * @param[in] offsets An array of offsets
- * @param[in] nb_vertices the number of vertices
- * @return Matrix<uint32_t, Dynamic, Dynamic> of lengths
- */
-template <typename DT>
-Eigen::Matrix<uint32_t, Eigen::Dynamic, 1> _compute_lengths(const Eigen::MatrixBase<DT> &offsets, int nb_vertices);
-
-/**
- * @brief Find where data of a contiguous array is actually ending
- *
- * @tparam DT (the datatype)
- * @param x Matrix of values
- * @param l_bound lower bound index for search
- * @param r_bound upper bound index for search
- * @return int index at which array value is 0 (if possible), otherwise returns -1
- */
-template <typename DT> int _dichotomic_search(const Eigen::MatrixBase<DT> &x, int l_bound = -1, int r_bound = -1);
 
 /**
  * @brief Create on-disk memmaps of a certain size (preallocation)
@@ -519,21 +507,6 @@ void ediff1d(Eigen::Matrix<DT, Eigen::Dynamic, 1> &lengths,
  * @param compression_standard The compression standard to use, as defined by libzip (default: no
  * compression)
  */
-template <typename DT>
-void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
-
-template <typename DT>
-void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::string &dtype, const std::string &path);
-
-template <typename DT>
-void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::string &dtype, const std::string &path);
-
-template <typename DT>
-void export_dpv_to_tsf(const TrxFile<DT> &trx,
-                       const std::string &name,
-                       const std::string &path,
-                       const std::string &timestamp,
-                       const std::string &dtype = "float32");
 
 /**
  * @brief Utils function to zip on-disk memmaps
@@ -559,9 +532,16 @@ std::string extract_zip_to_directory(zip_t *zfolder);
 
 std::string rm_root(const std::string &root, const std::string &path);
 #ifndef TRX_TPP_STANDALONE
-#include <trx/trx.tpp>
 #endif
 
+} // namespace trxmmap
+
+#include <trx/detail/dtype_helpers.h>
+
+namespace trxmmap {
+#ifndef TRX_TPP_STANDALONE
+#include <trx/trx.tpp>
+#endif
 } // namespace trxmmap
 
 #endif /* TRX_H */

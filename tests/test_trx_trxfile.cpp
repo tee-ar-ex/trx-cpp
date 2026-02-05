@@ -18,8 +18,8 @@ using namespace trxmmap;
 namespace fs = std::filesystem;
 
 namespace {
-template <typename DT> std::unique_ptr<trxmmap::TrxFile<DT>> load_trx_dir(const fs::path &path) {
-  return trxmmap::load_from_directory<DT>(path.string());
+template <typename DT> trxmmap::TrxReader<DT> load_trx_dir(const fs::path &path) {
+  return trxmmap::TrxReader<DT>(path.string());
 }
 
 fs::path make_temp_test_dir(const std::string &prefix) {
@@ -120,7 +120,8 @@ TEST(TrxFileTpp, DeepcopyEmpty) {
 TEST(TrxFileTpp, DeepcopyWithGroupsDpgDpvDps) {
   const fs::path data_dir = create_float_trx_dir();
 
-  auto trx = load_trx_dir<float>(data_dir);
+  auto reader = load_trx_dir<float>(data_dir);
+  auto *trx = reader.get();
   auto copy = trx->deepcopy();
 
   EXPECT_EQ(copy->header, trx->header);
@@ -176,12 +177,13 @@ TEST(TrxFileTpp, DeepcopyWithGroupsDpgDpvDps) {
 // _copy_fixed_arrays_from copies streamlines + dpv/dps into a preallocated target.
 TEST(TrxFileTpp, CopyFixedArraysFrom) {
   const fs::path data_dir = create_float_trx_dir();
-  auto src = load_trx_dir<float>(data_dir);
+  auto src_reader = load_trx_dir<float>(data_dir);
+  auto *src = src_reader.get();
   const int nb_vertices = src->header["NB_VERTICES"].int_value();
   const int nb_streamlines = src->header["NB_STREAMLINES"].int_value();
-  auto dst = std::make_unique<trxmmap::TrxFile<float>>(nb_vertices, nb_streamlines, src.get());
+  auto dst = std::make_unique<trxmmap::TrxFile<float>>(nb_vertices, nb_streamlines, src);
 
-  dst->_copy_fixed_arrays_from(src.get(), 0, 0, nb_streamlines);
+  dst->_copy_fixed_arrays_from(src, 0, 0, nb_streamlines);
 
   EXPECT_EQ(dst->streamlines->_data, src->streamlines->_data);
   EXPECT_EQ(dst->streamlines->_offsets, src->streamlines->_offsets);
@@ -211,7 +213,8 @@ TEST(TrxFileTpp, CopyFixedArraysFrom) {
 // resize() with default arguments is a no-op when sizes already match.
 TEST(TrxFileTpp, ResizeNoChange) {
   const fs::path data_dir = create_float_trx_dir();
-  auto trx = load_trx_dir<float>(data_dir);
+  auto reader = load_trx_dir<float>(data_dir);
+  auto *trx = reader.get();
   json header_before = trx->header;
   trx->resize();
   EXPECT_EQ(trx->header, header_before);
@@ -225,7 +228,8 @@ TEST(TrxFileTpp, ResizeNoChange) {
 // dpv/dps/groups/dpg.
 TEST(TrxFileTpp, ResizeDeleteDpgCloses) {
   const fs::path data_dir = create_float_trx_dir();
-  auto trx = load_trx_dir<float>(data_dir);
+  auto reader = load_trx_dir<float>(data_dir);
+  auto *trx = reader.get();
   trx->resize(1, -1, true);
 
   EXPECT_EQ(trx->header["NB_STREAMLINES"].int_value(), 0);
