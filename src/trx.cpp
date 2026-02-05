@@ -288,10 +288,10 @@ AnyTrxFile AnyTrxFile::load_from_directory(const std::string &path) {
   return trx;
 }
 
-AnyTrxFile AnyTrxFile::_create_from_pointer(
-    json header,
-    const std::map<std::string, std::tuple<long long, long long>> &dict_pointer_size,
-    const std::string &root) {
+AnyTrxFile
+AnyTrxFile::_create_from_pointer(json header,
+                                 const std::map<std::string, std::tuple<long long, long long>> &dict_pointer_size,
+                                 const std::string &root) {
   AnyTrxFile trx;
   trx.header = header;
 
@@ -323,8 +323,7 @@ AnyTrxFile AnyTrxFile::_create_from_pointer(
       folder.clear();
     }
 
-    std::tuple<std::string, int, std::string> base_tuple =
-        trx::detail::_split_ext_with_dimensionality(elem_filename);
+    std::tuple<std::string, int, std::string> base_tuple = trx::detail::_split_ext_with_dimensionality(elem_filename);
     std::string base(std::get<0>(base_tuple));
     int dim = std::get<1>(base_tuple);
     std::string ext(std::get<2>(base_tuple));
@@ -367,7 +366,8 @@ AnyTrxFile AnyTrxFile::_create_from_pointer(
       }
       std::string data_name = path_basename(base);
       std::string sub_folder = path_basename(folder);
-      trx.data_per_group[sub_folder].emplace(data_name, make_typed_array(elem_filename, 1, static_cast<int>(size), ext));
+      trx.data_per_group[sub_folder].emplace(data_name,
+                                             make_typed_array(elem_filename, 1, static_cast<int>(size), ext));
     } else if (folder == "groups") {
       if (dim != 1) {
         throw std::invalid_argument("Wrong group dimensionality");
@@ -455,7 +455,8 @@ void AnyTrxFile::save(const std::string &filename, zip_uint32_t compression_stan
     }
   }
 
-  const std::string source_dir = !_uncompressed_folder_handle.empty() ? _uncompressed_folder_handle : _backing_directory;
+  const std::string source_dir =
+      !_uncompressed_folder_handle.empty() ? _uncompressed_folder_handle : _backing_directory;
   if (source_dir.empty()) {
     throw std::runtime_error("TRX file has no backing directory to save from");
   }

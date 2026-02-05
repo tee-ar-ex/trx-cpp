@@ -20,8 +20,8 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#include <vector>
 #include <variant>
+#include <vector>
 #include <zip.h>
 
 #include <mio/mmap.hpp>
@@ -371,8 +371,7 @@ struct TypedArray {
    * This is a zero-copy view over the underlying memory map. The dtype must
    * match the requested T or an exception is thrown.
    */
-  template <typename T>
-  Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> as_matrix() {
+  template <typename T> Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> as_matrix() {
     return Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(data_as<T>(), rows, cols);
   }
 
@@ -384,7 +383,8 @@ struct TypedArray {
    */
   template <typename T>
   Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> as_matrix() const {
-    return Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(data_as<T>(), rows, cols);
+    return Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(
+        data_as<T>(), rows, cols);
   }
 
   struct ByteView {
@@ -421,8 +421,7 @@ struct TypedArray {
     if (empty()) {
       return {};
     }
-    return {reinterpret_cast<std::uint8_t *>(mmap.data()),
-            static_cast<size_t>(detail::_sizeof_dtype(dtype)) * size()};
+    return {reinterpret_cast<std::uint8_t *>(mmap.data()), static_cast<size_t>(detail::_sizeof_dtype(dtype)) * size()};
   }
 
 private:
@@ -482,10 +481,10 @@ private:
   std::string _backing_directory;
 
   static std::string _normalize_dtype(const std::string &dtype);
-  static AnyTrxFile _create_from_pointer(
-      json header,
-      const std::map<std::string, std::tuple<long long, long long>> &dict_pointer_size,
-      const std::string &root);
+  static AnyTrxFile
+  _create_from_pointer(json header,
+                       const std::map<std::string, std::tuple<long long, long long>> &dict_pointer_size,
+                       const std::string &root);
   void _cleanup_temporary_directory();
 };
 

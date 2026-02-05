@@ -93,8 +93,7 @@ TEST(AnyTrxFile, LoadZipAndValidate) {
   const fs::path gs_trx = gs_dir / "gs.trx";
   auto trx = load_any(gs_trx.string());
 
-  EXPECT_TRUE(trx.positions.dtype == "float16" || trx.positions.dtype == "float32" ||
-              trx.positions.dtype == "float64");
+  EXPECT_TRUE(trx.positions.dtype == "float16" || trx.positions.dtype == "float32" || trx.positions.dtype == "float64");
   expect_basic_consistency(trx);
 
   if (trx.positions.dtype == "float32") {
@@ -110,8 +109,7 @@ TEST(AnyTrxFile, LoadDirectoryAndValidate) {
   const fs::path gs_trx = gs_dir / "gs_fldr.trx";
   auto trx = load_any(gs_trx.string());
 
-  EXPECT_TRUE(trx.positions.dtype == "float16" || trx.positions.dtype == "float32" ||
-              trx.positions.dtype == "float64");
+  EXPECT_TRUE(trx.positions.dtype == "float16" || trx.positions.dtype == "float32" || trx.positions.dtype == "float64");
   expect_basic_consistency(trx);
   trx.close();
 }

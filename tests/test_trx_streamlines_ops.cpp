@@ -60,8 +60,7 @@ TEST_P(StreamlinesOpsIntersectionTest, Intersection) {
   const std::vector<Streamline> streamlines_ori = {s1, s2};
   const std::vector<Streamline> streamlines_new = make_streamlines_new(s2, noise);
 
-  auto result =
-      trx::perform_streamlines_operation(trx::intersection, {streamlines_new, streamlines_ori}, precision);
+  auto result = trx::perform_streamlines_operation(trx::intersection, {streamlines_new, streamlines_ori}, precision);
   const auto &indices = result.second;
   EXPECT_EQ(indices, expected);
 }
@@ -90,8 +89,7 @@ TEST_P(StreamlinesOpsUnionTest, Union) {
   const std::vector<Streamline> streamlines_ori = {s1, s2};
   const std::vector<Streamline> streamlines_new = make_streamlines_new(s2, noise);
 
-  auto result =
-      trx::perform_streamlines_operation(trx::union_maps, {streamlines_new, streamlines_ori}, precision);
+  auto result = trx::perform_streamlines_operation(trx::union_maps, {streamlines_new, streamlines_ori}, precision);
   EXPECT_EQ(result.first.size(), expected);
 }
 
@@ -119,8 +117,7 @@ TEST_P(StreamlinesOpsDifferenceTest, Difference) {
   const std::vector<Streamline> streamlines_ori = {s1, s2};
   const std::vector<Streamline> streamlines_new = make_streamlines_new(s2, noise);
 
-  auto result =
-      trx::perform_streamlines_operation(trx::difference, {streamlines_new, streamlines_ori}, precision);
+  auto result = trx::perform_streamlines_operation(trx::difference, {streamlines_new, streamlines_ori}, precision);
   EXPECT_EQ(result.first.size(), expected);
 }
 

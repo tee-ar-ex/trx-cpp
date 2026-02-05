@@ -143,9 +143,7 @@ void expect_allclose(const Matrix<float, Dynamic, Dynamic, RowMajor> &actual,
   }
 }
 
-template <typename DT> trx::TrxReader<DT> load_trx(const fs::path &path) {
-  return trx::TrxReader<DT>(path.string());
-}
+template <typename DT> trx::TrxReader<DT> load_trx(const fs::path &path) { return trx::TrxReader<DT>(path.string()); }
 
 class ScopedEnvVar {
 public:

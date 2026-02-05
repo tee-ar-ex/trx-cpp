@@ -347,8 +347,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
     }
 
     // _split_ext_with_dimensionality
-    std::tuple<std::string, int, std::string> base_tuple =
-        trx::detail::_split_ext_with_dimensionality(elem_filename);
+    std::tuple<std::string, int, std::string> base_tuple = trx::detail::_split_ext_with_dimensionality(elem_filename);
     std::string base(std::get<0>(base_tuple));
     int dim = std::get<1>(base_tuple);
     std::string ext(std::get<2>(base_tuple));
@@ -495,8 +494,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       std::string sub_folder = path_basename(folder);
 
       trx->data_per_group[sub_folder][data_name] = std::make_unique<MMappedMatrix<DT>>();
-      trx->data_per_group[sub_folder][data_name]->mmap =
-          trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      trx->data_per_group[sub_folder][data_name]->mmap = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
       if (ext.compare("float16") == 0) {
         new (&(trx->data_per_group[sub_folder][data_name]->_matrix)) Map<Matrix<half, Dynamic, Dynamic>>(
@@ -1053,7 +1051,8 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, zip_u
   }
   if (copy_trx->header["NB_VERTICES"].is_number()) {
     const auto nb_vertices = static_cast<uint64_t>(copy_trx->header["NB_VERTICES"].int_value());
-    const auto last = static_cast<uint64_t>(copy_trx->streamlines->_offsets(copy_trx->streamlines->_offsets.size() - 1));
+    const auto last =
+        static_cast<uint64_t>(copy_trx->streamlines->_offsets(copy_trx->streamlines->_offsets.size() - 1));
     if (last != nb_vertices) {
       throw std::runtime_error("TRX offsets sentinel does not match NB_VERTICES");
     }
@@ -1064,7 +1063,8 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, zip_u
     }
   }
   if (copy_trx->streamlines->_data.size() > 0) {
-    const auto last = static_cast<uint64_t>(copy_trx->streamlines->_offsets(copy_trx->streamlines->_offsets.size() - 1));
+    const auto last =
+        static_cast<uint64_t>(copy_trx->streamlines->_offsets(copy_trx->streamlines->_offsets.size() - 1));
     if (last != static_cast<uint64_t>(copy_trx->streamlines->_data.rows())) {
       throw std::runtime_error("TRX positions row count does not match offsets sentinel");
     }

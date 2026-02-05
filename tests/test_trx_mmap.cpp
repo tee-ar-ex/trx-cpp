@@ -274,12 +274,9 @@ TEST(TrxFileMemmap, detect_positions_scalar_type_directory) {
   const fs::path float32_dir = make_dir_with_positions("float32");
   const fs::path float64_dir = make_dir_with_positions("float64");
 
-  EXPECT_EQ(trx::detect_positions_scalar_type(float16_dir.string(), TrxScalarType::Float64),
-            TrxScalarType::Float16);
-  EXPECT_EQ(trx::detect_positions_scalar_type(float32_dir.string(), TrxScalarType::Float16),
-            TrxScalarType::Float32);
-  EXPECT_EQ(trx::detect_positions_scalar_type(float64_dir.string(), TrxScalarType::Float32),
-            TrxScalarType::Float64);
+  EXPECT_EQ(trx::detect_positions_scalar_type(float16_dir.string(), TrxScalarType::Float64), TrxScalarType::Float16);
+  EXPECT_EQ(trx::detect_positions_scalar_type(float32_dir.string(), TrxScalarType::Float16), TrxScalarType::Float32);
+  EXPECT_EQ(trx::detect_positions_scalar_type(float64_dir.string(), TrxScalarType::Float32), TrxScalarType::Float64);
 }
 
 TEST(TrxFileMemmap, detect_positions_scalar_type_fallback) {
@@ -292,8 +289,7 @@ TEST(TrxFileMemmap, detect_positions_scalar_type_fallback) {
   ASSERT_TRUE(out.is_open());
   out.close();
 
-  EXPECT_THROW(trx::detect_positions_scalar_type(invalid_dir.string(), TrxScalarType::Float64),
-               std::invalid_argument);
+  EXPECT_THROW(trx::detect_positions_scalar_type(invalid_dir.string(), TrxScalarType::Float64), std::invalid_argument);
 }
 
 TEST(TrxFileMemmap, detect_positions_scalar_type_missing_path) {
