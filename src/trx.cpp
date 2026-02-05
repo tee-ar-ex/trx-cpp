@@ -380,7 +380,7 @@ void allocate_file(const std::string &path, std::size_t size) {
 }
 
 mio::shared_mmap_sink _create_memmap(std::string filename,
-                                     std::tuple<int, int> &shape,
+                                     const std::tuple<int, int> &shape,
                                      const std::string &mode,
                                      const std::string &dtype,
                                      long long offset) {
@@ -441,8 +441,8 @@ json assignHeader(const json &root) {
 }
 
 void get_reference_info(const std::string &reference,
-                        const MatrixXf &affine,          // NOLINT(misc-include-cleaner)
-                        const RowVectorXi &dimensions) { // NOLINT(misc-use-internal-linkage,misc-include-cleaner)
+                        const Eigen::MatrixXf &affine,     // NOLINT(misc-include-cleaner)
+                        const Eigen::RowVectorXi &dimensions) { // NOLINT(misc-use-internal-linkage,misc-include-cleaner)
   static_cast<void>(affine);
   static_cast<void>(dimensions);
   // TODO: find a library to use for nifti and trk (MRtrix??)
@@ -470,51 +470,19 @@ void copy_dir(const string &src, const string &dst) {
   }
 
   ec.clear();
-  for (trx::fs::recursive_directory_iterator it(src_path, ec), end; it != end; it.increment(ec)) {
-    if (ec) {
-      throw std::runtime_error("Failed to read directory: " + src_path.string());
-    }
-    const trx::fs::path current = it->path();
-    const trx::fs::path rel = current.lexically_relative(src_path);
-    const trx::fs::path target = dst_path / rel;
-    std::error_code entry_ec;
-    if (it->is_directory(entry_ec)) {
-      trx::fs::create_directories(target, entry_ec);
-      if (entry_ec) {
-        throw std::runtime_error("Could not create directory " + target.string());
-      }
-      continue;
-    }
-    if (!it->is_regular_file(entry_ec)) {
-      continue;
-    }
-    copy_file(current.string(), target.string());
+  const auto options = trx::fs::copy_options::recursive | trx::fs::copy_options::overwrite_existing |
+                       trx::fs::copy_options::skip_symlinks;
+  trx::fs::copy(src_path, dst_path, options, ec);
+  if (ec) {
+    throw std::runtime_error("Failed to copy directory: " + ec.message());
   }
 }
 
 void copy_file(const string &src, const string &dst) {
-  std::ifstream in(src, std::ios::binary);
-  if (!in.is_open()) {
-    throw std::runtime_error(std::string("Failed to open source file ") + src);
-  }
-  std::ofstream out(dst, std::ios::binary | std::ios::trunc);
-  if (!out.is_open()) {
-    throw std::runtime_error(std::string("Failed to open destination file ") + dst);
-  }
-
-  std::array<char, 4096> buffer{};
-  while (in) {
-    in.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-    const std::streamsize n = in.gcount();
-    if (n > 0) {
-      out.write(buffer.data(), n);
-      if (!out) {
-        throw std::runtime_error(std::string("Error writing to file ") + dst);
-      }
-    }
-  }
-  if (!in.eof()) {
-    throw std::runtime_error(std::string("Error reading file ") + src);
+  std::error_code ec;
+  trx::fs::copy_file(src, dst, trx::fs::copy_options::overwrite_existing, ec);
+  if (ec) {
+    throw std::runtime_error(std::string("Failed to copy file ") + src + ": " + ec.message());
   }
 }
 int rm_dir(const string &d) {

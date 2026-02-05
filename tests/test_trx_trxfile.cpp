@@ -1,4 +1,5 @@
 #include <any>
+#include <memory>
 #include <sstream>
 
 #define private public
@@ -17,7 +18,7 @@ using namespace trxmmap;
 namespace fs = std::filesystem;
 
 namespace {
-template <typename DT> trxmmap::TrxFile<DT> *load_trx_dir(const fs::path &path) {
+template <typename DT> std::unique_ptr<trxmmap::TrxFile<DT>> load_trx_dir(const fs::path &path) {
   return trxmmap::load_from_directory<DT>(path.string());
 }
 
@@ -106,22 +107,21 @@ fs::path create_float_trx_dir() {
 
 TEST(TrxFileTpp, DeepcopyEmpty) {
   trxmmap::TrxFile<half> empty;
-  trxmmap::TrxFile<half> *copy = empty.deepcopy();
+  auto copy = empty.deepcopy();
   EXPECT_EQ(copy->header, empty.header);
   if (copy->streamlines != nullptr) {
     EXPECT_EQ(copy->streamlines->_data.size(), 0);
     EXPECT_EQ(copy->streamlines->_offsets.size(), 0);
     EXPECT_EQ(copy->streamlines->_lengths.size(), 0);
   }
-  delete copy;
 }
 
 // Deepcopy preserves streamlines, dpv/dps, groups, and dpg shapes/content.
 TEST(TrxFileTpp, DeepcopyWithGroupsDpgDpvDps) {
   const fs::path data_dir = create_float_trx_dir();
 
-  trxmmap::TrxFile<float> *trx = load_trx_dir<float>(data_dir);
-  trxmmap::TrxFile<float> *copy = trx->deepcopy();
+  auto trx = load_trx_dir<float>(data_dir);
+  auto copy = trx->deepcopy();
 
   EXPECT_EQ(copy->header, trx->header);
   EXPECT_EQ(copy->streamlines->_data, trx->streamlines->_data);
@@ -168,8 +168,6 @@ TEST(TrxFileTpp, DeepcopyWithGroupsDpgDpvDps) {
 
   trx->close();
   copy->close();
-  delete trx;
-  delete copy;
 
   std::error_code ec;
   fs::remove_all(data_dir, ec);
@@ -178,12 +176,12 @@ TEST(TrxFileTpp, DeepcopyWithGroupsDpgDpvDps) {
 // _copy_fixed_arrays_from copies streamlines + dpv/dps into a preallocated target.
 TEST(TrxFileTpp, CopyFixedArraysFrom) {
   const fs::path data_dir = create_float_trx_dir();
-  trxmmap::TrxFile<float> *src = load_trx_dir<float>(data_dir);
+  auto src = load_trx_dir<float>(data_dir);
   const int nb_vertices = src->header["NB_VERTICES"].int_value();
   const int nb_streamlines = src->header["NB_STREAMLINES"].int_value();
-  trxmmap::TrxFile<float> *dst = new trxmmap::TrxFile<float>(nb_vertices, nb_streamlines, src);
+  auto dst = std::make_unique<trxmmap::TrxFile<float>>(nb_vertices, nb_streamlines, src.get());
 
-  dst->_copy_fixed_arrays_from(src, 0, 0, nb_streamlines);
+  dst->_copy_fixed_arrays_from(src.get(), 0, 0, nb_streamlines);
 
   EXPECT_EQ(dst->streamlines->_data, src->streamlines->_data);
   EXPECT_EQ(dst->streamlines->_offsets, src->streamlines->_offsets);
@@ -205,8 +203,6 @@ TEST(TrxFileTpp, CopyFixedArraysFrom) {
 
   src->close();
   dst->close();
-  delete src;
-  delete dst;
 
   std::error_code ec;
   fs::remove_all(data_dir, ec);
@@ -215,12 +211,11 @@ TEST(TrxFileTpp, CopyFixedArraysFrom) {
 // resize() with default arguments is a no-op when sizes already match.
 TEST(TrxFileTpp, ResizeNoChange) {
   const fs::path data_dir = create_float_trx_dir();
-  trxmmap::TrxFile<float> *trx = load_trx_dir<float>(data_dir);
+  auto trx = load_trx_dir<float>(data_dir);
   json header_before = trx->header;
   trx->resize();
   EXPECT_EQ(trx->header, header_before);
   trx->close();
-  delete trx;
 
   std::error_code ec;
   fs::remove_all(data_dir, ec);
@@ -230,7 +225,7 @@ TEST(TrxFileTpp, ResizeNoChange) {
 // dpv/dps/groups/dpg.
 TEST(TrxFileTpp, ResizeDeleteDpgCloses) {
   const fs::path data_dir = create_float_trx_dir();
-  trxmmap::TrxFile<float> *trx = load_trx_dir<float>(data_dir);
+  auto trx = load_trx_dir<float>(data_dir);
   trx->resize(1, -1, true);
 
   EXPECT_EQ(trx->header["NB_STREAMLINES"].int_value(), 0);
@@ -240,7 +235,7 @@ TEST(TrxFileTpp, ResizeDeleteDpgCloses) {
   EXPECT_EQ(trx->data_per_vertex.size(), 0u);
   EXPECT_EQ(trx->data_per_streamline.size(), 0u);
 
-  delete trx;
+  trx->close();
 
   std::error_code ec;
   fs::remove_all(data_dir, ec);

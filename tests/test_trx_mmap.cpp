@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <memory>
 #include <random>
 #include <stdexcept>
 #include <sys/stat.h>
@@ -598,9 +599,8 @@ TEST(TrxFileMemmap, load_header) {
 // Mirrors trx/tests/test_memmap.py::test_load (small.trx via zip path).
 TEST(TrxFileMemmap, load_zip) {
   const auto &fixture = get_fixture();
-  trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(fixture.path);
+  auto trx = trxmmap::load_from_zip<half>(fixture.path);
   EXPECT_GT(trx->streamlines->_data.size(), 0);
-  delete trx;
 }
 
 // Mirrors trx/tests/test_memmap.py::test_load for small.trx and small_compressed.trx.
@@ -613,23 +613,20 @@ TEST(TrxFileMemmap, load_zip_test_data) {
 
   const fs::path small_trx = memmap_dir / "small.trx";
   ASSERT_TRUE(fs::exists(small_trx));
-  trxmmap::TrxFile<half> *trx_small = trxmmap::load_from_zip<half>(small_trx.string());
+  auto trx_small = trxmmap::load_from_zip<half>(small_trx.string());
   EXPECT_GT(trx_small->streamlines->_data.size(), 0);
-  delete trx_small;
 
   const fs::path small_compressed = memmap_dir / "small_compressed.trx";
   ASSERT_TRUE(fs::exists(small_compressed));
-  trxmmap::TrxFile<half> *trx_compressed = trxmmap::load_from_zip<half>(small_compressed.string());
+  auto trx_compressed = trxmmap::load_from_zip<half>(small_compressed.string());
   EXPECT_GT(trx_compressed->streamlines->_data.size(), 0);
-  delete trx_compressed;
 }
 
 // Mirrors trx/tests/test_memmap.py::test_load (small_fldr.trx via directory path).
 TEST(TrxFileMemmap, load_directory) {
   const auto &fixture = get_fixture();
-  trxmmap::TrxFile<half> *trx = trxmmap::load_from_directory<half>(fixture.dir_path);
+  auto trx = trxmmap::load_from_directory<half>(fixture.dir_path);
   EXPECT_GT(trx->streamlines->_data.size(), 0);
-  delete trx;
 }
 
 // Mirrors trx/tests/test_memmap.py::test_load_directory.
@@ -642,9 +639,8 @@ TEST(TrxFileMemmap, load_directory_test_data) {
 
   const fs::path small_dir = memmap_dir / "small_fldr.trx";
   ASSERT_TRUE(fs::exists(small_dir));
-  trxmmap::TrxFile<half> *trx = trxmmap::load_from_directory<half>(small_dir.string());
+  auto trx = trxmmap::load_from_directory<half>(small_dir.string());
   EXPECT_GT(trx->streamlines->_data.size(), 0);
-  delete trx;
 }
 
 // Mirrors trx/tests/test_memmap.py::test_load with missing path raising.
@@ -661,7 +657,7 @@ TEST(TrxFileMemmap, load_missing_trx_throws) {
 
 // validates C++ TrxFile initialization.
 TEST(TrxFileMemmap, TrxFile) {
-  trxmmap::TrxFile<half> *trx = new TrxFile<half>();
+  auto trx = std::make_unique<TrxFile<half>>();
 
   // expected header
   json::object expected_obj;
@@ -682,13 +678,13 @@ TEST(TrxFileMemmap, TrxFile) {
   int errorp = 0;
   zip_t *zf = trxmmap::open_zip_for_read(fixture.path, errorp);
   json root = trxmmap::load_header(zf);
-  TrxFile<half> *root_init = new TrxFile<half>();
+  auto root_init = std::make_unique<TrxFile<half>>();
   root_init->header = root;
   zip_close(zf);
 
   // TODO: test for now..
 
-  trxmmap::TrxFile<half> *trx_init = new TrxFile<half>(fixture.nb_vertices, fixture.nb_streamlines, root_init);
+  auto trx_init = std::make_unique<TrxFile<half>>(fixture.nb_vertices, fixture.nb_streamlines, root_init.get());
   json::object init_as_obj;
   init_as_obj["DIMENSIONS"] = json::array{117, 151, 115};
   init_as_obj["NB_STREAMLINES"] = fixture.nb_streamlines;
@@ -705,41 +701,33 @@ TEST(TrxFileMemmap, TrxFile) {
   EXPECT_EQ(trx_init->streamlines->_data.size(), fixture.nb_vertices * 3);
   EXPECT_EQ(trx_init->streamlines->_offsets.size(), fixture.nb_streamlines + 1);
   EXPECT_EQ(trx_init->streamlines->_lengths.size(), fixture.nb_streamlines);
-  delete trx;
-  delete root_init;
-  delete trx_init;
 }
 
 // validates C++ deepcopy.
 TEST(TrxFileMemmap, deepcopy) {
   const auto &fixture = get_fixture();
-  trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(fixture.path);
-  trxmmap::TrxFile<half> *copy = trx->deepcopy();
+  auto trx = trxmmap::load_from_zip<half>(fixture.path);
+  auto copy = trx->deepcopy();
 
   EXPECT_EQ(trx->header, copy->header);
   EXPECT_EQ(trx->streamlines->_data, trx->streamlines->_data);
   EXPECT_EQ(trx->streamlines->_offsets, trx->streamlines->_offsets);
   EXPECT_EQ(trx->streamlines->_lengths, trx->streamlines->_lengths);
-  delete trx;
-  delete copy;
 }
 
 // Mirrors trx/tests/test_memmap.py::test_resize.
 TEST(TrxFileMemmap, resize) {
   const auto &fixture = get_fixture();
-  trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(fixture.path);
+  auto trx = trxmmap::load_from_zip<half>(fixture.path);
   trx->resize();
   trx->resize(10);
-  delete trx;
 }
 // exercises save paths in C++.
 TEST(TrxFileMemmap, save) {
   const auto &fixture = get_fixture();
-  trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(fixture.path);
+  auto trx = trxmmap::load_from_zip<half>(fixture.path);
   trxmmap::save(*trx, (std::string) "testsave");
   trxmmap::save(*trx, (std::string) "testsave.trx");
-
-  delete trx;
 
   // trxmmap::TrxFile<half> *saved = trxmmap::load_from_zip<half>("testsave.trx");
   //  EXPECT_EQ(saved->data_per_vertex["color_x.float16"]->_data,

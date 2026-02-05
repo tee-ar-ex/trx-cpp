@@ -1,8 +1,12 @@
-#include "../src/trx.h"
+#include <trx/trx.h>
 
-using namespace trxmmap;
 int main(int argc, char **argv) { // check_syntax off
-  trxmmap::TrxFile<half> *trx = trxmmap::load_from_zip<half>(argv[1]);
+  if (argc < 2) {
+    std::cerr << "Usage: load_trx <path.trx>\n";
+    return 1;
+  }
+
+  auto trx = trxmmap::load_from_zip<Eigen::half>(argv[1]);
 
   std::cout << "Vertices: " << trx->streamlines->_data.size() / 3 << "\n";
   std::cout << "First vertex (x,y,z): " << trx->streamlines->_data(0, 0) << "," << trx->streamlines->_data(0, 1) << ","

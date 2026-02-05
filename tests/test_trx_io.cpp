@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <limits>
+#include <memory>
 #include <random>
 #include <set>
 #include <sstream>
@@ -142,7 +143,7 @@ void expect_allclose(const Matrix<float, Dynamic, Dynamic, RowMajor> &actual,
   }
 }
 
-template <typename DT> trxmmap::TrxFile<DT> *load_trx(const fs::path &path) {
+template <typename DT> std::unique_ptr<trxmmap::TrxFile<DT>> load_trx(const fs::path &path) {
   if (is_dir(path)) {
     return trxmmap::load_from_directory<DT>(path.string());
   }
@@ -350,11 +351,10 @@ TEST(TrxFileIo, load_rasmm) {
   const std::vector<fs::path> inputs = {gs_dir / "gs.trx", gs_dir / "gs_fldr.trx"};
   for (const auto &input : inputs) {
     ASSERT_TRUE(fs::exists(input));
-    trxmmap::TrxFile<float> *trx = load_trx<float>(input);
+  auto trx = load_trx<float>(input);
     Matrix<float, Dynamic, Dynamic, RowMajor> actual = trx->streamlines->_data;
     expect_allclose(actual, coords);
     trx->close();
-    delete trx;
   }
 }
 
@@ -367,7 +367,7 @@ TEST(TrxFileIo, multi_load_save_rasmm) {
     ASSERT_TRUE(fs::exists(input));
     fs::path tmp_dir = make_temp_test_dir("trx_gs");
 
-    trxmmap::TrxFile<float> *trx = load_trx<float>(input);
+    auto trx = load_trx<float>(input);
     const std::string input_str = normalize_path(input.string());
     const std::string basename = trxmmap::get_base("/", input_str);
     const std::string ext = trxmmap::get_ext(input_str);
@@ -377,14 +377,12 @@ TEST(TrxFileIo, multi_load_save_rasmm) {
       fs::path out_path = tmp_dir / (basename_no_ext + "_tmp" + std::to_string(i) + (ext.empty() ? "" : ("." + ext)));
       trxmmap::save(*trx, out_path.string());
       trx->close();
-      delete trx;
       trx = load_trx<float>(out_path);
     }
 
     Matrix<float, Dynamic, Dynamic, RowMajor> actual = trx->streamlines->_data;
     expect_allclose(actual, coords);
     trx->close();
-    delete trx;
 
     std::error_code ec;
     fs::remove_all(tmp_dir, ec);
@@ -398,7 +396,7 @@ TEST(TrxFileIo, delete_tmp_gs_dir_rasmm) {
   const std::vector<fs::path> inputs = {gs_dir / "gs.trx", gs_dir / "gs_fldr.trx"};
   for (const auto &input : inputs) {
     ASSERT_TRUE(fs::exists(input));
-    trxmmap::TrxFile<float> *trx = load_trx<float>(input);
+    auto trx = load_trx<float>(input);
 
     std::string tmp_dir = trx->_uncompressed_folder_handle;
     if (is_regular(input)) {
@@ -419,13 +417,10 @@ TEST(TrxFileIo, delete_tmp_gs_dir_rasmm) {
 #endif
     }
 
-    delete trx;
-
     trx = load_trx<float>(input);
     Matrix<float, Dynamic, Dynamic, RowMajor> actual2 = trx->streamlines->_data;
     expect_allclose(actual2, coords);
     trx->close();
-    delete trx;
   }
 }
 
@@ -434,7 +429,7 @@ TEST(TrxFileIo, close_tmp_files) {
   const fs::path input = gs_dir / "gs.trx";
   ASSERT_TRUE(fs::exists(input));
 
-  trxmmap::TrxFile<float> *trx = load_trx<float>(input);
+  auto trx = load_trx<float>(input);
   const std::string tmp_dir = trx->_uncompressed_folder_handle;
   ASSERT_FALSE(tmp_dir.empty());
   ASSERT_TRUE(fs::exists(tmp_dir));
@@ -452,7 +447,6 @@ TEST(TrxFileIo, close_tmp_files) {
   }
 
   trx->close();
-  delete trx;
 
 #if defined(_WIN32) || defined(_WIN64)
   // Windows can hold file handles briefly after close; avoid flaky removal assertions.
@@ -479,7 +473,7 @@ TEST(TrxFileIo, change_tmp_dir) {
 
   {
     ScopedEnvVar env("TRX_TMPDIR", "use_working_dir");
-    trxmmap::TrxFile<float> *trx = load_trx<float>(input);
+    auto trx = load_trx<float>(input);
     fs::path tmp_dir = trx->_uncompressed_folder_handle;
     fs::path parent = tmp_dir.parent_path();
     fs::path expected = fs::path(get_current_working_dir());
@@ -489,18 +483,16 @@ TEST(TrxFileIo, change_tmp_dir) {
     }
     EXPECT_EQ(parent_norm, normalize_path(expected.lexically_normal()));
     trx->close();
-    delete trx;
   }
 
   {
     ScopedEnvVar env("TRX_TMPDIR", home_env);
-    trxmmap::TrxFile<float> *trx = load_trx<float>(input);
+    auto trx = load_trx<float>(input);
     fs::path tmp_dir = trx->_uncompressed_folder_handle;
     fs::path parent = tmp_dir.parent_path();
     fs::path expected = fs::path(std::string(home_env));
     EXPECT_EQ(normalize_path(parent.lexically_normal()), normalize_path(expected.lexically_normal()));
     trx->close();
-    delete trx;
   }
 }
 
@@ -518,7 +510,7 @@ TEST(TrxFileIo, complete_dir_from_trx) {
   const std::vector<fs::path> inputs = {gs_dir / "gs.trx", gs_dir / "gs_fldr.trx"};
   for (const auto &input : inputs) {
     ASSERT_TRUE(fs::exists(input));
-    trxmmap::TrxFile<float> *trx = load_trx<float>(input);
+    auto trx = load_trx<float>(input);
     fs::path dir_to_check =
         trx->_uncompressed_folder_handle.empty() ? input : fs::path(trx->_uncompressed_folder_handle);
 
@@ -538,7 +530,6 @@ TEST(TrxFileIo, complete_dir_from_trx) {
 
     EXPECT_EQ(file_paths, expected_content);
     trx->close();
-    delete trx;
   }
 }
 
@@ -579,7 +570,7 @@ TEST(TrxFileIo, complete_zip_from_trx) {
 
 TEST(TrxFileIo, add_dps_from_text_success) {
   trxmmap::TrxFile<float> trx(4, 2);
-  set_streamline_lengths(trx.streamlines, {2, 2});
+  set_streamline_lengths(trx.streamlines.get(), {2, 2});
 
   const fs::path tmp_dir = make_temp_test_dir("trx_dps_text");
   const fs::path input_path = tmp_dir / "dps.txt";
@@ -596,7 +587,7 @@ TEST(TrxFileIo, add_dps_from_text_success) {
 
 TEST(TrxFileIo, add_dps_from_text_errors) {
   trxmmap::TrxFile<float> trx(4, 2);
-  set_streamline_lengths(trx.streamlines, {2, 2});
+  set_streamline_lengths(trx.streamlines.get(), {2, 2});
 
   const fs::path tmp_dir = make_temp_test_dir("trx_dps_text_err");
   const fs::path input_path = tmp_dir / "dps.txt";
@@ -622,7 +613,7 @@ TEST(TrxFileIo, add_dps_from_text_errors) {
 TEST(TrxFileIo, add_dpv_from_tsf_success) {
   ScopedLocale scoped_locale(std::locale::classic());
   trxmmap::TrxFile<float> source_trx(4, 2);
-  set_streamline_lengths(source_trx.streamlines, {2, 2});
+  set_streamline_lengths(source_trx.streamlines.get(), {2, 2});
 
   const fs::path tmp_dir = make_temp_test_dir("trx_dpv_tsf");
   const fs::path input_path = tmp_dir / "dpv_text.tsf";
@@ -633,7 +624,7 @@ TEST(TrxFileIo, add_dpv_from_tsf_success) {
   trxmmap::export_dpv_to_tsf(source_trx, "signal", binary_path.string(), "42");
 
   trxmmap::TrxFile<float> trx(4, 2);
-  set_streamline_lengths(trx.streamlines, {2, 2});
+  set_streamline_lengths(trx.streamlines.get(), {2, 2});
   trxmmap::add_dpv_from_tsf(trx, "signal", "float32", binary_path.string());
   auto it = trx.data_per_vertex.find("signal");
   ASSERT_NE(it, trx.data_per_vertex.end());
@@ -649,7 +640,7 @@ TEST(TrxFileIo, add_dpv_from_tsf_success) {
 TEST(TrxFileIo, add_dpv_from_tsf_errors) {
   ScopedLocale scoped_locale(std::locale::classic());
   trxmmap::TrxFile<float> trx(4, 2);
-  set_streamline_lengths(trx.streamlines, {2, 2});
+  set_streamline_lengths(trx.streamlines.get(), {2, 2});
 
   const fs::path tmp_dir = make_temp_test_dir("trx_dpv_tsf_err");
   const fs::path input_path = tmp_dir / "dpv.tsf";
@@ -678,7 +669,7 @@ TEST(TrxFileIo, add_dpv_from_tsf_errors) {
   EXPECT_THROW(trxmmap::add_dpv_from_tsf(empty, "signal", "float32", input_path.string()), std::runtime_error);
 
   trxmmap::TrxFile<float> no_dir(4, 2);
-  set_streamline_lengths(no_dir.streamlines, {2, 2});
+  set_streamline_lengths(no_dir.streamlines.get(), {2, 2});
   // Intentional white-box access: there is no public API to construct a TrxFile
   // with valid streamlines but without an uncompressed folder. This test verifies
   // that add_dpv_from_tsf fails in that specific internal state.
@@ -689,7 +680,7 @@ TEST(TrxFileIo, add_dpv_from_tsf_errors) {
 TEST(TrxFileIo, export_dpv_to_tsf_success) {
   ScopedLocale scoped_locale(std::locale::classic());
   trxmmap::TrxFile<float> trx(4, 2);
-  set_streamline_lengths(trx.streamlines, {2, 2});
+  set_streamline_lengths(trx.streamlines.get(), {2, 2});
 
   const fs::path tmp_dir = make_temp_test_dir("trx_export_tsf");
   const fs::path input_path = tmp_dir / "dpv_input.tsf";
@@ -719,7 +710,7 @@ TEST(TrxFileIo, export_dpv_to_tsf_success) {
 
 TEST(TrxFileIo, export_dpv_to_tsf_errors) {
   trxmmap::TrxFile<float> trx(4, 2);
-  set_streamline_lengths(trx.streamlines, {2, 2});
+  set_streamline_lengths(trx.streamlines.get(), {2, 2});
 
   const fs::path tmp_dir = make_temp_test_dir("trx_export_tsf_err");
   const fs::path output_path = tmp_dir / "signal.tsf";

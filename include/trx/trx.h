@@ -13,13 +13,10 @@
 #include <fstream>
 #include <iostream>
 #include <json11.hpp>
-#include <limits.h>
 #include <limits>
-#include <math.h>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
-#include <stdlib.h>
-#include <string.h>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -33,7 +30,6 @@ namespace trx {
 namespace fs = std::filesystem;
 }
 
-using namespace Eigen;
 using json = json11::Json;
 
 namespace trxmmap {
@@ -170,25 +166,15 @@ template <typename T> inline std::string dtype_from_scalar() {
   return std::string(DTypeName<CleanT>::value());
 }
 
-const std::string SEPARATOR = "/";
-const std::vector<std::string> dtypes({"float16",
-                                       "bit",
-                                       "uint8",
-                                       "uint16",
-                                       "ushort",
-                                       "uint32",
-                                       "uint64",
-                                       "int8",
-                                       "int16",
-                                       "int32",
-                                       "int64",
-                                       "float32",
-                                       "float64"});
+inline constexpr const char *SEPARATOR = "/";
+inline const std::array<std::string_view, 13> dtypes = {
+    "float16", "bit",   "uint8",  "uint16", "ushort", "uint32", "uint64",
+    "int8",    "int16", "int32",  "int64",  "float32", "float64"};
 
 template <typename DT> struct ArraySequence {
-  Map<Matrix<DT, Dynamic, Dynamic, RowMajor>> _data;
-  Map<Matrix<uint64_t, Dynamic, Dynamic, RowMajor>> _offsets;
-  Matrix<uint32_t, Dynamic, 1> _lengths;
+  Eigen::Map<Eigen::Matrix<DT, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> _data;
+  Eigen::Map<Eigen::Matrix<uint64_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> _offsets;
+  Eigen::Matrix<uint32_t, Eigen::Dynamic, 1> _lengths;
   std::vector<uint64_t> _offsets_owned;
   mio::shared_mmap_sink mmap_pos;
   mio::shared_mmap_sink mmap_off;
@@ -197,7 +183,7 @@ template <typename DT> struct ArraySequence {
 };
 
 template <typename DT> struct MMappedMatrix {
-  Map<Matrix<DT, Dynamic, Dynamic>> _matrix;
+  Eigen::Map<Eigen::Matrix<DT, Eigen::Dynamic, Eigen::Dynamic>> _matrix;
   mio::shared_mmap_sink mmap;
 
   MMappedMatrix() : _matrix(nullptr, 1, 1) {}
@@ -208,14 +194,14 @@ template <typename DT> class TrxFile {
 public:
   // Data Members
   json header;
-  ArraySequence<DT> *streamlines;
+  std::unique_ptr<ArraySequence<DT>> streamlines;
 
-  std::map<std::string, MMappedMatrix<uint32_t> *> groups; // vector of indices
+  std::map<std::string, std::unique_ptr<MMappedMatrix<uint32_t>>> groups; // vector of indices
 
   // int or float --check python floa<t precision (singletons)
-  std::map<std::string, MMappedMatrix<DT> *> data_per_streamline;
-  std::map<std::string, ArraySequence<DT> *> data_per_vertex;
-  std::map<std::string, std::map<std::string, MMappedMatrix<DT> *>> data_per_group;
+  std::map<std::string, std::unique_ptr<MMappedMatrix<DT>>> data_per_streamline;
+  std::map<std::string, std::unique_ptr<ArraySequence<DT>>> data_per_vertex;
+  std::map<std::string, std::map<std::string, std::unique_ptr<MMappedMatrix<DT>>>> data_per_group;
   std::string _uncompressed_folder_handle;
   bool _copy_safe;
   bool _owns_uncompressed_folder = false;
@@ -238,7 +224,7 @@ public:
    * @param root The dirname of the ZipFile pointer
    * @return TrxFile*
    */
-  static TrxFile<DT> *
+  static std::unique_ptr<TrxFile<DT>>
   _create_trx_from_pointer(json header,
                            std::map<std::string, std::tuple<long long, long long>> dict_pointer_size,
                            std::string root_zip = "",
@@ -249,7 +235,7 @@ public:
    *
    * @return TrxFile<DT>* A deepcopied TrxFile of the current object
    */
-  TrxFile<DT> *deepcopy();
+  std::unique_ptr<TrxFile<DT>> deepcopy();
 
   /**
    * @brief Remove the ununsed portion of preallocated memmaps
@@ -343,7 +329,7 @@ json load_header(zip_t *zfolder);
  * @param[out] status return 0 if success else 1
  *
  * */
-template <typename DT> TrxFile<DT> *load_from_zip(std::string path);
+template <typename DT> std::unique_ptr<TrxFile<DT>> load_from_zip(const std::string &path);
 
 /**
  * @brief Load a TrxFile from a folder containing memmaps
@@ -352,7 +338,7 @@ template <typename DT> TrxFile<DT> *load_from_zip(std::string path);
  * @param path path of the zipped TrxFile
  * @return TrxFile<DT>* TrxFile representing the read data
  */
-template <typename DT> TrxFile<DT> *load_from_directory(std::string path);
+template <typename DT> std::unique_ptr<TrxFile<DT>> load_from_directory(const std::string &path);
 
 /**
  * @brief Detect the dtype of the positions array for a TRX path.
@@ -407,7 +393,7 @@ bool is_trx_directory(const std::string &path);
  * @param path Path to TRX archive or directory
  * @return TrxFile<DT>* TrxFile representing the read data
  */
-template <typename DT> TrxFile<DT> *load(std::string path);
+template <typename DT> std::unique_ptr<TrxFile<DT>> load(const std::string &path);
 
 /**
  * @brief RAII wrapper for loading TRX files from a path.
@@ -417,19 +403,19 @@ template <typename DT> TrxFile<DT> *load(std::string path);
 template <typename DT> class TrxReader {
 public:
   explicit TrxReader(const std::string &path);
-  ~TrxReader();
+  ~TrxReader() = default;
 
   TrxReader(const TrxReader &) = delete;
   TrxReader &operator=(const TrxReader &) = delete;
   TrxReader(TrxReader &&other) noexcept;
   TrxReader &operator=(TrxReader &&other) noexcept;
 
-  TrxFile<DT> *get() const { return trx_; }
+  TrxFile<DT> *get() const { return trx_.get(); }
   TrxFile<DT> &operator*() const { return *trx_; }
-  TrxFile<DT> *operator->() const { return trx_; }
+  TrxFile<DT> *operator->() const { return trx_.get(); }
 
 private:
-  TrxFile<DT> *trx_ = nullptr;
+  std::unique_ptr<TrxFile<DT>> trx_;
 };
 
 /**
@@ -452,7 +438,9 @@ auto with_trx_reader(const std::string &path, Fn &&fn)
  * @param[in] dimensions vector of size 3
  *
  * */
-void get_reference_info(const std::string &reference, const MatrixXf &affine, const RowVectorXi &dimensions);
+void get_reference_info(const std::string &reference,
+                        const Eigen::MatrixXf &affine,
+                        const Eigen::RowVectorXi &dimensions);
 
 template <typename DT> std::ostream &operator<<(std::ostream &out, const TrxFile<DT> &trx);
 // private:
@@ -473,12 +461,13 @@ void allocate_file(const std::string &path, std::size_t size);
 // TODO: change tuple to vector to support ND arrays?
 // TODO: remove data type as that's done outside of this function
 mio::shared_mmap_sink _create_memmap(std::string filename,
-                                     std::tuple<int, int> &shape,
+                                     const std::tuple<int, int> &shape,
                                      const std::string &mode = "r",
                                      const std::string &dtype = "float32",
                                      long long offset = 0);
 
-template <typename DT> std::string _generate_filename_from_data(const MatrixBase<DT> &arr, const std::string filename);
+template <typename DT>
+std::string _generate_filename_from_data(const Eigen::MatrixBase<DT> &arr, const std::string filename);
 std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string &filename);
 
 /**
@@ -489,7 +478,8 @@ std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const s
  * @param[in] nb_vertices the number of vertices
  * @return Matrix<uint32_t, Dynamic, Dynamic> of lengths
  */
-template <typename DT> Matrix<uint32_t, Dynamic, 1> _compute_lengths(const MatrixBase<DT> &offsets, int nb_vertices);
+template <typename DT>
+Eigen::Matrix<uint32_t, Eigen::Dynamic, 1> _compute_lengths(const Eigen::MatrixBase<DT> &offsets, int nb_vertices);
 
 /**
  * @brief Find where data of a contiguous array is actually ending
@@ -500,7 +490,7 @@ template <typename DT> Matrix<uint32_t, Dynamic, 1> _compute_lengths(const Matri
  * @param r_bound upper bound index for search
  * @return int index at which array value is 0 (if possible), otherwise returns -1
  */
-template <typename DT> int _dichotomic_search(const MatrixBase<DT> &x, int l_bound = -1, int r_bound = -1);
+template <typename DT> int _dichotomic_search(const Eigen::MatrixBase<DT> &x, int l_bound = -1, int r_bound = -1);
 
 /**
  * @brief Create on-disk memmaps of a certain size (preallocation)
@@ -511,10 +501,14 @@ template <typename DT> int _dichotomic_search(const MatrixBase<DT> &x, int l_bou
  * @return TrxFile<DT> An empty TrxFile preallocated with a certain size
  */
 template <typename DT>
-TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const TrxFile<DT> *init_as = nullptr);
+std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines,
+                                                   int nb_vertices,
+                                                   const TrxFile<DT> *init_as = nullptr);
 
 template <typename DT>
-void ediff1d(Matrix<DT, Dynamic, 1> &lengths, const Matrix<DT, Dynamic, Dynamic> &tmp, uint32_t to_end);
+void ediff1d(Eigen::Matrix<DT, Eigen::Dynamic, 1> &lengths,
+             const Eigen::Matrix<DT, Eigen::Dynamic, Eigen::Dynamic> &tmp,
+             uint32_t to_end);
 
 /**
  * @brief Save a TrxFile
@@ -564,7 +558,9 @@ std::string make_temp_dir(const std::string &prefix);
 std::string extract_zip_to_directory(zip_t *zfolder);
 
 std::string rm_root(const std::string &root, const std::string &path);
+#ifndef TRX_TPP_STANDALONE
 #include <trx/trx.tpp>
+#endif
 
 } // namespace trxmmap
 
