@@ -143,11 +143,8 @@ void expect_allclose(const Matrix<float, Dynamic, Dynamic, RowMajor> &actual,
   }
 }
 
-template <typename DT> std::unique_ptr<trxmmap::TrxFile<DT>> load_trx(const fs::path &path) {
-  if (is_dir(path)) {
-    return trxmmap::load_from_directory<DT>(path.string());
-  }
-  return trxmmap::load_from_zip<DT>(path.string());
+template <typename DT> trxmmap::TrxReader<DT> load_trx(const fs::path &path) {
+  return trxmmap::TrxReader<DT>(path.string());
 }
 
 class ScopedEnvVar {
@@ -351,7 +348,8 @@ TEST(TrxFileIo, load_rasmm) {
   const std::vector<fs::path> inputs = {gs_dir / "gs.trx", gs_dir / "gs_fldr.trx"};
   for (const auto &input : inputs) {
     ASSERT_TRUE(fs::exists(input));
-  auto trx = load_trx<float>(input);
+    auto reader = load_trx<float>(input);
+    auto *trx = reader.get();
     Matrix<float, Dynamic, Dynamic, RowMajor> actual = trx->streamlines->_data;
     expect_allclose(actual, coords);
     trx->close();
@@ -367,7 +365,8 @@ TEST(TrxFileIo, multi_load_save_rasmm) {
     ASSERT_TRUE(fs::exists(input));
     fs::path tmp_dir = make_temp_test_dir("trx_gs");
 
-    auto trx = load_trx<float>(input);
+    auto reader = load_trx<float>(input);
+    auto *trx = reader.get();
     const std::string input_str = normalize_path(input.string());
     const std::string basename = trxmmap::get_base("/", input_str);
     const std::string ext = trxmmap::get_ext(input_str);
@@ -375,9 +374,10 @@ TEST(TrxFileIo, multi_load_save_rasmm) {
 
     for (int i = 0; i < 3; ++i) {
       fs::path out_path = tmp_dir / (basename_no_ext + "_tmp" + std::to_string(i) + (ext.empty() ? "" : ("." + ext)));
-      trxmmap::save(*trx, out_path.string());
+      trx->save(out_path.string());
       trx->close();
-      trx = load_trx<float>(out_path);
+      reader = load_trx<float>(out_path);
+      trx = reader.get();
     }
 
     Matrix<float, Dynamic, Dynamic, RowMajor> actual = trx->streamlines->_data;
@@ -396,7 +396,8 @@ TEST(TrxFileIo, delete_tmp_gs_dir_rasmm) {
   const std::vector<fs::path> inputs = {gs_dir / "gs.trx", gs_dir / "gs_fldr.trx"};
   for (const auto &input : inputs) {
     ASSERT_TRUE(fs::exists(input));
-    auto trx = load_trx<float>(input);
+    auto reader = load_trx<float>(input);
+    auto *trx = reader.get();
 
     std::string tmp_dir = trx->_uncompressed_folder_handle;
     if (is_regular(input)) {
@@ -417,7 +418,8 @@ TEST(TrxFileIo, delete_tmp_gs_dir_rasmm) {
 #endif
     }
 
-    trx = load_trx<float>(input);
+    reader = load_trx<float>(input);
+    trx = reader.get();
     Matrix<float, Dynamic, Dynamic, RowMajor> actual2 = trx->streamlines->_data;
     expect_allclose(actual2, coords);
     trx->close();
@@ -429,7 +431,8 @@ TEST(TrxFileIo, close_tmp_files) {
   const fs::path input = gs_dir / "gs.trx";
   ASSERT_TRUE(fs::exists(input));
 
-  auto trx = load_trx<float>(input);
+  auto reader = load_trx<float>(input);
+  auto *trx = reader.get();
   const std::string tmp_dir = trx->_uncompressed_folder_handle;
   ASSERT_FALSE(tmp_dir.empty());
   ASSERT_TRUE(fs::exists(tmp_dir));
@@ -473,7 +476,8 @@ TEST(TrxFileIo, change_tmp_dir) {
 
   {
     ScopedEnvVar env("TRX_TMPDIR", "use_working_dir");
-    auto trx = load_trx<float>(input);
+    auto reader = load_trx<float>(input);
+    auto *trx = reader.get();
     fs::path tmp_dir = trx->_uncompressed_folder_handle;
     fs::path parent = tmp_dir.parent_path();
     fs::path expected = fs::path(get_current_working_dir());
@@ -576,7 +580,7 @@ TEST(TrxFileIo, add_dps_from_text_success) {
   const fs::path input_path = tmp_dir / "dps.txt";
   write_text_file(input_path, "0.25 0.75");
 
-  trxmmap::add_dps_from_text(trx, "weight", "float32", input_path.string());
+  trx.add_dps_from_text("weight", "float32", input_path.string());
   auto it = trx.data_per_streamline.find("weight");
   ASSERT_NE(it, trx.data_per_streamline.end());
   EXPECT_EQ(it->second->_matrix.rows(), 2);
@@ -593,21 +597,21 @@ TEST(TrxFileIo, add_dps_from_text_errors) {
   const fs::path input_path = tmp_dir / "dps.txt";
   write_text_file(input_path, "1.0");
 
-  EXPECT_THROW(trxmmap::add_dps_from_text(trx, "", "float32", input_path.string()), std::invalid_argument);
-  EXPECT_THROW(trxmmap::add_dps_from_text(trx, "weight", "badtype", input_path.string()), std::invalid_argument);
-  EXPECT_THROW(trxmmap::add_dps_from_text(trx, "weight", "int32", input_path.string()), std::invalid_argument);
+  EXPECT_THROW(trx.add_dps_from_text("", "float32", input_path.string()), std::invalid_argument);
+  EXPECT_THROW(trx.add_dps_from_text("weight", "badtype", input_path.string()), std::invalid_argument);
+  EXPECT_THROW(trx.add_dps_from_text("weight", "int32", input_path.string()), std::invalid_argument);
 
-  EXPECT_THROW(trxmmap::add_dps_from_text(trx, "weight", "float32", (tmp_dir / "missing.txt").string()),
+  EXPECT_THROW(trx.add_dps_from_text("weight", "float32", (tmp_dir / "missing.txt").string()),
                std::runtime_error);
 
   write_text_file(input_path, "1.0 abc");
-  EXPECT_THROW(trxmmap::add_dps_from_text(trx, "weight", "float32", input_path.string()), std::runtime_error);
+  EXPECT_THROW(trx.add_dps_from_text("weight", "float32", input_path.string()), std::runtime_error);
 
   write_text_file(input_path, "1.0");
-  EXPECT_THROW(trxmmap::add_dps_from_text(trx, "weight", "float32", input_path.string()), std::runtime_error);
+  EXPECT_THROW(trx.add_dps_from_text("weight", "float32", input_path.string()), std::runtime_error);
 
   trxmmap::TrxFile<float> empty;
-  EXPECT_THROW(trxmmap::add_dps_from_text(empty, "weight", "float32", input_path.string()), std::runtime_error);
+  EXPECT_THROW(empty.add_dps_from_text("weight", "float32", input_path.string()), std::runtime_error);
 }
 
 TEST(TrxFileIo, add_dpv_from_tsf_success) {
@@ -618,14 +622,14 @@ TEST(TrxFileIo, add_dpv_from_tsf_success) {
   const fs::path tmp_dir = make_temp_test_dir("trx_dpv_tsf");
   const fs::path input_path = tmp_dir / "dpv_text.tsf";
   write_tsf_text_file(input_path, build_tsf_contents({{0.1, 0.2}, {0.3, 0.4}}));
-  trxmmap::add_dpv_from_tsf(source_trx, "signal", "float32", input_path.string());
+  source_trx.add_dpv_from_tsf("signal", "float32", input_path.string());
 
   const fs::path binary_path = tmp_dir / "dpv_binary.tsf";
-  trxmmap::export_dpv_to_tsf(source_trx, "signal", binary_path.string(), "42");
+  source_trx.export_dpv_to_tsf("signal", binary_path.string(), "42");
 
   trxmmap::TrxFile<float> trx(4, 2);
   set_streamline_lengths(trx.streamlines.get(), {2, 2});
-  trxmmap::add_dpv_from_tsf(trx, "signal", "float32", binary_path.string());
+  trx.add_dpv_from_tsf("signal", "float32", binary_path.string());
   auto it = trx.data_per_vertex.find("signal");
   ASSERT_NE(it, trx.data_per_vertex.end());
   EXPECT_EQ(it->second->_data.rows(), 4);
@@ -646,27 +650,27 @@ TEST(TrxFileIo, add_dpv_from_tsf_errors) {
   const fs::path input_path = tmp_dir / "dpv.tsf";
   write_tsf_text_file(input_path, build_tsf_contents({{0.1, 0.2}, {0.3}}));
 
-  EXPECT_THROW(trxmmap::add_dpv_from_tsf(trx, "", "float32", input_path.string()), std::invalid_argument);
-  EXPECT_THROW(trxmmap::add_dpv_from_tsf(trx, "signal", "badtype", input_path.string()), std::invalid_argument);
-  EXPECT_THROW(trxmmap::add_dpv_from_tsf(trx, "signal", "int32", input_path.string()), std::invalid_argument);
+  EXPECT_THROW(trx.add_dpv_from_tsf("", "float32", input_path.string()), std::invalid_argument);
+  EXPECT_THROW(trx.add_dpv_from_tsf("signal", "badtype", input_path.string()), std::invalid_argument);
+  EXPECT_THROW(trx.add_dpv_from_tsf("signal", "int32", input_path.string()), std::invalid_argument);
 
-  EXPECT_THROW(trxmmap::add_dpv_from_tsf(trx, "signal", "float32", (tmp_dir / "missing.tsf").string()),
+  EXPECT_THROW(trx.add_dpv_from_tsf("signal", "float32", (tmp_dir / "missing.tsf").string()),
                std::runtime_error);
 
   write_tsf_text_file(input_path, "0.1 0.2 abc");
-  EXPECT_THROW(trxmmap::add_dpv_from_tsf(trx, "signal", "float32", input_path.string()), std::runtime_error);
+  EXPECT_THROW(trx.add_dpv_from_tsf("signal", "float32", input_path.string()), std::runtime_error);
 
   write_tsf_text_file(input_path, build_tsf_contents({{0.1}, {0.2, 0.3}}));
-  EXPECT_THROW(trxmmap::add_dpv_from_tsf(trx, "signal", "float32", input_path.string()), std::runtime_error);
+  EXPECT_THROW(trx.add_dpv_from_tsf("signal", "float32", input_path.string()), std::runtime_error);
 
   write_tsf_text_file(input_path, build_tsf_contents({{0.1, 0.2}, {0.3}}));
-  EXPECT_THROW(trxmmap::add_dpv_from_tsf(trx, "signal", "float32", input_path.string()), std::runtime_error);
+  EXPECT_THROW(trx.add_dpv_from_tsf("signal", "float32", input_path.string()), std::runtime_error);
 
   write_text_file(input_path, "mrtrix track scalars\nfile: . 0\ndatatype: Float32LE\ntimestamp: 0\n0.1 0.2");
-  EXPECT_THROW(trxmmap::add_dpv_from_tsf(trx, "signal", "float32", input_path.string()), std::runtime_error);
+  EXPECT_THROW(trx.add_dpv_from_tsf("signal", "float32", input_path.string()), std::runtime_error);
 
   trxmmap::TrxFile<float> empty;
-  EXPECT_THROW(trxmmap::add_dpv_from_tsf(empty, "signal", "float32", input_path.string()), std::runtime_error);
+  EXPECT_THROW(empty.add_dpv_from_tsf("signal", "float32", input_path.string()), std::runtime_error);
 
   trxmmap::TrxFile<float> no_dir(4, 2);
   set_streamline_lengths(no_dir.streamlines.get(), {2, 2});
@@ -674,7 +678,7 @@ TEST(TrxFileIo, add_dpv_from_tsf_errors) {
   // with valid streamlines but without an uncompressed folder. This test verifies
   // that add_dpv_from_tsf fails in that specific internal state.
   no_dir._uncompressed_folder_handle.clear();
-  EXPECT_THROW(trxmmap::add_dpv_from_tsf(no_dir, "signal", "float32", input_path.string()), std::runtime_error);
+  EXPECT_THROW(no_dir.add_dpv_from_tsf("signal", "float32", input_path.string()), std::runtime_error);
 }
 
 TEST(TrxFileIo, export_dpv_to_tsf_success) {
@@ -685,11 +689,11 @@ TEST(TrxFileIo, export_dpv_to_tsf_success) {
   const fs::path tmp_dir = make_temp_test_dir("trx_export_tsf");
   const fs::path input_path = tmp_dir / "dpv_input.tsf";
   write_tsf_text_file(input_path, build_tsf_contents({{0.1, 0.2}, {0.3, 0.4}}));
-  trxmmap::add_dpv_from_tsf(trx, "signal", "float32", input_path.string());
+  trx.add_dpv_from_tsf("signal", "float32", input_path.string());
 
   const fs::path output_path = tmp_dir / "signal.tsf";
   const std::string timestamp = "1234.5678";
-  trxmmap::export_dpv_to_tsf(trx, "signal", output_path.string(), timestamp);
+  trx.export_dpv_to_tsf("signal", output_path.string(), timestamp);
 
   const TsfHeader header = read_tsf_header(output_path);
   EXPECT_EQ(header.timestamp, timestamp);
@@ -715,11 +719,11 @@ TEST(TrxFileIo, export_dpv_to_tsf_errors) {
   const fs::path tmp_dir = make_temp_test_dir("trx_export_tsf_err");
   const fs::path output_path = tmp_dir / "signal.tsf";
 
-  EXPECT_THROW(trxmmap::export_dpv_to_tsf(trx, "", output_path.string(), "1"), std::invalid_argument);
-  EXPECT_THROW(trxmmap::export_dpv_to_tsf(trx, "signal", output_path.string(), ""), std::invalid_argument);
-  EXPECT_THROW(trxmmap::export_dpv_to_tsf(trx, "signal", output_path.string(), "1", "int32"), std::invalid_argument);
-  EXPECT_THROW(trxmmap::export_dpv_to_tsf(trx, "missing", output_path.string(), "1"), std::runtime_error);
+  EXPECT_THROW(trx.export_dpv_to_tsf("", output_path.string(), "1"), std::invalid_argument);
+  EXPECT_THROW(trx.export_dpv_to_tsf("signal", output_path.string(), ""), std::invalid_argument);
+  EXPECT_THROW(trx.export_dpv_to_tsf("signal", output_path.string(), "1", "int32"), std::invalid_argument);
+  EXPECT_THROW(trx.export_dpv_to_tsf("missing", output_path.string(), "1"), std::runtime_error);
 
   trxmmap::TrxFile<float> empty;
-  EXPECT_THROW(trxmmap::export_dpv_to_tsf(empty, "signal", output_path.string(), "1"), std::runtime_error);
+  EXPECT_THROW(empty.export_dpv_to_tsf("signal", output_path.string(), "1"), std::runtime_error);
 }

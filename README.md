@@ -115,7 +115,7 @@ using namespace trxmmap;
 ### Read a TRX zip and inspect data
 
 ```
-auto trx = load_from_zip<half>("tracks.trx");
+auto trx = TrxFile<half>::load_from_zip("tracks.trx");
 
 // Access streamlines: vertices are stored as an Eigen matrix
 const auto num_vertices = trx->streamlines->_data.size() / 3;
@@ -144,7 +144,7 @@ trx->close(); // cleans up temporary on-disk data
 ### Read from an on-disk TRX directory
 
 ```
-auto trx = load_from_directory<float>("/path/to/trx_dir");
+auto trx = TrxFile<float>::load_from_directory("/path/to/trx_dir");
 std::cout << "Header JSON:\n" << trx->header.dump() << "\n";
 trx->close();
 ```
@@ -154,7 +154,7 @@ trx->close();
 You can modify a loaded `TrxFile` and save it to a new archive:
 
 ```
-auto trx = load_from_zip<half>("tracks.trx");
+auto trx = TrxFile<half>::load_from_zip("tracks.trx");
 
 // Example: update header metadata
 auto header_obj = trx->header.object_items();
@@ -162,7 +162,7 @@ header_obj["COMMENT"] = "saved by trx-cpp";
 trx->header = json(header_obj);
 
 // Save with no compression (ZIP_CM_STORE) or another libzip compression level
-save(*trx, "tracks_copy.trx", ZIP_CM_STORE);
+trx->save("tracks_copy.trx", ZIP_CM_STORE);
 
 trx->close();
 ```

@@ -84,6 +84,7 @@ endif()
 
 add_library(trx
     src/trx.cpp
+    src/detail/dtype_helpers.cpp
     include/trx/trx.h
     include/trx/trx.tpp
     third_party/json11/json11.cpp

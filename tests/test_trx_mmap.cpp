@@ -11,7 +11,9 @@
 #include <typeinfo>
 
 using namespace Eigen;
-using namespace trxmmap;
+using ::json;
+using trxmmap::TrxFile;
+using trxmmap::TrxScalarType;
 namespace fs = std::filesystem;
 
 namespace {
@@ -222,21 +224,21 @@ TEST(TrxFileMemmap, __generate_filename_from_data) {
   Matrix<int16_t, 5, 4> arr1;
   std::string exp_1 = "mean_fa.4.int16";
 
-  output_fn = _generate_filename_from_data(arr1, filename);
+  output_fn = trxmmap::_generate_filename_from_data(arr1, filename);
   EXPECT_STREQ(output_fn.c_str(), exp_1.c_str());
   output_fn.clear();
 
   Matrix<double, 5, 4> arr2;
   std::string exp_2 = "mean_fa.4.float64";
 
-  output_fn = _generate_filename_from_data(arr2, filename);
+  output_fn = trxmmap::_generate_filename_from_data(arr2, filename);
   EXPECT_STREQ(output_fn.c_str(), exp_2.c_str());
   output_fn.clear();
 
   Matrix<double, 5, 1> arr3;
   std::string exp_3 = "mean_fa.float64";
 
-  output_fn = _generate_filename_from_data(arr3, filename);
+  output_fn = trxmmap::_generate_filename_from_data(arr3, filename);
   EXPECT_STREQ(output_fn.c_str(), exp_3.c_str());
   output_fn.clear();
 }
@@ -342,12 +344,12 @@ TEST(TrxFileMemmap, __split_ext_with_dimensionality) {
   std::tuple<std::string, int, std::string> output;
   const std::string fn1 = "mean_fa.float64";
   std::tuple<std::string, int, std::string> exp1("mean_fa", 1, "float64");
-  output = _split_ext_with_dimensionality(fn1);
+  output = trxmmap::detail::_split_ext_with_dimensionality(fn1);
   EXPECT_TRUE(output == exp1);
 
   const std::string fn2 = "mean_fa.5.int32";
   std::tuple<std::string, int, std::string> exp2("mean_fa", 5, "int32");
-  output = _split_ext_with_dimensionality(fn2);
+  output = trxmmap::detail::_split_ext_with_dimensionality(fn2);
   // std::cout << std::get<0>(output) << " TEST " << std::get<1>(output) << " " <<
   // std::get<2>(output) << std::endl;
   EXPECT_TRUE(output == exp2);
@@ -356,7 +358,7 @@ TEST(TrxFileMemmap, __split_ext_with_dimensionality) {
   EXPECT_THROW(
       {
         try {
-          output = _split_ext_with_dimensionality(fn3);
+          output = trxmmap::detail::_split_ext_with_dimensionality(fn3);
         } catch (const std::invalid_argument &e) {
           EXPECT_STREQ("Invalid filename", e.what());
           throw;
@@ -368,7 +370,7 @@ TEST(TrxFileMemmap, __split_ext_with_dimensionality) {
   EXPECT_THROW(
       {
         try {
-          output = _split_ext_with_dimensionality(fn4);
+          output = trxmmap::detail::_split_ext_with_dimensionality(fn4);
         } catch (const std::invalid_argument &e) {
           EXPECT_STREQ("Invalid filename", e.what());
           throw;
@@ -380,7 +382,7 @@ TEST(TrxFileMemmap, __split_ext_with_dimensionality) {
   EXPECT_THROW(
       {
         try {
-          output = _split_ext_with_dimensionality(fn5);
+          output = trxmmap::detail::_split_ext_with_dimensionality(fn5);
         } catch (const std::invalid_argument &e) {
           EXPECT_STREQ("Unsupported file extension", e.what());
           throw;
@@ -392,41 +394,41 @@ TEST(TrxFileMemmap, __split_ext_with_dimensionality) {
 // Mirrors trx/tests/test_memmap.py::test__compute_lengths.
 TEST(TrxFileMemmap, __compute_lengths) {
   Matrix<uint64_t, 5, 1> offsets{uint64_t{0}, uint64_t{1}, uint64_t{2}, uint64_t{3}, uint64_t{4}};
-  Matrix<uint32_t, 4, 1> lengths(trxmmap::_compute_lengths(offsets, 4));
+  Matrix<uint32_t, 4, 1> lengths(trxmmap::detail::_compute_lengths(offsets, 4));
   Matrix<uint32_t, 4, 1> result{uint32_t{1}, uint32_t{1}, uint32_t{1}, uint32_t{1}};
 
   EXPECT_EQ(lengths, result);
 
   Matrix<uint64_t, 5, 1> offsets2{uint64_t{0}, uint64_t{1}, uint64_t{1}, uint64_t{3}, uint64_t{4}};
-  Matrix<uint32_t, 4, 1> lengths2(trxmmap::_compute_lengths(offsets2, 4));
+  Matrix<uint32_t, 4, 1> lengths2(trxmmap::detail::_compute_lengths(offsets2, 4));
   Matrix<uint32_t, 4, 1> result2{uint32_t{1}, uint32_t{0}, uint32_t{2}, uint32_t{1}};
 
   EXPECT_EQ(lengths2, result2);
 
   Matrix<uint64_t, 4, 1> offsets3{uint64_t{0}, uint64_t{1}, uint64_t{2}, uint64_t{4}};
-  Matrix<uint32_t, 3, 1> lengths3(trxmmap::_compute_lengths(offsets3, 4));
+  Matrix<uint32_t, 3, 1> lengths3(trxmmap::detail::_compute_lengths(offsets3, 4));
   Matrix<uint32_t, 3, 1> result3{uint32_t{1}, uint32_t{1}, uint32_t{2}};
 
   EXPECT_EQ(lengths3, result3);
 
   Matrix<uint64_t, 2, 1> offsets4;
   offsets4 << uint64_t{0}, uint64_t{2};
-  Matrix<uint32_t, 1, 1> lengths4(trxmmap::_compute_lengths(offsets4, 2));
+  Matrix<uint32_t, 1, 1> lengths4(trxmmap::detail::_compute_lengths(offsets4, 2));
   Matrix<uint32_t, 1, 1> result4(uint32_t{2});
 
   EXPECT_EQ(lengths4, result4);
 
   Matrix<uint64_t, 0, 0> offsets5;
-  Matrix<uint32_t, 0, 1> lengths5(trxmmap::_compute_lengths(offsets5, 2));
+  Matrix<uint32_t, 0, 1> lengths5(trxmmap::detail::_compute_lengths(offsets5, 2));
   EXPECT_EQ(lengths5.size(), 0);
 
   Matrix<int16_t, 5, 1> offsets6{int16_t(0), int16_t(1), int16_t(2), int16_t(3), int16_t(4)};
-  Matrix<uint32_t, 4, 1> lengths6(trxmmap::_compute_lengths(offsets6, 4));
+  Matrix<uint32_t, 4, 1> lengths6(trxmmap::detail::_compute_lengths(offsets6, 4));
   Matrix<uint32_t, 4, 1> result6{uint32_t{1}, uint32_t{1}, uint32_t{1}, uint32_t{1}};
   EXPECT_EQ(lengths6, result6);
 
   Matrix<int32_t, 5, 1> offsets7{int32_t(0), int32_t(1), int32_t(1), int32_t(3), int32_t(4)};
-  Matrix<uint32_t, 4, 1> lengths7(trxmmap::_compute_lengths(offsets7, 4));
+  Matrix<uint32_t, 4, 1> lengths7(trxmmap::detail::_compute_lengths(offsets7, 4));
   Matrix<uint32_t, 4, 1> result7{uint32_t{1}, uint32_t{0}, uint32_t{2}, uint32_t{1}};
   EXPECT_EQ(lengths7, result7);
 }
@@ -434,89 +436,89 @@ TEST(TrxFileMemmap, __compute_lengths) {
 // Mirrors trx/tests/test_memmap.py::test__is_dtype_valid.
 TEST(TrxFileMemmap, __is_dtype_valid) {
   std::string ext = "bit";
-  EXPECT_TRUE(_is_dtype_valid(ext));
+  EXPECT_TRUE(trxmmap::detail::_is_dtype_valid(ext));
 
   std::string ext2 = "int16";
-  EXPECT_TRUE(_is_dtype_valid(ext2));
+  EXPECT_TRUE(trxmmap::detail::_is_dtype_valid(ext2));
 
   std::string ext3 = "float32";
-  EXPECT_TRUE(_is_dtype_valid(ext3));
+  EXPECT_TRUE(trxmmap::detail::_is_dtype_valid(ext3));
 
   std::string ext4 = "uint8";
-  EXPECT_TRUE(_is_dtype_valid(ext4));
+  EXPECT_TRUE(trxmmap::detail::_is_dtype_valid(ext4));
 
   std::string ext5 = "ushort";
-  EXPECT_TRUE(_is_dtype_valid(ext5));
+  EXPECT_TRUE(trxmmap::detail::_is_dtype_valid(ext5));
 
   std::string ext6 = "txt";
-  EXPECT_FALSE(_is_dtype_valid(ext6));
+  EXPECT_FALSE(trxmmap::detail::_is_dtype_valid(ext6));
 }
 
 // asserts C++ dtype alias behavior.
 TEST(TrxFileMemmap, __sizeof_dtype_ushort_alias) {
-  EXPECT_EQ(trxmmap::_sizeof_dtype("ushort"), sizeof(uint16_t));
-  EXPECT_EQ(trxmmap::_sizeof_dtype("ushort"), trxmmap::_sizeof_dtype("uint16"));
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("ushort"), sizeof(uint16_t));
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("ushort"), trxmmap::detail::_sizeof_dtype("uint16"));
 }
 
 // asserts dtype size mapping and default.
 TEST(TrxFileMemmap, __sizeof_dtype_values) {
-  EXPECT_EQ(trxmmap::_sizeof_dtype("bit"), 1);
-  EXPECT_EQ(trxmmap::_sizeof_dtype("uint8"), sizeof(uint8_t));
-  EXPECT_EQ(trxmmap::_sizeof_dtype("uint16"), sizeof(uint16_t));
-  EXPECT_EQ(trxmmap::_sizeof_dtype("uint32"), sizeof(uint32_t));
-  EXPECT_EQ(trxmmap::_sizeof_dtype("uint64"), sizeof(uint64_t));
-  EXPECT_EQ(trxmmap::_sizeof_dtype("int8"), sizeof(int8_t));
-  EXPECT_EQ(trxmmap::_sizeof_dtype("int16"), sizeof(int16_t));
-  EXPECT_EQ(trxmmap::_sizeof_dtype("int32"), sizeof(int32_t));
-  EXPECT_EQ(trxmmap::_sizeof_dtype("int64"), sizeof(int64_t));
-  EXPECT_EQ(trxmmap::_sizeof_dtype("float32"), sizeof(float));
-  EXPECT_EQ(trxmmap::_sizeof_dtype("float64"), sizeof(double));
-  EXPECT_EQ(trxmmap::_sizeof_dtype("unknown"), sizeof(uint16_t));
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("bit"), 1);
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("uint8"), sizeof(uint8_t));
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("uint16"), sizeof(uint16_t));
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("uint32"), sizeof(uint32_t));
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("uint64"), sizeof(uint64_t));
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("int8"), sizeof(int8_t));
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("int16"), sizeof(int16_t));
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("int32"), sizeof(int32_t));
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("int64"), sizeof(int64_t));
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("float32"), sizeof(float));
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("float64"), sizeof(double));
+  EXPECT_EQ(trxmmap::detail::_sizeof_dtype("unknown"), sizeof(uint16_t));
 }
 
 // asserts dtype code mapping.
 TEST(TrxFileMemmap, __get_dtype_codes) {
-  EXPECT_EQ(trxmmap::_get_dtype("b"), "bit");
-  EXPECT_EQ(trxmmap::_get_dtype("h"), "uint8");
-  EXPECT_EQ(trxmmap::_get_dtype("t"), "uint16");
-  EXPECT_EQ(trxmmap::_get_dtype("j"), "uint32");
-  EXPECT_EQ(trxmmap::_get_dtype("m"), "uint64");
-  EXPECT_EQ(trxmmap::_get_dtype("y"), "uint64");
-  EXPECT_EQ(trxmmap::_get_dtype("a"), "int8");
-  EXPECT_EQ(trxmmap::_get_dtype("s"), "int16");
-  EXPECT_EQ(trxmmap::_get_dtype("i"), "int32");
-  EXPECT_EQ(trxmmap::_get_dtype("l"), "int64");
-  EXPECT_EQ(trxmmap::_get_dtype("x"), "int64");
-  EXPECT_EQ(trxmmap::_get_dtype("f"), "float32");
-  EXPECT_EQ(trxmmap::_get_dtype("d"), "float64");
-  EXPECT_EQ(trxmmap::_get_dtype("z"), "float16");
-  EXPECT_EQ(trxmmap::_get_dtype("foo"), "float16");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("b"), "bit");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("h"), "uint8");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("t"), "uint16");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("j"), "uint32");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("m"), "uint64");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("y"), "uint64");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("a"), "int8");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("s"), "int16");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("i"), "int32");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("l"), "int64");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("x"), "int64");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("f"), "float32");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("d"), "float64");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("z"), "float16");
+  EXPECT_EQ(trxmmap::detail::_get_dtype("foo"), "float16");
 }
 
 // Mirrors trx/tests/test_memmap.py::test__dichotomic_search.
 TEST(TrxFileMemmap, __dichotomic_search) {
   Matrix<int, 1, 5> m{0, 1, 2, 3, 4};
-  int result = trxmmap::_dichotomic_search(m);
+  int result = trxmmap::detail::_dichotomic_search(m);
   EXPECT_EQ(result, 4);
 
   Matrix<int, 1, 5> m2{0, 1, 0, 3, 4};
-  int result2 = trxmmap::_dichotomic_search(m2);
+  int result2 = trxmmap::detail::_dichotomic_search(m2);
   EXPECT_EQ(result2, 1);
 
   Matrix<int, 1, 5> m3{0, 1, 2, 0, 4};
-  int result3 = trxmmap::_dichotomic_search(m3);
+  int result3 = trxmmap::detail::_dichotomic_search(m3);
   EXPECT_EQ(result3, 2);
 
   Matrix<int, 1, 5> m4{0, 1, 2, 3, 4};
-  int result4 = trxmmap::_dichotomic_search(m4, 1, 2);
+  int result4 = trxmmap::detail::_dichotomic_search(m4, 1, 2);
   EXPECT_EQ(result4, 2);
 
   Matrix<int, 1, 5> m5{0, 1, 2, 3, 4};
-  int result5 = trxmmap::_dichotomic_search(m5, 3, 3);
+  int result5 = trxmmap::detail::_dichotomic_search(m5, 3, 3);
   EXPECT_EQ(result5, 3);
 
   Matrix<int, 1, 5> m6{0, 0, 0, 0, 0};
-  int result6 = trxmmap::_dichotomic_search(m6, 3, 3);
+  int result6 = trxmmap::detail::_dichotomic_search(m6, 3, 3);
   EXPECT_EQ(result6, -1);
 }
 
@@ -599,7 +601,8 @@ TEST(TrxFileMemmap, load_header) {
 // Mirrors trx/tests/test_memmap.py::test_load (small.trx via zip path).
 TEST(TrxFileMemmap, load_zip) {
   const auto &fixture = get_fixture();
-  auto trx = trxmmap::load_from_zip<half>(fixture.path);
+  trxmmap::TrxReader<half> reader(fixture.path);
+  auto *trx = reader.get();
   EXPECT_GT(trx->streamlines->_data.size(), 0);
 }
 
@@ -613,19 +616,22 @@ TEST(TrxFileMemmap, load_zip_test_data) {
 
   const fs::path small_trx = memmap_dir / "small.trx";
   ASSERT_TRUE(fs::exists(small_trx));
-  auto trx_small = trxmmap::load_from_zip<half>(small_trx.string());
+  trxmmap::TrxReader<half> reader_small(small_trx.string());
+  auto *trx_small = reader_small.get();
   EXPECT_GT(trx_small->streamlines->_data.size(), 0);
 
   const fs::path small_compressed = memmap_dir / "small_compressed.trx";
   ASSERT_TRUE(fs::exists(small_compressed));
-  auto trx_compressed = trxmmap::load_from_zip<half>(small_compressed.string());
+  trxmmap::TrxReader<half> reader_compressed(small_compressed.string());
+  auto *trx_compressed = reader_compressed.get();
   EXPECT_GT(trx_compressed->streamlines->_data.size(), 0);
 }
 
 // Mirrors trx/tests/test_memmap.py::test_load (small_fldr.trx via directory path).
 TEST(TrxFileMemmap, load_directory) {
   const auto &fixture = get_fixture();
-  auto trx = trxmmap::load_from_directory<half>(fixture.dir_path);
+  trxmmap::TrxReader<half> reader(fixture.dir_path);
+  auto *trx = reader.get();
   EXPECT_GT(trx->streamlines->_data.size(), 0);
 }
 
@@ -639,7 +645,8 @@ TEST(TrxFileMemmap, load_directory_test_data) {
 
   const fs::path small_dir = memmap_dir / "small_fldr.trx";
   ASSERT_TRUE(fs::exists(small_dir));
-  auto trx = trxmmap::load_from_directory<half>(small_dir.string());
+  trxmmap::TrxReader<half> reader(small_dir.string());
+  auto *trx = reader.get();
   EXPECT_GT(trx->streamlines->_data.size(), 0);
 }
 
@@ -652,7 +659,7 @@ TEST(TrxFileMemmap, load_missing_trx_throws) {
   const auto memmap_dir = resolve_memmap_test_data_dir(root);
 
   const fs::path missing_trx = memmap_dir / "dontexist.trx";
-  EXPECT_THROW(trxmmap::load_from_zip<half>(missing_trx.string()), std::runtime_error);
+  EXPECT_THROW(trxmmap::TrxReader<half>(missing_trx.string()), std::runtime_error);
 }
 
 // validates C++ TrxFile initialization.
@@ -706,7 +713,8 @@ TEST(TrxFileMemmap, TrxFile) {
 // validates C++ deepcopy.
 TEST(TrxFileMemmap, deepcopy) {
   const auto &fixture = get_fixture();
-  auto trx = trxmmap::load_from_zip<half>(fixture.path);
+  trxmmap::TrxReader<half> reader(fixture.path);
+  auto *trx = reader.get();
   auto copy = trx->deepcopy();
 
   EXPECT_EQ(trx->header, copy->header);
@@ -718,16 +726,18 @@ TEST(TrxFileMemmap, deepcopy) {
 // Mirrors trx/tests/test_memmap.py::test_resize.
 TEST(TrxFileMemmap, resize) {
   const auto &fixture = get_fixture();
-  auto trx = trxmmap::load_from_zip<half>(fixture.path);
+  trxmmap::TrxReader<half> reader(fixture.path);
+  auto *trx = reader.get();
   trx->resize();
   trx->resize(10);
 }
 // exercises save paths in C++.
 TEST(TrxFileMemmap, save) {
   const auto &fixture = get_fixture();
-  auto trx = trxmmap::load_from_zip<half>(fixture.path);
-  trxmmap::save(*trx, (std::string) "testsave");
-  trxmmap::save(*trx, (std::string) "testsave.trx");
+  trxmmap::TrxReader<half> reader(fixture.path);
+  auto *trx = reader.get();
+  trx->save("testsave");
+  trx->save("testsave.trx");
 
   // trxmmap::TrxFile<half> *saved = trxmmap::load_from_zip<half>("testsave.trx");
   //  EXPECT_EQ(saved->data_per_vertex["color_x.float16"]->_data,
