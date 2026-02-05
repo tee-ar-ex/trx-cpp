@@ -907,8 +907,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
       }
 
       if (trx->data_per_group.find(x.first) == trx->data_per_group.end()) {
-        trx->data_per_group.emplace(x.first,
-                                    std::map<std::string, std::unique_ptr<MMappedMatrix<DT>>>{});
+        trx->data_per_group.emplace(x.first, std::map<std::string, std::unique_ptr<MMappedMatrix<DT>>>{});
       } else {
         trx->data_per_group[x.first].clear();
       }
@@ -1088,9 +1087,7 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, zip_u
 }
 
 template <typename DT>
-void TrxFile<DT>::add_dps_from_text(const std::string &name,
-                                    const std::string &dtype,
-                                    const std::string &path) {
+void TrxFile<DT>::add_dps_from_text(const std::string &name, const std::string &dtype, const std::string &path) {
   if (name.empty()) {
     throw std::invalid_argument("DPS name cannot be empty");
   }
@@ -1194,9 +1191,7 @@ void TrxFile<DT>::add_dps_from_text(const std::string &name,
 }
 
 template <typename DT>
-void TrxFile<DT>::add_dpv_from_tsf(const std::string &name,
-                                   const std::string &dtype,
-                                   const std::string &path) {
+void TrxFile<DT>::add_dpv_from_tsf(const std::string &name, const std::string &dtype, const std::string &path) {
   if (name.empty()) {
     throw std::invalid_argument("DPV name cannot be empty");
   }
@@ -1473,9 +1468,9 @@ void TrxFile<DT>::add_dpv_from_tsf(const std::string &name,
 
 template <typename DT>
 void TrxFile<DT>::export_dpv_to_tsf(const std::string &name,
-                                   const std::string &path,
-                                   const std::string &timestamp,
-                                   const std::string &dtype) const {
+                                    const std::string &path,
+                                    const std::string &timestamp,
+                                    const std::string &dtype) const {
   if (name.empty()) {
     throw std::invalid_argument("DPV name cannot be empty");
   }

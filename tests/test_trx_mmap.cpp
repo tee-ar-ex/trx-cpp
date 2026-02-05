@@ -6,9 +6,9 @@
 #include <stdexcept>
 #include <sys/stat.h>
 #include <system_error>
-#include <zip.h>
 #include <trx/trx.h>
 #include <typeinfo>
+#include <zip.h>
 
 using namespace Eigen;
 using ::json;
@@ -284,8 +284,7 @@ TEST(TrxFileMemmap, detect_positions_scalar_type_directory) {
 
 TEST(TrxFileMemmap, detect_positions_scalar_type_fallback) {
   const fs::path empty_dir = make_temp_test_dir("trx_scalar_empty");
-  EXPECT_EQ(trxmmap::detect_positions_scalar_type(empty_dir.string(), TrxScalarType::Float16),
-            TrxScalarType::Float16);
+  EXPECT_EQ(trxmmap::detect_positions_scalar_type(empty_dir.string(), TrxScalarType::Float16), TrxScalarType::Float16);
 
   const fs::path invalid_dir = make_temp_test_dir("trx_scalar_invalid");
   const fs::path invalid_positions = invalid_dir / "positions.3.txt";

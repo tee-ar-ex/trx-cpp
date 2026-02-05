@@ -15,8 +15,8 @@ bool _is_dtype_valid(const std::string &ext);
 std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string &filename);
 
 template <typename DT>
-inline Eigen::Matrix<uint32_t, Eigen::Dynamic, 1>
-_compute_lengths(const Eigen::MatrixBase<DT> &offsets, int nb_vertices) {
+inline Eigen::Matrix<uint32_t, Eigen::Dynamic, 1> _compute_lengths(const Eigen::MatrixBase<DT> &offsets,
+                                                                   int nb_vertices) {
   static_cast<void>(nb_vertices);
   if (offsets.size() > 1) {
     const auto casted = offsets.template cast<uint64_t>();

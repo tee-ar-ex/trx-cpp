@@ -13,4 +13,5 @@ RECURSIVE              = YES
 FILE_PATTERNS          = *.h *.hpp *.cpp *.tpp
 
 EXTRACT_ALL            = YES
+EXTRACT_ANON_NSPACES   = NO
 QUIET                  = YES

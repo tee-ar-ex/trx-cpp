@@ -167,9 +167,19 @@ template <typename T> inline std::string dtype_from_scalar() {
 }
 
 inline constexpr const char *SEPARATOR = "/";
-inline const std::array<std::string_view, 13> dtypes = {
-    "float16", "bit",   "uint8",  "uint16", "ushort", "uint32", "uint64",
-    "int8",    "int16", "int32",  "int64",  "float32", "float64"};
+inline const std::array<std::string_view, 13> dtypes = {"float16",
+                                                        "bit",
+                                                        "uint8",
+                                                        "uint16",
+                                                        "ushort",
+                                                        "uint32",
+                                                        "uint64",
+                                                        "int8",
+                                                        "int16",
+                                                        "int32",
+                                                        "int64",
+                                                        "float32",
+                                                        "float64"};
 
 template <typename DT> struct ArraySequence {
   Eigen::Map<Eigen::Matrix<DT, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> _data;
@@ -321,7 +331,6 @@ private:
  * @param[out] header a header containing the same elements as the original root
  * */
 json assignHeader(const json &root);
-
 
 /**
  * This function loads the header json file
@@ -489,9 +498,8 @@ std::string _generate_filename_from_data(const Eigen::MatrixBase<DT> &arr, const
  * @return TrxFile<DT> An empty TrxFile preallocated with a certain size
  */
 template <typename DT>
-std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines,
-                                                   int nb_vertices,
-                                                   const TrxFile<DT> *init_as = nullptr);
+std::unique_ptr<TrxFile<DT>>
+_initialize_empty_trx(int nb_streamlines, int nb_vertices, const TrxFile<DT> *init_as = nullptr);
 
 template <typename DT>
 void ediff1d(Eigen::Matrix<DT, Eigen::Dynamic, 1> &lengths,

@@ -601,8 +601,7 @@ TEST(TrxFileIo, add_dps_from_text_errors) {
   EXPECT_THROW(trx.add_dps_from_text("weight", "badtype", input_path.string()), std::invalid_argument);
   EXPECT_THROW(trx.add_dps_from_text("weight", "int32", input_path.string()), std::invalid_argument);
 
-  EXPECT_THROW(trx.add_dps_from_text("weight", "float32", (tmp_dir / "missing.txt").string()),
-               std::runtime_error);
+  EXPECT_THROW(trx.add_dps_from_text("weight", "float32", (tmp_dir / "missing.txt").string()), std::runtime_error);
 
   write_text_file(input_path, "1.0 abc");
   EXPECT_THROW(trx.add_dps_from_text("weight", "float32", input_path.string()), std::runtime_error);
@@ -654,8 +653,7 @@ TEST(TrxFileIo, add_dpv_from_tsf_errors) {
   EXPECT_THROW(trx.add_dpv_from_tsf("signal", "badtype", input_path.string()), std::invalid_argument);
   EXPECT_THROW(trx.add_dpv_from_tsf("signal", "int32", input_path.string()), std::invalid_argument);
 
-  EXPECT_THROW(trx.add_dpv_from_tsf("signal", "float32", (tmp_dir / "missing.tsf").string()),
-               std::runtime_error);
+  EXPECT_THROW(trx.add_dpv_from_tsf("signal", "float32", (tmp_dir / "missing.tsf").string()), std::runtime_error);
 
   write_tsf_text_file(input_path, "0.1 0.2 abc");
   EXPECT_THROW(trx.add_dpv_from_tsf("signal", "float32", input_path.string()), std::runtime_error);

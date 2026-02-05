@@ -295,7 +295,7 @@ mio::shared_mmap_sink _create_memmap(std::string filename,
                                static_cast<std::size_t>(trxmmap::detail::_sizeof_dtype(dtype));
   // if file does not exist, create and allocate it
 
-  struct stat buffer{};
+  struct stat buffer {};
   if (stat(filename.c_str(), &buffer) != 0) {
     allocate_file(filename, filesize);
   }
@@ -339,9 +339,10 @@ json assignHeader(const json &root) {
   return header;
 }
 
-void get_reference_info(const std::string &reference,
-                        const Eigen::MatrixXf &affine,     // NOLINT(misc-include-cleaner)
-                        const Eigen::RowVectorXi &dimensions) { // NOLINT(misc-use-internal-linkage,misc-include-cleaner)
+void get_reference_info(
+    const std::string &reference,
+    const Eigen::MatrixXf &affine,          // NOLINT(misc-include-cleaner)
+    const Eigen::RowVectorXi &dimensions) { // NOLINT(misc-use-internal-linkage,misc-include-cleaner)
   static_cast<void>(affine);
   static_cast<void>(dimensions);
   // TODO: find a library to use for nifti and trk (MRtrix??)
