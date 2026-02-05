@@ -1042,6 +1042,33 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, zip_u
 
   auto copy_trx = this->deepcopy();
   copy_trx->resize();
+  if (!copy_trx->streamlines || copy_trx->streamlines->_offsets.size() == 0) {
+    throw std::runtime_error("Cannot save TRX without offsets data");
+  }
+  if (copy_trx->header["NB_STREAMLINES"].is_number()) {
+    const auto nb_streamlines = static_cast<size_t>(copy_trx->header["NB_STREAMLINES"].int_value());
+    if (copy_trx->streamlines->_offsets.size() != static_cast<Eigen::Index>(nb_streamlines + 1)) {
+      throw std::runtime_error("TRX offsets size does not match NB_STREAMLINES");
+    }
+  }
+  if (copy_trx->header["NB_VERTICES"].is_number()) {
+    const auto nb_vertices = static_cast<uint64_t>(copy_trx->header["NB_VERTICES"].int_value());
+    const auto last = static_cast<uint64_t>(copy_trx->streamlines->_offsets(copy_trx->streamlines->_offsets.size() - 1));
+    if (last != nb_vertices) {
+      throw std::runtime_error("TRX offsets sentinel does not match NB_VERTICES");
+    }
+  }
+  for (Eigen::Index i = 1; i < copy_trx->streamlines->_offsets.size(); ++i) {
+    if (copy_trx->streamlines->_offsets(i) < copy_trx->streamlines->_offsets(i - 1)) {
+      throw std::runtime_error("TRX offsets must be monotonically increasing");
+    }
+  }
+  if (copy_trx->streamlines->_data.size() > 0) {
+    const auto last = static_cast<uint64_t>(copy_trx->streamlines->_offsets(copy_trx->streamlines->_offsets.size() - 1));
+    if (last != static_cast<uint64_t>(copy_trx->streamlines->_data.rows())) {
+      throw std::runtime_error("TRX positions row count does not match offsets sentinel");
+    }
+  }
   std::string tmp_dir_name = copy_trx->_uncompressed_folder_handle;
 
   if (ext.size() > 0 && (ext == "zip" || ext == "trx")) {

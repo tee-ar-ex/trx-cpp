@@ -21,6 +21,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <variant>
 #include <zip.h>
 
 #include <mio/mmap.hpp>
@@ -208,7 +209,7 @@ public:
 
   std::map<std::string, std::unique_ptr<MMappedMatrix<uint32_t>>> groups; // vector of indices
 
-  // int or float --check python floa<t precision (singletons)
+  // int or float --check python float precision (singletons)
   std::map<std::string, std::unique_ptr<MMappedMatrix<DT>>> data_per_streamline;
   std::map<std::string, std::unique_ptr<ArraySequence<DT>>> data_per_vertex;
   std::map<std::string, std::map<std::string, std::unique_ptr<MMappedMatrix<DT>>>> data_per_group;
@@ -280,6 +281,33 @@ public:
   void close();
   void _cleanup_temporary_directory();
 
+  size_t num_vertices() const {
+    if (streamlines && streamlines->_offsets.size() > 0) {
+      const auto last = streamlines->_offsets(streamlines->_offsets.size() - 1);
+      return static_cast<size_t>(last);
+    }
+    if (streamlines && streamlines->_data.size() > 0) {
+      return static_cast<size_t>(streamlines->_data.rows());
+    }
+    if (header["NB_VERTICES"].is_number()) {
+      return static_cast<size_t>(header["NB_VERTICES"].int_value());
+    }
+    return 0;
+  }
+
+  size_t num_streamlines() const {
+    if (streamlines && streamlines->_offsets.size() > 0) {
+      return static_cast<size_t>(streamlines->_offsets.size() - 1);
+    }
+    if (streamlines && streamlines->_lengths.size() > 0) {
+      return static_cast<size_t>(streamlines->_lengths.size());
+    }
+    if (header["NB_STREAMLINES"].is_number()) {
+      return static_cast<size_t>(header["NB_STREAMLINES"].int_value());
+    }
+    return 0;
+  }
+
 private:
   /**
    * @brief Load a TrxFile from a zip archive.
@@ -323,6 +351,145 @@ private:
   _copy_fixed_arrays_from(TrxFile<DT> *trx, int strs_start = 0, int pts_start = 0, int nb_strs_to_copy = -1);
   int len();
 };
+
+namespace detail {
+int _sizeof_dtype(const std::string &dtype);
+} // namespace detail
+
+struct TypedArray {
+  std::string dtype;
+  int rows = 0;
+  int cols = 0;
+  mio::shared_mmap_sink mmap;
+
+  bool empty() const { return rows == 0 || cols == 0 || mmap.data() == nullptr; }
+  size_t size() const { return static_cast<size_t>(rows) * static_cast<size_t>(cols); }
+
+  /**
+   * @brief View the buffer as a row-major Eigen matrix of type T.
+   *
+   * This is a zero-copy view over the underlying memory map. The dtype must
+   * match the requested T or an exception is thrown.
+   */
+  template <typename T>
+  Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> as_matrix() {
+    return Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(data_as<T>(), rows, cols);
+  }
+
+  /**
+   * @brief View the buffer as a const row-major Eigen matrix of type T.
+   *
+   * This is a zero-copy view over the underlying memory map. The dtype must
+   * match the requested T or an exception is thrown.
+   */
+  template <typename T>
+  Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> as_matrix() const {
+    return Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(data_as<T>(), rows, cols);
+  }
+
+  struct ByteView {
+    const std::uint8_t *data = nullptr;
+    size_t size = 0;
+  };
+
+  struct MutableByteView {
+    std::uint8_t *data = nullptr;
+    size_t size = 0;
+  };
+
+  /**
+   * @brief Return a read-only byte view of the underlying buffer.
+   *
+   * The size is computed from dtype * rows * cols. This is useful for
+   * interop, hashing, or serialization without exposing raw pointers.
+   */
+  ByteView to_bytes() const {
+    if (empty()) {
+      return {};
+    }
+    return {reinterpret_cast<const std::uint8_t *>(mmap.data()),
+            static_cast<size_t>(detail::_sizeof_dtype(dtype)) * size()};
+  }
+
+  /**
+   * @brief Return a mutable byte view of the underlying buffer.
+   *
+   * The size is computed from dtype * rows * cols. Use with care: mutating
+   * the bytes will mutate the mapped file contents.
+   */
+  MutableByteView to_bytes_mutable() {
+    if (empty()) {
+      return {};
+    }
+    return {reinterpret_cast<std::uint8_t *>(mmap.data()),
+            static_cast<size_t>(detail::_sizeof_dtype(dtype)) * size()};
+  }
+
+private:
+  const void *data() const { return mmap.data(); }
+  void *data() { return mmap.data(); }
+
+  template <typename T> T *data_as() {
+    const std::string expected = dtype_from_scalar<T>();
+    if (dtype != expected) {
+      throw std::invalid_argument("TypedArray dtype mismatch: expected " + expected + " got " + dtype);
+    }
+    return reinterpret_cast<T *>(mmap.data());
+  }
+
+  template <typename T> const T *data_as() const {
+    const std::string expected = dtype_from_scalar<T>();
+    if (dtype != expected) {
+      throw std::invalid_argument("TypedArray dtype mismatch: expected " + expected + " got " + dtype);
+    }
+    return reinterpret_cast<const T *>(mmap.data());
+  }
+};
+
+class AnyTrxFile {
+public:
+  AnyTrxFile() = default;
+  ~AnyTrxFile();
+
+  AnyTrxFile(const AnyTrxFile &) = delete;
+  AnyTrxFile &operator=(const AnyTrxFile &) = delete;
+  AnyTrxFile(AnyTrxFile &&) noexcept = default;
+  AnyTrxFile &operator=(AnyTrxFile &&) noexcept = default;
+
+  json header;
+  TypedArray positions;
+  TypedArray offsets;
+  std::vector<uint64_t> offsets_u64;
+  std::vector<uint32_t> lengths;
+
+  std::map<std::string, TypedArray> groups;
+  std::map<std::string, TypedArray> data_per_streamline;
+  std::map<std::string, TypedArray> data_per_vertex;
+  std::map<std::string, std::map<std::string, TypedArray>> data_per_group;
+
+  size_t num_vertices() const;
+  size_t num_streamlines() const;
+  void close();
+  void save(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+
+  static AnyTrxFile load(const std::string &path);
+  static AnyTrxFile load_from_zip(const std::string &path);
+  static AnyTrxFile load_from_directory(const std::string &path);
+
+private:
+  std::string _uncompressed_folder_handle;
+  bool _owns_uncompressed_folder = false;
+  std::string _backing_directory;
+
+  static std::string _normalize_dtype(const std::string &dtype);
+  static AnyTrxFile _create_from_pointer(
+      json header,
+      const std::map<std::string, std::tuple<long long, long long>> &dict_pointer_size,
+      const std::string &root);
+  void _cleanup_temporary_directory();
+};
+
+inline AnyTrxFile load_any(const std::string &path) { return AnyTrxFile::load(path); }
 
 /**
  * TODO: This function might be completely unecessary
