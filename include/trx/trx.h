@@ -267,6 +267,24 @@ public:
   void save(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
 
   void add_dps_from_text(const std::string &name, const std::string &dtype, const std::string &path);
+  template <typename T>
+  void add_dps_from_vector(const std::string &name, const std::string &dtype, const std::vector<T> &values);
+  /**
+   * @brief Add per-vertex values as DPV from an in-memory vector.
+   *
+   * @param name DPV name (used as filename in dpv/).
+   * @param dtype Output dtype (float16/float32/float64).
+   * @param values Per-vertex values; size must match NB_VERTICES.
+   */
+  template <typename T>
+  void add_dpv_from_vector(const std::string &name, const std::string &dtype, const std::vector<T> &values);
+  /**
+   * @brief Add a group from a list of streamline indices.
+   *
+   * @param name Group name (used as filename in groups/).
+   * @param indices Streamline indices (uint32) belonging to the group.
+   */
+  void add_group_from_indices(const std::string &name, const std::vector<uint32_t> &indices);
   void add_dpv_from_tsf(const std::string &name, const std::string &dtype, const std::string &path);
   void export_dpv_to_tsf(const std::string &name,
                          const std::string &path,
@@ -488,6 +506,86 @@ private:
 };
 
 inline AnyTrxFile load_any(const std::string &path) { return AnyTrxFile::load(path); }
+
+/**
+ * @brief Streaming-friendly TRX builder that spools positions and finalizes to TrxFile.
+ *
+ * TrxStream allows appending streamlines without knowing totals up front.
+ * It writes positions to a temporary binary file, tracks lengths, and can
+ * add DPS/DPV/group metadata. Call finalize() to produce a standard TRX.
+ */
+class TrxStream {
+public:
+  explicit TrxStream(std::string positions_dtype = "float32");
+  ~TrxStream();
+
+  TrxStream(const TrxStream &) = delete;
+  TrxStream &operator=(const TrxStream &) = delete;
+  TrxStream(TrxStream &&) noexcept = default;
+  TrxStream &operator=(TrxStream &&) noexcept = default;
+
+  /**
+   * @brief Append a streamline from a flat xyz buffer.
+   *
+   * @param xyz Pointer to interleaved x,y,z data.
+   * @param point_count Number of 3D points in the buffer.
+   */
+  void push_streamline(const float *xyz, size_t point_count);
+  /**
+   * @brief Append a streamline from a flat xyz vector.
+   */
+  void push_streamline(const std::vector<float> &xyz_flat);
+  /**
+   * @brief Append a streamline from a vector of 3D points.
+   */
+  void push_streamline(const std::vector<std::array<float, 3>> &points);
+
+  /**
+   * @brief Add per-streamline values (DPS) from an in-memory vector.
+   */
+  template <typename T>
+  void push_dps_from_vector(const std::string &name, const std::string &dtype, const std::vector<T> &values);
+  /**
+   * @brief Add per-vertex values (DPV) from an in-memory vector.
+   */
+  template <typename T>
+  void push_dpv_from_vector(const std::string &name, const std::string &dtype, const std::vector<T> &values);
+  /**
+   * @brief Add a group from a list of streamline indices.
+   */
+  void push_group_from_indices(const std::string &name, const std::vector<uint32_t> &indices);
+
+  /**
+   * @brief Finalize and write a TRX file.
+   */
+  template <typename DT> void finalize(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+
+  size_t num_streamlines() const { return lengths_.size(); }
+  size_t num_vertices() const { return total_vertices_; }
+
+  json header;
+
+private:
+  struct FieldValues {
+    std::string dtype;
+    std::vector<double> values;
+  };
+
+  void ensure_positions_stream();
+  void cleanup_tmp();
+
+  std::string positions_dtype_;
+  std::string tmp_dir_;
+  std::string positions_path_;
+  std::ofstream positions_out_;
+  std::vector<uint32_t> lengths_;
+  size_t total_vertices_ = 0;
+  bool finalized_ = false;
+
+  std::map<std::string, std::vector<uint32_t>> groups_;
+  std::map<std::string, FieldValues> dps_;
+  std::map<std::string, FieldValues> dpv_;
+};
 
 /**
  * TODO: This function might be completely unecessary

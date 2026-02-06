@@ -7,4 +7,4 @@ TRX-cpp provides:
 - Memory-mapped access for large datasets
 - Simple access to streamlines and metadata
 
-The API is header-focused under `include/trx`, with implementation in `src/`.
+The API is header-focused under ``include/trx``, with implementation in ``src/``.

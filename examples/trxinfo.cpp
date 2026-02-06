@@ -110,8 +110,8 @@ void print_trx_info(const trx::AnyTrxFile &trx, const std::string &path, bool is
 
   std::cout << trx_cli::colorize(colors, colors.green, "Data arrays") << ":\n";
   if (!trx.data_per_vertex.empty()) {
-    std::cout << "  " << trx_cli::colorize(colors, colors.cyan, "Data per vertex") << ": "
-              << trx.data_per_vertex.size() << "\n";
+    std::cout << "  " << trx_cli::colorize(colors, colors.cyan, "Data per vertex") << ": " << trx.data_per_vertex.size()
+              << "\n";
     for (const auto &kv : trx.data_per_vertex) {
       const auto &arr = kv.second;
       std::cout << "    - " << kv.first << " (" << arr.rows << "x" << arr.cols << ")\n";

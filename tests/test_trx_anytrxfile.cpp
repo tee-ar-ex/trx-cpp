@@ -4,8 +4,8 @@
 #include <trx/trx.h>
 #undef private
 
-#include <cstdlib>
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <limits>

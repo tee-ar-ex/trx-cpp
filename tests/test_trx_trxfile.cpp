@@ -210,6 +210,88 @@ TEST(TrxFileTpp, CopyFixedArraysFrom) {
   fs::remove_all(data_dir, ec);
 }
 
+TEST(TrxFileTpp, AddGroupAndDpvFromVector) {
+  const int nb_vertices = 5;
+  const int nb_streamlines = 3;
+  trx::TrxFile<float> trx(nb_vertices, nb_streamlines);
+
+  trx.streamlines->_offsets(0, 0) = 0;
+  trx.streamlines->_offsets(1, 0) = 2;
+  trx.streamlines->_offsets(2, 0) = 4;
+  trx.streamlines->_offsets(3, 0) = 5;
+  trx.streamlines->_lengths(0) = 2;
+  trx.streamlines->_lengths(1) = 2;
+  trx.streamlines->_lengths(2) = 1;
+
+  const std::vector<uint32_t> group_indices = {0, 2};
+  trx.add_group_from_indices("GroupA", group_indices);
+  ASSERT_EQ(trx.groups.size(), 1u);
+  auto group_it = trx.groups.find("GroupA");
+  ASSERT_NE(group_it, trx.groups.end());
+  EXPECT_EQ(group_it->second->_matrix.rows(), 2);
+  EXPECT_EQ(group_it->second->_matrix.cols(), 1);
+  EXPECT_EQ(group_it->second->_matrix(0, 0), 0u);
+  EXPECT_EQ(group_it->second->_matrix(1, 0), 2u);
+
+  const std::vector<float> dpv_values = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f};
+  trx.add_dpv_from_vector("quality", "float32", dpv_values);
+  ASSERT_EQ(trx.data_per_vertex.size(), 1u);
+  auto dpv_it = trx.data_per_vertex.find("quality");
+  ASSERT_NE(dpv_it, trx.data_per_vertex.end());
+  EXPECT_EQ(dpv_it->second->_data.rows(), nb_vertices);
+  EXPECT_EQ(dpv_it->second->_data.cols(), 1);
+  for (int i = 0; i < nb_vertices; ++i) {
+    EXPECT_FLOAT_EQ(dpv_it->second->_data(i, 0), dpv_values[static_cast<size_t>(i)]);
+  }
+}
+
+TEST(TrxFileTpp, TrxStreamFinalize) {
+  auto tmp_dir = make_temp_test_dir("trx_proto");
+  const fs::path out_path = tmp_dir / "proto.trx";
+
+  TrxStream proto;
+  std::vector<float> sl1 = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+  std::vector<float> sl2 = {2.0f, 0.0f, 0.0f, 2.0f, 1.0f, 0.0f, 2.0f, 2.0f, 0.0f};
+  proto.push_streamline(sl1);
+  proto.push_streamline(sl2);
+  proto.push_group_from_indices("GroupA", {0, 1});
+  proto.push_dps_from_vector("weight", "float32", std::vector<float>{0.5f, 1.5f});
+  proto.push_dpv_from_vector("score", "float32", std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f});
+  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);
+
+  auto trx = load_any(out_path.string());
+  EXPECT_EQ(trx.num_streamlines(), 2u);
+  EXPECT_EQ(trx.num_vertices(), 5u);
+
+  auto grp_it = trx.groups.find("GroupA");
+  ASSERT_NE(grp_it, trx.groups.end());
+  auto grp_mat = grp_it->second.as_matrix<uint32_t>();
+  EXPECT_EQ(grp_mat.rows(), 2);
+  EXPECT_EQ(grp_mat.cols(), 1);
+  EXPECT_EQ(grp_mat(0, 0), 0u);
+  EXPECT_EQ(grp_mat(1, 0), 1u);
+
+  auto dps_it = trx.data_per_streamline.find("weight");
+  ASSERT_NE(dps_it, trx.data_per_streamline.end());
+  auto dps_mat = dps_it->second.as_matrix<float>();
+  EXPECT_EQ(dps_mat.rows(), 2);
+  EXPECT_EQ(dps_mat.cols(), 1);
+  EXPECT_FLOAT_EQ(dps_mat(0, 0), 0.5f);
+  EXPECT_FLOAT_EQ(dps_mat(1, 0), 1.5f);
+
+  auto dpv_it = trx.data_per_vertex.find("score");
+  ASSERT_NE(dpv_it, trx.data_per_vertex.end());
+  auto dpv_mat = dpv_it->second.as_matrix<float>();
+  EXPECT_EQ(dpv_mat.rows(), 5);
+  EXPECT_EQ(dpv_mat.cols(), 1);
+  EXPECT_FLOAT_EQ(dpv_mat(0, 0), 1.0f);
+  EXPECT_FLOAT_EQ(dpv_mat(4, 0), 5.0f);
+
+  trx.close();
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
+
 // resize() with default arguments is a no-op when sizes already match.
 TEST(TrxFileTpp, ResizeNoChange) {
   const fs::path data_dir = create_float_trx_dir();

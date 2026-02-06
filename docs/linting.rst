@@ -1,18 +1,18 @@
 Linting and Style Checks
 ========================
 
-This repo includes `.clang-tidy` and `.clang-format` at the root, plus
+This repo includes ``.clang-tidy`` and ``.clang-format`` at the root, plus
 MRtrix-inspired helper scripts for formatting and style checks.
 
 Prerequisites
 -------------
 
-- `clang-format` available on `PATH`
-  - macOS (Homebrew): `brew install llvm` (or `llvm@17`) and ensure
-    `clang-format` is on `PATH`
-  - Ubuntu: `sudo apt-get install clang-format`
-- For `check_syntax` on macOS, GNU grep is required (`brew install grep`,
-  then it will use `ggrep`).
+- ``clang-format`` available on ``PATH``
+  - macOS (Homebrew): ``brew install llvm`` (or ``llvm@17``) and ensure
+    ``clang-format`` is on ``PATH``
+  - Ubuntu: ``sudo apt-get install clang-format``
+- For ``check_syntax`` on macOS, GNU grep is required (``brew install grep``,
+  then it will use ``ggrep``).
 
 clang-format (bulk formatting)
 ------------------------------
@@ -36,7 +36,7 @@ Run the MRtrix-style checks against the C++ sources:
 
    ./check_syntax
 
-Results are written to `syntax.log` when issues are found.
+Results are written to ``syntax.log`` when issues are found.
 
 clang-tidy
 ----------
@@ -58,5 +58,5 @@ To run clang-tidy automatically during builds:
    cmake -S . -B build -DTRX_ENABLE_CLANG_TIDY=ON
    cmake --build build
 
-If you have `run-clang-tidy` installed (LLVM extras), you can lint everything
-tracked by the repo (excluding `third_party`), which matches CI.
+If you have ``run-clang-tidy`` installed (LLVM extras), you can lint everything
+tracked by the repo (excluding ``third_party``), which matches CI.

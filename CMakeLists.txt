@@ -25,7 +25,7 @@ option(TRX_BUILD_TESTS "Build trx tests" OFF)
 option(TRX_BUILD_EXAMPLES "Build trx example commandline programs" ON)
 option(TRX_ENABLE_CLANG_TIDY "Run clang-tidy during builds" OFF)
 option(TRX_ENABLE_INSTALL "Install trx-cpp targets" ${TRX_IS_TOP_LEVEL})
-option(TRX_BUILD_DOCS "Build API documentation with Doxygen/Sphinx" ${TRX_IS_TOP_LEVEL})
+option(TRX_BUILD_DOCS "Build API documentation with Doxygen/Sphinx" OFF)
 
 if(TRX_ENABLE_CLANG_TIDY)
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
