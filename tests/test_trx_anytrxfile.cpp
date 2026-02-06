@@ -1,6 +1,8 @@
 #include <filesystem>
 #include <gtest/gtest.h>
+#define private public
 #include <trx/trx.h>
+#undef private
 
 #include <cstdlib>
 #include <array>
@@ -503,4 +505,137 @@ TEST(AnyTrxFile, OffsetsOverflowThrows) {
 
   std::error_code ec;
   fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, SaveRejectsUnsupportedExtension) {
+  const auto gs_dir = require_gold_standard_dir();
+  const fs::path gs_trx = gs_dir / "gs_fldr.trx";
+  auto trx = load_any(gs_trx.string());
+
+  const auto temp_dir = make_temp_test_dir("trx_any_save_badext");
+  const fs::path out_path = temp_dir / "bad.txt";
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::invalid_argument);
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_dir, ec);
+}
+
+TEST(AnyTrxFile, SaveRejectsMissingOffsets) {
+  const auto gs_dir = require_gold_standard_dir();
+  const fs::path gs_trx = gs_dir / "gs_fldr.trx";
+  auto trx = load_any(gs_trx.string());
+
+  trx.offsets = TypedArray();
+  const auto temp_dir = make_temp_test_dir("trx_any_save_no_offsets");
+  const fs::path out_path = temp_dir / "missing_offsets.trx";
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_dir, ec);
+}
+
+TEST(AnyTrxFile, SaveRejectsMissingDecodedOffsets) {
+  const auto gs_dir = require_gold_standard_dir();
+  const fs::path gs_trx = gs_dir / "gs_fldr.trx";
+  auto trx = load_any(gs_trx.string());
+
+  trx.offsets_u64.clear();
+  const auto temp_dir = make_temp_test_dir("trx_any_save_no_offsets_u64");
+  const fs::path out_path = temp_dir / "missing_offsets_u64.trx";
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_dir, ec);
+}
+
+TEST(AnyTrxFile, SaveRejectsStreamlineCountMismatch) {
+  const auto gs_dir = require_gold_standard_dir();
+  const fs::path gs_trx = gs_dir / "gs_fldr.trx";
+  auto trx = load_any(gs_trx.string());
+
+  auto header_obj = trx.header.object_items();
+  header_obj["NB_STREAMLINES"] = header_obj["NB_STREAMLINES"].int_value() + 1;
+  trx.header = json(header_obj);
+
+  const auto temp_dir = make_temp_test_dir("trx_any_save_bad_streamlines");
+  const fs::path out_path = temp_dir / "bad_streamlines.trx";
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_dir, ec);
+}
+
+TEST(AnyTrxFile, SaveRejectsVertexCountMismatch) {
+  const auto gs_dir = require_gold_standard_dir();
+  const fs::path gs_trx = gs_dir / "gs_fldr.trx";
+  auto trx = load_any(gs_trx.string());
+
+  auto header_obj = trx.header.object_items();
+  header_obj["NB_VERTICES"] = static_cast<int>(trx.offsets_u64.back() + 1);
+  trx.header = json(header_obj);
+
+  const auto temp_dir = make_temp_test_dir("trx_any_save_bad_vertices");
+  const fs::path out_path = temp_dir / "bad_vertices.trx";
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_dir, ec);
+}
+
+TEST(AnyTrxFile, SaveRejectsNonMonotonicOffsets) {
+  const auto gs_dir = require_gold_standard_dir();
+  const fs::path gs_trx = gs_dir / "gs_fldr.trx";
+  auto trx = load_any(gs_trx.string());
+
+  ASSERT_GT(trx.offsets_u64.size(), 1U);
+  trx.offsets_u64[0] = 1;
+  trx.offsets_u64[1] = 0;
+
+  const auto temp_dir = make_temp_test_dir("trx_any_save_non_mono");
+  const fs::path out_path = temp_dir / "non_mono.trx";
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_dir, ec);
+}
+
+TEST(AnyTrxFile, SaveRejectsPositionsRowMismatch) {
+  const auto gs_dir = require_gold_standard_dir();
+  const fs::path gs_trx = gs_dir / "gs_fldr.trx";
+  auto trx = load_any(gs_trx.string());
+
+  const uint64_t sentinel = trx.offsets_u64.back();
+  ASSERT_GT(sentinel, 0U);
+  trx.positions.rows = static_cast<int>(sentinel - 1);
+
+  const auto temp_dir = make_temp_test_dir("trx_any_save_bad_positions");
+  const fs::path out_path = temp_dir / "bad_positions.trx";
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_dir, ec);
+}
+
+TEST(AnyTrxFile, SaveRejectsMissingBackingDirectory) {
+  const auto gs_dir = require_gold_standard_dir();
+  const fs::path gs_trx = gs_dir / "gs_fldr.trx";
+  auto trx = load_any(gs_trx.string());
+
+  trx._backing_directory.clear();
+  trx._uncompressed_folder_handle.clear();
+
+  const auto temp_dir = make_temp_test_dir("trx_any_save_no_backing");
+  const fs::path out_path = temp_dir / "no_backing.trx";
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_dir, ec);
 }
