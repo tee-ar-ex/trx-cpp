@@ -8,6 +8,7 @@ build:
     - cmake
     - g++
     - lcov
+    - pkg-config
     - zlib1g-dev
     - libeigen3-dev
     - libzip-dev
@@ -16,7 +17,7 @@ build:
     
   jobs:
     pre_build:
-      - cmake -S . -B build -DTRX_BUILD_DOCS=ON
+      - cmake -S . -B build -DTRX_BUILD_DOCS=ON -DCMAKE_MODULE_PATH="${PWD}/cmake"
       - cmake --build build --target docs
 
 python:
