@@ -7,17 +7,19 @@ build:
   apt_packages:
     - cmake
     - g++
-    - lcov
     - pkg-config
     - zlib1g-dev
     - libeigen3-dev
     - libzip-dev
     - libzip-tools
     - ninja-build
-    
+    - zipcmp
+    - zipmerge
+    - ziptool
+
   jobs:
     pre_build:
-      - cmake -S . -B build -DTRX_BUILD_DOCS=ON -DCMAKE_MODULE_PATH="${PWD}/cmake"
+      - cmake -S . -B build -DTRX_BUILD_DOCS=ON
       - cmake --build build --target docs
 
 python:
