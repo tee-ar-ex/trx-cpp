@@ -426,3 +426,24 @@ filters). To ensure these arrays are written back into TRX, name them with the
 ``TRX_DPV_`` or ``TRX_DPS_`` prefixes and keep them single-component with the
 correct tuple counts (points for DPV, streamlines for DPS).
 
+TrxReader vs TrxFile
+--------------------
+
+``TrxFile<DT>`` is the core typed container. It owns the memory-mapped arrays,
+exposes streamlines and metadata as Eigen matrices, and provides mutation and
+save operations. The template parameter ``DT`` fixes the positions dtype
+(``half``, ``float``, or ``double``), which allows zero-copy access and avoids
+per-element conversions.
+
+``TrxReader<DT>`` is a small RAII wrapper that loads a TRX file and manages the
+backing resources. It ensures the temporary extraction directory (for zipped
+TRX) is cleaned up when the reader goes out of scope, and provides safe access
+to the underlying ``TrxFile``. This separation keeps ``TrxFile`` focused on the
+data model, while ``TrxReader`` handles ownership and lifecycle concerns for
+loaded files.
+
+In practice, most downstream users do not need to instantiate ``TrxReader``
+directly. The common entry points are convenience functions like
+``trx::load_any`` or ``trx::with_trx_reader`` and higher-level wrappers that
+return a ready-to-use ``TrxFile``. ``TrxReader`` remains available for advanced
+use cases where explicit lifetime control of the backing resources is needed.

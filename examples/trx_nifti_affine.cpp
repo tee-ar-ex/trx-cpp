@@ -5,7 +5,7 @@
 
 int main(int argc, char **argv) {
   if (argc < 4) {
-    std::cerr << "Usage: trx_nifti_affine <input.trx> <reference.nii[.gz]> <output.trx>\n";
+    std::cerr << "Usage: trx-update-affine <input.trx> <reference.nii[.gz]> <output.trx>\n";
     return 1;
   }
 

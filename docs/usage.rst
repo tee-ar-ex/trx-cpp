@@ -61,7 +61,8 @@ When built with ``TRX_ENABLE_NIFTI=ON``, or by default if you're building the ex
 you can read a NIfTI header (``.nii``, ``.hdr``, optionally ``.nii.gz``) and populate
 ``VOXEL_TO_RASMM`` in a TRX header. The qform is preferred; if missing, the
 sform is orthogonalized to a qform-equivalent matrix (consistent with ITK's handling of nifti).
-If using this feature, you will also need zlib available.
+If using this feature, you will also need zlib available. The qform/sform logic here is
+translated from nibabel's MIT-licensed implementation (see ``third_party/nibabel/LICENSE``).
 
 .. code-block:: cpp
 
