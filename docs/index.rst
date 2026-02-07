@@ -1,6 +1,10 @@
 TRX-cpp Documentation
 =====================
 
+.. image:: https://codecov.io/gh/tee-ar-ex/trx-cpp/branch/main/graph/badge.svg
+   :target: https://codecov.io/gh/tee-ar-ex/trx-cpp
+   :alt: codecov
+
 TRX-cpp is a C++ library for reading, writing, and memory-mapping the TRX
 tractography file format.
 

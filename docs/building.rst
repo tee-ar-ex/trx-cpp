@@ -44,6 +44,7 @@ On Mac OS, you can install the dependencies with brew:
 On Windows, you can install the dependencies through vcpkg and chocolatey:
 
 .. code-block:: powershell
+
    choco install ninja -y
    vcpkg install libzip eigen3 gtest zlib
 
