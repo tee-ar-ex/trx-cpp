@@ -7,6 +7,7 @@ project(trx VERSION 0.1.0)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(FetchContent)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 set(TRX_IS_TOP_LEVEL OFF)
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
