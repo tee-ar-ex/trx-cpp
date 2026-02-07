@@ -352,10 +352,6 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
     int dim = std::get<1>(base_tuple);
     std::string ext(std::get<2>(base_tuple));
 
-    if (ext.compare("bit") == 0) {
-      ext = "bool";
-    }
-
     long long mem_adress = std::get<0>(x->second);
     long long size = std::get<1>(x->second);
 
@@ -1377,6 +1373,17 @@ void TrxFile<DT>::add_group_from_indices(const std::string &name, const std::vec
   this->groups[name] = std::move(group);
 }
 
+template <typename DT>
+void TrxFile<DT>::set_voxel_to_rasmm(const Eigen::Matrix4f &affine) {
+  std::vector<std::vector<float>> matrix(4, std::vector<float>(4, 0.0f));
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) {
+      matrix[static_cast<size_t>(i)][static_cast<size_t>(j)] = affine(i, j);
+    }
+  }
+  this->header = _json_set(this->header, "VOXEL_TO_RASMM", matrix);
+}
+
 inline TrxStream::TrxStream(std::string positions_dtype) : positions_dtype_(std::move(positions_dtype)) {
   std::transform(positions_dtype_.begin(), positions_dtype_.end(), positions_dtype_.begin(), [](unsigned char c) {
     return static_cast<char>(std::tolower(c));
@@ -1977,6 +1984,531 @@ template <typename DT> std::ostream &operator<<(std::ostream &out, const TrxFile
 
   out << "Header (header.json):\n";
   out << trx.header.dump();
+  return out;
+}
+
+template <typename DT>
+std::vector<std::array<Eigen::half, 6>> TrxFile<DT>::build_streamline_aabbs() const {
+  std::vector<std::array<Eigen::half, 6>> aabbs;
+  if (!this->streamlines) {
+    return aabbs;
+  }
+
+  std::vector<uint64_t> offsets;
+  if (this->streamlines->_offsets.size() > 0) {
+    offsets.resize(static_cast<size_t>(this->streamlines->_offsets.size()));
+    for (Eigen::Index i = 0; i < this->streamlines->_offsets.size(); ++i) {
+      offsets[static_cast<size_t>(i)] = this->streamlines->_offsets(i, 0);
+    }
+  } else if (this->streamlines->_lengths.size() > 0) {
+    const size_t nb_streamlines = static_cast<size_t>(this->streamlines->_lengths.size());
+    offsets.resize(nb_streamlines + 1);
+    offsets[0] = 0;
+    for (size_t i = 0; i < nb_streamlines; ++i) {
+      offsets[i + 1] = offsets[i] + static_cast<uint64_t>(this->streamlines->_lengths(static_cast<Eigen::Index>(i)));
+    }
+  } else {
+    return aabbs;
+  }
+
+  const size_t nb_streamlines = offsets.size() > 0 ? offsets.size() - 1 : 0;
+  aabbs.resize(nb_streamlines);
+
+  for (size_t i = 0; i < nb_streamlines; ++i) {
+    const uint64_t start = offsets[i];
+    const uint64_t end = offsets[i + 1];
+    if (end <= start) {
+      aabbs[i] = {Eigen::half(0), Eigen::half(0), Eigen::half(0),
+                  Eigen::half(0), Eigen::half(0), Eigen::half(0)};
+      continue;
+    }
+
+    float min_x = std::numeric_limits<float>::infinity();
+    float min_y = std::numeric_limits<float>::infinity();
+    float min_z = std::numeric_limits<float>::infinity();
+    float max_x = -std::numeric_limits<float>::infinity();
+    float max_y = -std::numeric_limits<float>::infinity();
+    float max_z = -std::numeric_limits<float>::infinity();
+
+    for (uint64_t p = start; p < end; ++p) {
+      const float x = static_cast<float>(this->streamlines->_data(static_cast<Eigen::Index>(p), 0));
+      const float y = static_cast<float>(this->streamlines->_data(static_cast<Eigen::Index>(p), 1));
+      const float z = static_cast<float>(this->streamlines->_data(static_cast<Eigen::Index>(p), 2));
+      min_x = std::min(min_x, x);
+      min_y = std::min(min_y, y);
+      min_z = std::min(min_z, z);
+      max_x = std::max(max_x, x);
+      max_y = std::max(max_y, y);
+      max_z = std::max(max_z, z);
+    }
+
+    aabbs[i] = {static_cast<Eigen::half>(min_x), static_cast<Eigen::half>(min_y), static_cast<Eigen::half>(min_z),
+                static_cast<Eigen::half>(max_x), static_cast<Eigen::half>(max_y), static_cast<Eigen::half>(max_z)};
+  }
+
+  this->aabb_cache_ = aabbs;
+  return aabbs;
+}
+
+template <typename DT>
+std::unique_ptr<TrxFile<DT>> TrxFile<DT>::query_aabb(
+    const std::array<float, 3> &min_corner,
+    const std::array<float, 3> &max_corner,
+    const std::vector<std::array<Eigen::half, 6>> *precomputed_aabbs,
+    bool build_cache_for_result) const {
+  if (!this->streamlines) {
+    auto empty = std::make_unique<TrxFile<DT>>();
+    empty->header = _json_set(this->header, "NB_VERTICES", 0);
+    empty->header = _json_set(empty->header, "NB_STREAMLINES", 0);
+    return empty;
+  }
+
+  size_t nb_streamlines = 0;
+  if (this->streamlines->_offsets.size() > 0) {
+    nb_streamlines = static_cast<size_t>(this->streamlines->_offsets.size() - 1);
+  } else if (this->streamlines->_lengths.size() > 0) {
+    nb_streamlines = static_cast<size_t>(this->streamlines->_lengths.size());
+  } else {
+    auto empty = std::make_unique<TrxFile<DT>>();
+    empty->header = _json_set(this->header, "NB_VERTICES", 0);
+    empty->header = _json_set(empty->header, "NB_STREAMLINES", 0);
+    return empty;
+  }
+
+  std::vector<std::array<Eigen::half, 6>> aabbs_local;
+  const std::vector<std::array<Eigen::half, 6>> &aabbs = precomputed_aabbs
+      ? *precomputed_aabbs
+      : (!this->aabb_cache_.empty() ? this->aabb_cache_ : (aabbs_local = this->build_streamline_aabbs()));
+  if (aabbs.size() != nb_streamlines) {
+    throw std::invalid_argument("AABB size does not match streamlines count");
+  }
+
+  const float min_x = min_corner[0];
+  const float min_y = min_corner[1];
+  const float min_z = min_corner[2];
+  const float max_x = max_corner[0];
+  const float max_y = max_corner[1];
+  const float max_z = max_corner[2];
+
+  std::vector<uint32_t> selected;
+  selected.reserve(nb_streamlines);
+
+  for (size_t i = 0; i < nb_streamlines; ++i) {
+    const auto &box = aabbs[i];
+    const float box_min_x = static_cast<float>(box[0]);
+    const float box_min_y = static_cast<float>(box[1]);
+    const float box_min_z = static_cast<float>(box[2]);
+    const float box_max_x = static_cast<float>(box[3]);
+    const float box_max_y = static_cast<float>(box[4]);
+    const float box_max_z = static_cast<float>(box[5]);
+
+    if (box_min_x <= max_x && box_max_x >= min_x &&
+        box_min_y <= max_y && box_max_y >= min_y &&
+        box_min_z <= max_z && box_max_z >= min_z) {
+      selected.push_back(static_cast<uint32_t>(i));
+    }
+  }
+
+  return this->subset_streamlines(selected, build_cache_for_result);
+}
+
+template <typename DT>
+void TrxFile<DT>::invalidate_aabb_cache() const {
+  this->aabb_cache_.clear();
+}
+
+template <typename DT>
+template <typename T>
+void TrxFile<DT>::add_dpg_from_vector(const std::string &group,
+                                      const std::string &name,
+                                      const std::string &dtype,
+                                      const std::vector<T> &values,
+                                      int rows,
+                                      int cols) {
+  if (group.empty()) {
+    throw std::invalid_argument("DPG group cannot be empty");
+  }
+  if (name.empty()) {
+    throw std::invalid_argument("DPG name cannot be empty");
+  }
+  std::string dtype_norm = dtype;
+  std::transform(dtype_norm.begin(), dtype_norm.end(), dtype_norm.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  if (!trx::detail::_is_dtype_valid(dtype_norm)) {
+    throw std::invalid_argument("Unsupported DPG dtype: " + dtype);
+  }
+  if (dtype_norm != "float16" && dtype_norm != "float32" && dtype_norm != "float64") {
+    throw std::invalid_argument("Unsupported DPG dtype: " + dtype);
+  }
+  if (this->_uncompressed_folder_handle.empty()) {
+    throw std::runtime_error("TRX file has no backing directory to store DPG data");
+  }
+  if (rows <= 0) {
+    throw std::invalid_argument("DPG rows must be positive");
+  }
+  if (cols < 0) {
+    if (values.size() % static_cast<size_t>(rows) != 0) {
+      throw std::invalid_argument("DPG values size does not match rows");
+    }
+    cols = static_cast<int>(values.size() / static_cast<size_t>(rows));
+  }
+  if (cols <= 0) {
+    throw std::invalid_argument("DPG cols must be positive");
+  }
+  if (static_cast<size_t>(rows) * static_cast<size_t>(cols) != values.size()) {
+    throw std::invalid_argument("DPG values size does not match rows*cols");
+  }
+
+  std::string dpg_dir = this->_uncompressed_folder_handle + SEPARATOR + "dpg" + SEPARATOR;
+  {
+    std::error_code ec;
+    trx::fs::create_directories(dpg_dir, ec);
+    if (ec) {
+      throw std::runtime_error("Could not create directory " + dpg_dir);
+    }
+  }
+  std::string dpg_subdir = dpg_dir + group;
+  {
+    std::error_code ec;
+    trx::fs::create_directories(dpg_subdir, ec);
+    if (ec) {
+      throw std::runtime_error("Could not create directory " + dpg_subdir);
+    }
+  }
+
+  std::string dpg_filename = dpg_subdir + SEPARATOR + name + "." + dtype_norm;
+  {
+    std::error_code ec;
+    if (trx::fs::exists(dpg_filename, ec)) {
+      trx::fs::remove(dpg_filename, ec);
+    }
+  }
+
+  auto &group_map = this->data_per_group[group];
+  group_map.erase(name);
+
+  std::tuple<int, int> shape = std::make_tuple(rows, cols);
+  group_map[name] = std::make_unique<MMappedMatrix<DT>>();
+  group_map[name]->mmap = _create_memmap(dpg_filename, shape, "w+", dtype_norm);
+
+  if (dtype_norm == "float16") {
+    auto *data = reinterpret_cast<half *>(group_map[name]->mmap.data());
+    Map<Matrix<half, Dynamic, Dynamic>> mapped(data, rows, cols);
+    new (&(group_map[name]->_matrix)) Map<Matrix<half, Dynamic, Dynamic>>(data, rows, cols);
+    for (int i = 0; i < rows * cols; ++i) {
+      data[i] = static_cast<half>(values[static_cast<size_t>(i)]);
+    }
+  } else if (dtype_norm == "float32") {
+    auto *data = reinterpret_cast<float *>(group_map[name]->mmap.data());
+    Map<Matrix<float, Dynamic, Dynamic>> mapped(data, rows, cols);
+    new (&(group_map[name]->_matrix)) Map<Matrix<float, Dynamic, Dynamic>>(data, rows, cols);
+    for (int i = 0; i < rows * cols; ++i) {
+      data[i] = static_cast<float>(values[static_cast<size_t>(i)]);
+    }
+  } else {
+    auto *data = reinterpret_cast<double *>(group_map[name]->mmap.data());
+    Map<Matrix<double, Dynamic, Dynamic>> mapped(data, rows, cols);
+    new (&(group_map[name]->_matrix)) Map<Matrix<double, Dynamic, Dynamic>>(data, rows, cols);
+    for (int i = 0; i < rows * cols; ++i) {
+      data[i] = static_cast<double>(values[static_cast<size_t>(i)]);
+    }
+  }
+}
+
+template <typename DT>
+template <typename Derived>
+void TrxFile<DT>::add_dpg_from_matrix(const std::string &group,
+                                      const std::string &name,
+                                      const std::string &dtype,
+                                      const Eigen::MatrixBase<Derived> &matrix) {
+  if (matrix.size() == 0) {
+    throw std::invalid_argument("DPG matrix cannot be empty");
+  }
+  std::vector<typename Derived::Scalar> values;
+  values.reserve(static_cast<size_t>(matrix.size()));
+  for (Eigen::Index i = 0; i < matrix.rows(); ++i) {
+    for (Eigen::Index j = 0; j < matrix.cols(); ++j) {
+      values.push_back(matrix(i, j));
+    }
+  }
+  add_dpg_from_vector(group, name, dtype, values, static_cast<int>(matrix.rows()),
+                      static_cast<int>(matrix.cols()));
+}
+
+template <typename DT>
+const MMappedMatrix<DT> *TrxFile<DT>::get_dpg(const std::string &group, const std::string &name) const {
+  auto group_it = this->data_per_group.find(group);
+  if (group_it == this->data_per_group.end()) {
+    return nullptr;
+  }
+  auto field_it = group_it->second.find(name);
+  if (field_it == group_it->second.end()) {
+    return nullptr;
+  }
+  return field_it->second.get();
+}
+
+template <typename DT>
+std::vector<std::string> TrxFile<DT>::list_dpg_groups() const {
+  std::vector<std::string> groups;
+  groups.reserve(this->data_per_group.size());
+  for (const auto &kv : this->data_per_group) {
+    groups.push_back(kv.first);
+  }
+  return groups;
+}
+
+template <typename DT>
+std::vector<std::string> TrxFile<DT>::list_dpg_fields(const std::string &group) const {
+  std::vector<std::string> fields;
+  auto it = this->data_per_group.find(group);
+  if (it == this->data_per_group.end()) {
+    return fields;
+  }
+  fields.reserve(it->second.size());
+  for (const auto &kv : it->second) {
+    fields.push_back(kv.first);
+  }
+  return fields;
+}
+
+template <typename DT>
+void TrxFile<DT>::remove_dpg(const std::string &group, const std::string &name) {
+  auto group_it = this->data_per_group.find(group);
+  if (group_it == this->data_per_group.end()) {
+    return;
+  }
+  group_it->second.erase(name);
+  if (group_it->second.empty()) {
+    this->data_per_group.erase(group_it);
+  }
+}
+
+template <typename DT>
+void TrxFile<DT>::remove_dpg_group(const std::string &group) {
+  this->data_per_group.erase(group);
+}
+
+template <typename DT>
+std::unique_ptr<TrxFile<DT>> TrxFile<DT>::subset_streamlines(const std::vector<uint32_t> &streamline_ids,
+                                                             bool build_cache_for_result) const {
+  if (!this->streamlines) {
+    auto empty = std::make_unique<TrxFile<DT>>();
+    empty->header = _json_set(this->header, "NB_VERTICES", 0);
+    empty->header = _json_set(empty->header, "NB_STREAMLINES", 0);
+    return empty;
+  }
+
+  std::vector<uint64_t> offsets;
+  if (this->streamlines->_offsets.size() > 0) {
+    offsets.resize(static_cast<size_t>(this->streamlines->_offsets.size()));
+    for (Eigen::Index i = 0; i < this->streamlines->_offsets.size(); ++i) {
+      offsets[static_cast<size_t>(i)] = this->streamlines->_offsets(i, 0);
+    }
+  } else if (this->streamlines->_lengths.size() > 0) {
+    const size_t nb_streamlines = static_cast<size_t>(this->streamlines->_lengths.size());
+    offsets.resize(nb_streamlines + 1);
+    offsets[0] = 0;
+    for (size_t i = 0; i < nb_streamlines; ++i) {
+      offsets[i + 1] = offsets[i] + static_cast<uint64_t>(this->streamlines->_lengths(static_cast<Eigen::Index>(i)));
+    }
+  } else {
+    auto empty = std::make_unique<TrxFile<DT>>();
+    empty->header = _json_set(this->header, "NB_VERTICES", 0);
+    empty->header = _json_set(empty->header, "NB_STREAMLINES", 0);
+    return empty;
+  }
+
+  const size_t nb_streamlines = offsets.size() > 0 ? offsets.size() - 1 : 0;
+  if (nb_streamlines == 0) {
+    auto empty = std::make_unique<TrxFile<DT>>();
+    empty->header = _json_set(this->header, "NB_VERTICES", 0);
+    empty->header = _json_set(empty->header, "NB_STREAMLINES", 0);
+    return empty;
+  }
+
+  std::vector<uint32_t> selected;
+  selected.reserve(streamline_ids.size());
+  std::vector<uint8_t> seen(nb_streamlines, 0);
+  for (uint32_t id : streamline_ids) {
+    if (id >= nb_streamlines) {
+      throw std::invalid_argument("Streamline id out of range");
+    }
+    if (!seen[id]) {
+      selected.push_back(id);
+      seen[id] = 1;
+    }
+  }
+
+  if (selected.empty()) {
+    auto empty = std::make_unique<TrxFile<DT>>();
+    empty->header = _json_set(this->header, "NB_VERTICES", 0);
+    empty->header = _json_set(empty->header, "NB_STREAMLINES", 0);
+    return empty;
+  }
+
+  std::vector<int> old_to_new(nb_streamlines, -1);
+  size_t total_vertices = 0;
+  for (size_t i = 0; i < selected.size(); ++i) {
+    const uint32_t idx = selected[i];
+    old_to_new[idx] = static_cast<int>(i);
+    const uint64_t start = offsets[idx];
+    const uint64_t end = offsets[idx + 1];
+    total_vertices += static_cast<size_t>(end - start);
+  }
+
+  auto out = std::make_unique<TrxFile<DT>>(static_cast<int>(total_vertices),
+                                           static_cast<int>(selected.size()),
+                                           this);
+  out->header = _json_set(this->header, "NB_VERTICES", static_cast<int>(total_vertices));
+  out->header = _json_set(out->header, "NB_STREAMLINES", static_cast<int>(selected.size()));
+
+  auto &out_positions = out->streamlines->_data;
+  auto &out_offsets = out->streamlines->_offsets;
+  auto &out_lengths = out->streamlines->_lengths;
+
+  size_t cursor = 0;
+  out_offsets(0, 0) = 0;
+  for (size_t new_idx = 0; new_idx < selected.size(); ++new_idx) {
+    const uint32_t old_idx = selected[new_idx];
+    const uint64_t start = offsets[old_idx];
+    const uint64_t end = offsets[old_idx + 1];
+    const uint64_t len = end - start;
+
+    out_lengths(static_cast<Eigen::Index>(new_idx)) = static_cast<uint32_t>(len);
+    out_offsets(static_cast<Eigen::Index>(new_idx + 1), 0) =
+        out_offsets(static_cast<Eigen::Index>(new_idx), 0) + len;
+
+    if (len > 0) {
+      out_positions.block(static_cast<Eigen::Index>(cursor), 0,
+                          static_cast<Eigen::Index>(len), 3) =
+          this->streamlines->_data.block(static_cast<Eigen::Index>(start), 0,
+                                         static_cast<Eigen::Index>(len), 3);
+
+      for (const auto &kv : this->data_per_vertex) {
+        const std::string &name = kv.first;
+        auto out_it = out->data_per_vertex.find(name);
+        if (out_it == out->data_per_vertex.end()) {
+          continue;
+        }
+        auto &out_dpv = out_it->second->_data;
+        auto &src_dpv = kv.second->_data;
+        const Eigen::Index cols = src_dpv.cols();
+        out_dpv.block(static_cast<Eigen::Index>(cursor), 0,
+                      static_cast<Eigen::Index>(len), cols) =
+            src_dpv.block(static_cast<Eigen::Index>(start), 0,
+                          static_cast<Eigen::Index>(len), cols);
+      }
+    }
+
+    for (const auto &kv : this->data_per_streamline) {
+      const std::string &name = kv.first;
+      auto out_it = out->data_per_streamline.find(name);
+      if (out_it == out->data_per_streamline.end()) {
+        continue;
+      }
+      out_it->second->_matrix.row(static_cast<Eigen::Index>(new_idx)) =
+          kv.second->_matrix.row(static_cast<Eigen::Index>(old_idx));
+    }
+
+    cursor += static_cast<size_t>(len);
+  }
+
+  for (const auto &kv : this->groups) {
+    const std::string &group_name = kv.first;
+    std::vector<uint32_t> indices;
+    auto &matrix = kv.second->_matrix;
+    indices.reserve(static_cast<size_t>(matrix.size()));
+    for (Eigen::Index r = 0; r < matrix.rows(); ++r) {
+      for (Eigen::Index c = 0; c < matrix.cols(); ++c) {
+        const uint32_t old_idx = matrix(r, c);
+        if (old_idx >= old_to_new.size()) {
+          continue;
+        }
+        const int new_idx = old_to_new[old_idx];
+        if (new_idx >= 0) {
+          indices.push_back(static_cast<uint32_t>(new_idx));
+        }
+      }
+    }
+    if (!indices.empty()) {
+      out->add_group_from_indices(group_name, indices);
+    }
+  }
+
+  if (!this->data_per_group.empty() && !out->groups.empty()) {
+    std::string dpg_dir = out->_uncompressed_folder_handle + SEPARATOR + "dpg" + SEPARATOR;
+    {
+      std::error_code ec;
+      trx::fs::create_directories(dpg_dir, ec);
+      if (ec) {
+        throw std::runtime_error("Could not create directory " + dpg_dir);
+      }
+    }
+
+    for (const auto &group_kv : out->groups) {
+      const std::string &group_name = group_kv.first;
+      auto src_group_it = this->data_per_group.find(group_name);
+      if (src_group_it == this->data_per_group.end()) {
+        continue;
+      }
+
+      std::string dpg_subdir = dpg_dir + group_name;
+      {
+        std::error_code ec;
+        trx::fs::create_directories(dpg_subdir, ec);
+        if (ec) {
+          throw std::runtime_error("Could not create directory " + dpg_subdir);
+        }
+      }
+
+      if (out->data_per_group.find(group_name) == out->data_per_group.end()) {
+        out->data_per_group.emplace(group_name, std::map<std::string, std::unique_ptr<MMappedMatrix<DT>>>{});
+      } else {
+        out->data_per_group[group_name].clear();
+      }
+
+      for (const auto &field_kv : src_group_it->second) {
+        const std::string &field_name = field_kv.first;
+        std::string dpg_dtype = dtype_from_scalar<DT>();
+        std::string dpg_filename = dpg_subdir + SEPARATOR + field_name;
+        dpg_filename = _generate_filename_from_data(field_kv.second->_matrix, dpg_filename);
+
+        std::tuple<int, int> dpg_shape = std::make_tuple(field_kv.second->_matrix.rows(),
+                                                         field_kv.second->_matrix.cols());
+
+        out->data_per_group[group_name][field_name] = std::make_unique<MMappedMatrix<DT>>();
+        out->data_per_group[group_name][field_name]->mmap =
+            _create_memmap(dpg_filename, dpg_shape, "w+", dpg_dtype);
+
+        if (dpg_dtype.compare("float16") == 0) {
+          new (&(out->data_per_group[group_name][field_name]->_matrix)) Map<Matrix<half, Dynamic, Dynamic>>(
+              reinterpret_cast<half *>(out->data_per_group[group_name][field_name]->mmap.data()),
+              std::get<0>(dpg_shape), std::get<1>(dpg_shape));
+        } else if (dpg_dtype.compare("float32") == 0) {
+          new (&(out->data_per_group[group_name][field_name]->_matrix)) Map<Matrix<float, Dynamic, Dynamic>>(
+              reinterpret_cast<float *>(out->data_per_group[group_name][field_name]->mmap.data()),
+              std::get<0>(dpg_shape), std::get<1>(dpg_shape));
+        } else {
+          new (&(out->data_per_group[group_name][field_name]->_matrix)) Map<Matrix<double, Dynamic, Dynamic>>(
+              reinterpret_cast<double *>(out->data_per_group[group_name][field_name]->mmap.data()),
+              std::get<0>(dpg_shape), std::get<1>(dpg_shape));
+        }
+
+        for (int i = 0; i < out->data_per_group[group_name][field_name]->_matrix.rows(); ++i) {
+          for (int j = 0; j < out->data_per_group[group_name][field_name]->_matrix.cols(); ++j) {
+            out->data_per_group[group_name][field_name]->_matrix(i, j) =
+                field_kv.second->_matrix(i, j);
+          }
+        }
+      }
+    }
+  }
+
+  if (build_cache_for_result) {
+    out->build_streamline_aabbs();
+  }
   return out;
 }
 

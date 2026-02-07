@@ -17,6 +17,7 @@ Installing dependencies:
 These examples include installing google test,
 but this is only necessary if you want to build the tests.
 Similarly, ninja is not strictly necessary, but it is recommended.
+zlib is only required if you want to use the NIfTI I/O features.
 
 On Debian-based systems the zip tools have been split into separate packages
 on recent ubuntu versions.
@@ -37,14 +38,14 @@ On Mac OS, you can install the dependencies with brew:
 
 .. code-block:: bash
 
-   brew install libzip eigen googletest ninja
+   brew install libzip eigen googletest ninja zlib
 
 
 On Windows, you can install the dependencies through vcpkg and chocolatey:
 
 .. code-block:: powershell
    choco install ninja -y
-   vcpkg install libzip eigen3 gtest
+   vcpkg install libzip eigen3 gtest zlib
 
 
 Building to use in other projects
@@ -94,6 +95,7 @@ Building for testing
    cmake -S . -B build \
      -G Ninja \
      -DTRX_BUILD_TESTS=ON \
+     -DTRX_ENABLE_NIFTI=ON \
      -DTRX_BUILD_EXAMPLES=OFF
 
    cmake --build build
@@ -101,6 +103,7 @@ Building for testing
 
 Tests require GTest to be discoverable by CMake (e.g., via a system package or
 ``GTest_DIR``). If GTest is not found, tests will be skipped.
+NIfTI I/O tests additionally require zlib to be discoverable (``ZLIB::ZLIB``).
 
 
 Building documentation:

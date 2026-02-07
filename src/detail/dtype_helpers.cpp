@@ -33,8 +33,6 @@ int _sizeof_dtype(const std::string &dtype) {
 std::string _get_dtype(const std::string &dtype) {
   const char dt = dtype.back();
   switch (dt) {
-  case 'b':
-    return "bit";
   case 'h':
     return "uint8";
   case 't':
@@ -63,8 +61,6 @@ std::string _get_dtype(const std::string &dtype) {
 }
 
 bool _is_dtype_valid(const std::string &ext) {
-  if (ext == "bit")
-    return true;
   if (std::find(::trx::dtypes.begin(), ::trx::dtypes.end(), ext) != ::trx::dtypes.end())
     return true;
   return false;

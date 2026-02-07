@@ -214,11 +214,73 @@ const TestTrxFixture &get_fixture() {
 }
 } // namespace
 
+std::unique_ptr<TrxFile<float>> create_small_trx() {
+  auto trx = std::make_unique<TrxFile<float>>(8, 4);
+
+  auto &positions = trx->streamlines->_data;
+  auto &offsets = trx->streamlines->_offsets;
+  auto &lengths = trx->streamlines->_lengths;
+
+  lengths(0) = 2;
+  lengths(1) = 2;
+  lengths(2) = 3;
+  lengths(3) = 1;
+
+  offsets(0, 0) = 0;
+  offsets(1, 0) = 2;
+  offsets(2, 0) = 4;
+  offsets(3, 0) = 7;
+  offsets(4, 0) = 8;
+
+  positions(0, 0) = 0.0f;
+  positions(0, 1) = 0.0f;
+  positions(0, 2) = 0.0f;
+  positions(1, 0) = 1.0f;
+  positions(1, 1) = 1.0f;
+  positions(1, 2) = 1.0f;
+
+  positions(2, 0) = 10.0f;
+  positions(2, 1) = 0.0f;
+  positions(2, 2) = 0.0f;
+  positions(3, 0) = 11.0f;
+  positions(3, 1) = 0.0f;
+  positions(3, 2) = 0.0f;
+
+  positions(4, 0) = -5.0f;
+  positions(4, 1) = 5.0f;
+  positions(4, 2) = 0.0f;
+  positions(5, 0) = -5.0f;
+  positions(5, 1) = 6.0f;
+  positions(5, 2) = 0.0f;
+  positions(6, 0) = -5.0f;
+  positions(6, 1) = 7.0f;
+  positions(6, 2) = 0.0f;
+
+  positions(7, 0) = 0.0f;
+  positions(7, 1) = 0.0f;
+  positions(7, 2) = 9.0f;
+
+  std::vector<float> dpv_values{100.0f, 101.0f, 102.0f, 103.0f,
+                                104.0f, 105.0f, 106.0f, 107.0f};
+  trx->add_dpv_from_vector("dpv1", "float32", dpv_values);
+
+  std::vector<float> dps_values{1.0f, 2.0f, 3.0f, 4.0f};
+  trx->add_dps_from_vector("dps1", "float32", dps_values);
+
+  trx->add_group_from_indices("g1", std::vector<uint32_t>{0, 2});
+  trx->add_group_from_indices("g2", std::vector<uint32_t>{1, 3});
+
+  std::vector<float> dpg_values{0.5f, 1.5f};
+  trx->add_dpg_from_vector("g1", "dpg1", "float32", dpg_values);
+
+  return trx;
+}
+
 // TODO: Test null filenames. Maybe use MatrixBase instead of ArrayBase
 // TODO: try to update test case to use GTest parameterization
 // Mirrors trx/tests/test_memmap.py::test__generate_filename_from_data.
 TEST(TrxFileMemmap, __generate_filename_from_data) {
-  std::string filename = "mean_fa.bit";
+  std::string filename = "mean_fa.uint8";
   std::string output_fn;
 
   Matrix<int16_t, 5, 4> arr1;
@@ -430,23 +492,20 @@ TEST(TrxFileMemmap, __compute_lengths) {
 
 // Mirrors trx/tests/test_memmap.py::test__is_dtype_valid.
 TEST(TrxFileMemmap, __is_dtype_valid) {
-  std::string ext = "bit";
-  EXPECT_TRUE(trx::detail::_is_dtype_valid(ext));
+  std::string ext1 = "int16";
+  EXPECT_TRUE(trx::detail::_is_dtype_valid(ext1));
 
-  std::string ext2 = "int16";
+  std::string ext2 = "float32";
   EXPECT_TRUE(trx::detail::_is_dtype_valid(ext2));
 
-  std::string ext3 = "float32";
+  std::string ext3 = "uint8";
   EXPECT_TRUE(trx::detail::_is_dtype_valid(ext3));
 
-  std::string ext4 = "uint8";
+  std::string ext4 = "ushort";
   EXPECT_TRUE(trx::detail::_is_dtype_valid(ext4));
 
-  std::string ext5 = "ushort";
-  EXPECT_TRUE(trx::detail::_is_dtype_valid(ext5));
-
-  std::string ext6 = "txt";
-  EXPECT_FALSE(trx::detail::_is_dtype_valid(ext6));
+  std::string ext5 = "txt";
+  EXPECT_FALSE(trx::detail::_is_dtype_valid(ext5));
 }
 
 // asserts C++ dtype alias behavior.
@@ -457,7 +516,6 @@ TEST(TrxFileMemmap, __sizeof_dtype_ushort_alias) {
 
 // asserts dtype size mapping and default.
 TEST(TrxFileMemmap, __sizeof_dtype_values) {
-  EXPECT_EQ(trx::detail::_sizeof_dtype("bit"), 1);
   EXPECT_EQ(trx::detail::_sizeof_dtype("uint8"), sizeof(uint8_t));
   EXPECT_EQ(trx::detail::_sizeof_dtype("uint16"), sizeof(uint16_t));
   EXPECT_EQ(trx::detail::_sizeof_dtype("uint32"), sizeof(uint32_t));
@@ -473,7 +531,6 @@ TEST(TrxFileMemmap, __sizeof_dtype_values) {
 
 // asserts dtype code mapping.
 TEST(TrxFileMemmap, __get_dtype_codes) {
-  EXPECT_EQ(trx::detail::_get_dtype("b"), "bit");
   EXPECT_EQ(trx::detail::_get_dtype("h"), "uint8");
   EXPECT_EQ(trx::detail::_get_dtype("t"), "uint16");
   EXPECT_EQ(trx::detail::_get_dtype("j"), "uint32");
@@ -737,6 +794,142 @@ TEST(TrxFileMemmap, save) {
   // trx::TrxFile<half> *saved = trx::load_from_zip<half>("testsave.trx");
   //  EXPECT_EQ(saved->data_per_vertex["color_x.float16"]->_data,
   //  trx->data_per_vertex["color_x.float16"]->_data);
+}
+
+TEST(TrxFileMemmap, build_streamline_aabbs) {
+  auto trx = create_small_trx();
+  auto aabbs = trx->build_streamline_aabbs();
+  ASSERT_EQ(aabbs.size(), 4u);
+
+  EXPECT_FLOAT_EQ(static_cast<float>(aabbs[0][0]), 0.0f);
+  EXPECT_FLOAT_EQ(static_cast<float>(aabbs[0][3]), 1.0f);
+  EXPECT_FLOAT_EQ(static_cast<float>(aabbs[1][0]), 10.0f);
+  EXPECT_FLOAT_EQ(static_cast<float>(aabbs[1][3]), 11.0f);
+  EXPECT_FLOAT_EQ(static_cast<float>(aabbs[2][1]), 5.0f);
+  EXPECT_FLOAT_EQ(static_cast<float>(aabbs[2][4]), 7.0f);
+  EXPECT_FLOAT_EQ(static_cast<float>(aabbs[3][2]), 9.0f);
+  EXPECT_FLOAT_EQ(static_cast<float>(aabbs[3][5]), 9.0f);
+
+  trx->close();
+}
+
+TEST(TrxFileMemmap, query_aabb_filters_streamlines) {
+  auto trx = create_small_trx();
+  std::array<float, 3> min_corner{9.0f, -1.0f, -1.0f};
+  std::array<float, 3> max_corner{12.0f, 1.0f, 1.0f};
+
+  auto subset = trx->query_aabb(min_corner, max_corner);
+  EXPECT_EQ(subset->num_streamlines(), 1u);
+  EXPECT_EQ(subset->num_vertices(), 2u);
+
+  auto dps_it = subset->data_per_streamline.find("dps1");
+  ASSERT_NE(dps_it, subset->data_per_streamline.end());
+  EXPECT_FLOAT_EQ(dps_it->second->_matrix(0, 0), 2.0f);
+
+  auto dpv_it = subset->data_per_vertex.find("dpv1");
+  ASSERT_NE(dpv_it, subset->data_per_vertex.end());
+  EXPECT_FLOAT_EQ(dpv_it->second->_data(0, 0), 102.0f);
+  EXPECT_FLOAT_EQ(dpv_it->second->_data(1, 0), 103.0f);
+
+  subset->close();
+  trx->close();
+}
+
+TEST(TrxFileMemmap, query_aabb_rejects_bad_aabb_size) {
+  auto trx = create_small_trx();
+  std::array<float, 3> min_corner{-1.0f, -1.0f, -1.0f};
+  std::array<float, 3> max_corner{1.0f, 1.0f, 1.0f};
+
+  std::vector<std::array<Eigen::half, 6>> bad_aabbs(1);
+  EXPECT_THROW(trx->query_aabb(min_corner, max_corner, &bad_aabbs), std::invalid_argument);
+
+  trx->close();
+}
+
+TEST(TrxFileMemmap, subset_streamlines_basic) {
+  auto trx = create_small_trx();
+  std::vector<uint32_t> ids{2, 0, 2};
+
+  auto subset = trx->subset_streamlines(ids);
+  EXPECT_EQ(subset->num_streamlines(), 2u);
+  EXPECT_EQ(subset->num_vertices(), 5u);
+
+  auto dps_it = subset->data_per_streamline.find("dps1");
+  ASSERT_NE(dps_it, subset->data_per_streamline.end());
+  EXPECT_FLOAT_EQ(dps_it->second->_matrix(0, 0), 3.0f);
+  EXPECT_FLOAT_EQ(dps_it->second->_matrix(1, 0), 1.0f);
+
+  auto group_it = subset->groups.find("g1");
+  ASSERT_NE(group_it, subset->groups.end());
+  EXPECT_EQ(group_it->second->_matrix(0, 0), 1u);
+  EXPECT_EQ(group_it->second->_matrix(1, 0), 0u);
+
+  auto dpg_it = subset->get_dpg("g1", "dpg1");
+  ASSERT_NE(dpg_it, nullptr);
+  EXPECT_FLOAT_EQ(dpg_it->_matrix(0, 0), 0.5f);
+  EXPECT_FLOAT_EQ(dpg_it->_matrix(1, 0), 1.5f);
+
+  subset->close();
+  trx->close();
+}
+
+TEST(TrxFileMemmap, subset_streamlines_empty) {
+  auto trx = create_small_trx();
+  std::vector<uint32_t> ids;
+  auto subset = trx->subset_streamlines(ids);
+  EXPECT_EQ(subset->num_streamlines(), 0u);
+  EXPECT_EQ(subset->num_vertices(), 0u);
+  subset->close();
+  trx->close();
+}
+
+TEST(TrxFileMemmap, subset_streamlines_out_of_range) {
+  auto trx = create_small_trx();
+  std::vector<uint32_t> ids{99};
+  EXPECT_THROW(trx->subset_streamlines(ids), std::invalid_argument);
+  trx->close();
+}
+
+TEST(TrxFileMemmap, dpg_api_vector_and_matrix) {
+  auto trx = create_small_trx();
+
+  std::vector<float> values{1.0f, 2.0f, 3.0f, 4.0f};
+  trx->add_dpg_from_vector("g2", "dpg_vec", "float32", values, 2, 2);
+
+  Matrix<float, 1, 3> mat;
+  mat << 5.0f, 6.0f, 7.0f;
+  trx->add_dpg_from_matrix("g2", "dpg_mat", "float32", mat);
+
+  auto fields = trx->list_dpg_fields("g2");
+  EXPECT_EQ(fields.size(), 2u);
+
+  auto dpg_vec = trx->get_dpg("g2", "dpg_vec");
+  ASSERT_NE(dpg_vec, nullptr);
+  EXPECT_FLOAT_EQ(dpg_vec->_matrix(1, 1), 4.0f);
+
+  auto dpg_mat = trx->get_dpg("g2", "dpg_mat");
+  ASSERT_NE(dpg_mat, nullptr);
+  EXPECT_FLOAT_EQ(dpg_mat->_matrix(0, 2), 7.0f);
+
+  trx->remove_dpg("g2", "dpg_vec");
+  EXPECT_EQ(trx->get_dpg("g2", "dpg_vec"), nullptr);
+
+  trx->remove_dpg_group("g2");
+  EXPECT_TRUE(trx->list_dpg_fields("g2").empty());
+
+  trx->close();
+}
+
+TEST(TrxFileMemmap, dpg_api_invalid_inputs) {
+  auto trx = create_small_trx();
+
+  std::vector<float> values{1.0f, 2.0f, 3.0f};
+  EXPECT_THROW(trx->add_dpg_from_vector("", "dpg", "float32", values), std::invalid_argument);
+  EXPECT_THROW(trx->add_dpg_from_vector("g1", "", "float32", values), std::invalid_argument);
+  EXPECT_THROW(trx->add_dpg_from_vector("g1", "dpg", "int8", values), std::invalid_argument);
+  EXPECT_THROW(trx->add_dpg_from_vector("g1", "dpg", "float32", values, 2, 2), std::invalid_argument);
+
+  trx->close();
 }
 
 int main(int argc, char **argv) { // check_syntax off

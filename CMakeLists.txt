@@ -26,6 +26,7 @@ option(TRX_BUILD_EXAMPLES "Build trx example commandline programs" ON)
 option(TRX_ENABLE_CLANG_TIDY "Run clang-tidy during builds" OFF)
 option(TRX_ENABLE_INSTALL "Install trx-cpp targets" ${TRX_IS_TOP_LEVEL})
 option(TRX_BUILD_DOCS "Build API documentation with Doxygen/Sphinx" OFF)
+option(TRX_ENABLE_NIFTI "Enable optional NIfTI header utilities" ${TRX_BUILD_EXAMPLES})
 
 if(TRX_ENABLE_CLANG_TIDY)
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -144,6 +145,25 @@ if(TRX_BUILD_TESTS)
     else()
         message(STATUS "GTest not found; skipping tests. Set GTest_DIR to a config path to enable.")
     endif()
+endif()
+
+if(TRX_ENABLE_NIFTI)
+    find_package(ZLIB REQUIRED)
+    add_library(trx-nifti
+        src/nifti_io.cpp
+    )
+    add_library(trx-cpp::trx-nifti ALIAS trx-nifti)
+    target_compile_features(trx-nifti PUBLIC cxx_std_17)
+    target_include_directories(trx-nifti
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    target_link_libraries(trx-nifti
+        PUBLIC
+            Eigen3::Eigen
+            ZLIB::ZLIB
+    )
 endif()
 
 if(TRX_BUILD_EXAMPLES)

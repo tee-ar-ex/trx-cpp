@@ -560,10 +560,6 @@ void populate_fps(const string &name, std::map<std::string, std::tuple<long long
       throw std::invalid_argument(std::string("The dtype of ") + elem_filename + std::string(" is not supported"));
     }
 
-    if (ext == "bit") {
-      ext = "bool";
-    }
-
     const int dtype_size = trx::detail::_sizeof_dtype(ext);
     std::error_code size_ec;
     auto raw_size = trx::fs::file_size(entry_path, size_ec);
@@ -652,12 +648,6 @@ mio::shared_mmap_sink _create_memmap(std::string filename,
                                      const std::string &dtype,
                                      long long offset) {
   static_cast<void>(mode);
-  if (dtype == "bool") {
-    const std::string ext = "bit";
-    filename.replace(filename.size() - 4, 3, ext);
-    filename.pop_back();
-  }
-
   const std::size_t filesize = static_cast<std::size_t>(std::get<0>(shape)) *
                                static_cast<std::size_t>(std::get<1>(shape)) *
                                static_cast<std::size_t>(trx::detail::_sizeof_dtype(dtype));

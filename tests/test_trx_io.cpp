@@ -1,6 +1,10 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <trx/trx.h>
+#ifdef TRX_ENABLE_NIFTI
+#include <trx/nifti_io.h>
+#include <zlib.h>
+#endif
 #include <zip.h>
 
 #include <algorithm>
@@ -386,6 +390,118 @@ TEST(TrxFileIo, multi_load_save_rasmm) {
     fs::remove_all(tmp_dir, ec);
   }
 }
+
+TEST(TrxFileIo, roundtrip_voxel_to_rasmm) {
+  const auto gs_dir = require_gold_standard_dir();
+  const fs::path input = gs_dir / "gs.trx";
+  ASSERT_TRUE(fs::exists(input));
+
+  auto reader = load_trx<float>(input);
+  auto *trx = reader.get();
+
+  Eigen::Matrix4f affine;
+  affine << 1.0f, 0.1f, 0.2f, 10.0f,
+      -0.3f, 1.2f, 0.4f, -5.0f,
+      0.5f, -0.6f, 0.9f, 2.5f,
+      0.0f, 0.0f, 0.0f, 1.0f;
+  trx->set_voxel_to_rasmm(affine);
+
+  fs::path tmp_dir = make_temp_test_dir("trx_affine");
+  fs::path out_path = tmp_dir / "gs_affine.trx";
+  trx->save(out_path.string());
+  trx->close();
+
+  auto reader2 = load_trx<float>(out_path);
+  auto *trx2 = reader2.get();
+  const auto &vox = trx2->header["VOXEL_TO_RASMM"];
+  ASSERT_TRUE(vox.is_array());
+  const auto rows = vox.array_items();
+  ASSERT_EQ(rows.size(), 4U);
+  for (size_t i = 0; i < 4; ++i) {
+    const auto cols = rows[i].array_items();
+    ASSERT_EQ(cols.size(), 4U);
+    for (size_t j = 0; j < 4; ++j) {
+      EXPECT_FLOAT_EQ(cols[j].number_value(), affine(static_cast<int>(i), static_cast<int>(j)));
+    }
+  }
+  trx2->close();
+
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
+
+#ifdef TRX_ENABLE_NIFTI
+fs::path gzip_copy(const fs::path &input, const fs::path &output) {
+  std::ifstream in(input, std::ios::binary);
+  if (!in.is_open()) {
+    throw std::runtime_error("Failed to open NIfTI for gzip: " + input.string());
+  }
+
+  gzFile out = gzopen(output.string().c_str(), "wb");
+  if (!out) {
+    throw std::runtime_error("Failed to open gzip output: " + output.string());
+  }
+
+  std::array<char, 16384> buffer{};
+  while (in) {
+    in.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    const std::streamsize got = in.gcount();
+    if (got <= 0) {
+      break;
+    }
+    const int written = gzwrite(out, buffer.data(), static_cast<unsigned int>(got));
+    if (written != got) {
+      gzclose(out);
+      throw std::runtime_error("Failed to write gzip output: " + output.string());
+    }
+  }
+
+  gzclose(out);
+  return output;
+}
+
+TEST(TrxFileIo, nifti_voxel_to_rasmm_gs) {
+  const auto gs_dir = require_gold_standard_dir();
+  const fs::path nifti_path = gs_dir / "gs.nii";
+  ASSERT_TRUE(fs::exists(nifti_path));
+
+  Eigen::Matrix4f expected;
+  expected << 3.96961546e+00f, -2.45575607e-01f, 7.59612350e-03f, 1.20822277e+01f,
+      4.91151214e-01f, 1.96961546e+00f, -1.22787803e-01f, 2.21644382e+01f,
+      3.03844940e-02f, 2.45575607e-01f, 9.92403865e-01f, 3.79177742e+01f,
+      0.00000000e+00f, 0.00000000e+00f, 0.00000000e+00f, 1.00000000e+00f;
+
+  const Eigen::Matrix4f actual = trx::read_nifti_voxel_to_rasmm(nifti_path.string());
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) {
+      EXPECT_NEAR(actual(i, j), expected(i, j), 1e-5f);
+    }
+  }
+}
+
+TEST(TrxFileIo, nifti_voxel_to_rasmm_gs_gz_roundtrip) {
+  const auto gs_dir = require_gold_standard_dir();
+  const fs::path nifti_path = gs_dir / "gs.nii";
+  ASSERT_TRUE(fs::exists(nifti_path));
+
+  const Eigen::Matrix4f uncompressed = trx::read_nifti_voxel_to_rasmm(nifti_path.string());
+
+  fs::path tmp_dir = make_temp_test_dir("trx_gs_nifti_gz");
+  fs::path gz_path = tmp_dir / "gs.nii.gz";
+  gzip_copy(nifti_path, gz_path);
+  ASSERT_TRUE(fs::exists(gz_path));
+
+  const Eigen::Matrix4f gz_read = trx::read_nifti_voxel_to_rasmm(gz_path.string());
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) {
+      EXPECT_NEAR(gz_read(i, j), uncompressed(i, j), 1e-5f);
+    }
+  }
+
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
+#endif
 
 TEST(TrxFileIo, delete_tmp_gs_dir_rasmm) {
   const auto gs_dir = require_gold_standard_dir();

@@ -11,6 +11,7 @@ tractography file format.
    overview
    building
    usage
+   downstream_usage
    linting
 
 .. toctree::

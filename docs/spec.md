@@ -59,7 +59,6 @@ Groups are tables of indices that allow sparse & overlapping representation(clus
 - int8/16/32/64
 - uint8/16/32/64
 - float16/32/64
-- bit (for binary/boolean array)
 
 # Example structure
 ```bash

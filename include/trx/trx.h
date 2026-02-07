@@ -157,18 +157,13 @@ template <> struct DTypeName<uint64_t> {
   static constexpr std::string_view value() { return "uint64"; }
 };
 
-template <> struct DTypeName<bool> {
-  static constexpr std::string_view value() { return "bit"; }
-};
-
 template <typename T> inline std::string dtype_from_scalar() {
   typedef typename std::remove_cv<typename std::remove_reference<T>::type>::type CleanT;
   return std::string(DTypeName<CleanT>::value());
 }
 
 inline constexpr const char *SEPARATOR = "/";
-inline const std::array<std::string_view, 13> dtypes = {"float16",
-                                                        "bit",
+inline const std::array<std::string_view, 12> dtypes = {"float16",
                                                         "uint8",
                                                         "uint16",
                                                         "ushort",
@@ -285,6 +280,12 @@ public:
    * @param indices Streamline indices (uint32) belonging to the group.
    */
   void add_group_from_indices(const std::string &name, const std::vector<uint32_t> &indices);
+  /**
+   * @brief Set the VOXEL_TO_RASMM affine matrix in the TRX header.
+   *
+   * This updates header["VOXEL_TO_RASMM"] with the provided 4x4 matrix.
+   */
+  void set_voxel_to_rasmm(const Eigen::Matrix4f &affine);
   void add_dpv_from_tsf(const std::string &name, const std::string &dtype, const std::string &path);
   void export_dpv_to_tsf(const std::string &name,
                          const std::string &path,
@@ -325,7 +326,94 @@ public:
     return 0;
   }
 
+  /**
+   * @brief Build per-streamline axis-aligned bounding boxes (AABB).
+   *
+   * Each entry is {min_x, min_y, min_z, max_x, max_y, max_z} in TRX coordinates.
+   */
+  std::vector<std::array<Eigen::half, 6>> build_streamline_aabbs() const;
+
+  /**
+   * @brief Extract a subset of streamlines intersecting an axis-aligned box.
+   *
+   * The box is defined by min/max corners in TRX coordinates.
+   * Returns a new TrxFile with positions, DPV/DPS, and groups remapped.
+   * Optionally builds the AABB cache for the returned TrxFile.
+   */
+  /**
+   * @brief Extract a subset of streamlines intersecting an axis-aligned box.
+   *
+   * The box is defined by min/max corners in TRX coordinates.
+   * Returns a new TrxFile with positions, DPV/DPS, and groups remapped.
+   * Optionally builds the AABB cache for the returned TrxFile.
+   */
+  std::unique_ptr<TrxFile<DT>>
+  query_aabb(const std::array<float, 3> &min_corner,
+             const std::array<float, 3> &max_corner,
+             const std::vector<std::array<Eigen::half, 6>> *precomputed_aabbs = nullptr,
+             bool build_cache_for_result = false) const;
+
+  /**
+   * @brief Extract a subset of streamlines by index.
+   *
+   * The returned TrxFile remaps positions, DPV/DPS, and groups.
+   * Optionally builds the AABB cache for the returned TrxFile.
+   */
+  std::unique_ptr<TrxFile<DT>>
+  subset_streamlines(const std::vector<uint32_t> &streamline_ids,
+                     bool build_cache_for_result = false) const;
+
+  /**
+   * @brief Add a data-per-group (DPG) field from a flat vector.
+   *
+   * Values are stored as a matrix of shape (rows, cols). If cols is -1,
+   * it is inferred from values.size() / rows.
+   */
+  template <typename T>
+  void add_dpg_from_vector(const std::string &group,
+                           const std::string &name,
+                           const std::string &dtype,
+                           const std::vector<T> &values,
+                           int rows = 1,
+                           int cols = -1);
+
+  /**
+   * @brief Add a data-per-group (DPG) field from an Eigen matrix.
+   */
+  template <typename Derived>
+  void add_dpg_from_matrix(const std::string &group,
+                           const std::string &name,
+                           const std::string &dtype,
+                           const Eigen::MatrixBase<Derived> &matrix);
+
+  /**
+   * @brief Get a DPG field or nullptr if missing.
+   */
+  const MMappedMatrix<DT> *get_dpg(const std::string &group, const std::string &name) const;
+
+  /**
+   * @brief List DPG groups present in this TrxFile.
+   */
+  std::vector<std::string> list_dpg_groups() const;
+
+  /**
+   * @brief List DPG fields for a given group.
+   */
+  std::vector<std::string> list_dpg_fields(const std::string &group) const;
+
+  /**
+   * @brief Remove a DPG field from a group.
+   */
+  void remove_dpg(const std::string &group, const std::string &name);
+
+  /**
+   * @brief Remove all DPG fields for a group.
+   */
+  void remove_dpg_group(const std::string &group);
+
 private:
+  void invalidate_aabb_cache() const;
+  mutable std::vector<std::array<Eigen::half, 6>> aabb_cache_;
   /**
    * @brief Load a TrxFile from a zip archive.
    *
