@@ -866,8 +866,10 @@ TEST(TrxFileMemmap, subset_streamlines_basic) {
 
   auto dpg_it = subset->get_dpg("g1", "dpg1");
   ASSERT_NE(dpg_it, nullptr);
+  ASSERT_EQ(dpg_it->_matrix.rows(), 1);
+  ASSERT_EQ(dpg_it->_matrix.cols(), 2);
   EXPECT_FLOAT_EQ(dpg_it->_matrix(0, 0), 0.5f);
-  EXPECT_FLOAT_EQ(dpg_it->_matrix(1, 0), 1.5f);
+  EXPECT_FLOAT_EQ(dpg_it->_matrix(0, 1), 1.5f);
 
   subset->close();
   trx->close();
