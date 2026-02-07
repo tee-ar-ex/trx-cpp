@@ -6,6 +6,14 @@ build:
     python: "3.11"
   apt_packages:
     - cmake
+    - g++
+    - lcov
+    - zlib1g-dev
+    - libeigen3-dev
+    - libzip-dev
+    - libzip-tools
+    - ninja-build
+    
   jobs:
     pre_build:
       - cmake -S . -B build -DTRX_BUILD_DOCS=ON
