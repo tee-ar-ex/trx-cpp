@@ -6,20 +6,8 @@ tractography file format (zip archives or on-disk directories of memmaps).
 
 ## Documentation
 
-Project documentation lives in `docs/` and includes build/usage instructions
-plus the API reference. Build the site locally with the `docs` CMake target:
-
-```
-# Install prerequisites (Ubuntu example)
-sudo apt-get install -y doxygen python3-pip
-python3 -m pip install --user -r docs/requirements.txt
-
-# Configure once, then build the docs target
-cmake -S . -B build
-cmake --build build --target docs
-```
-
-Open `docs/_build/html/index.html` in a browser.
+Project documentation (build/usage instructions and API reference) is hosted at
+https://trx-cpp.readthedocs.io/en/latest/.
 
 
 ## Third-party notices
@@ -31,8 +19,3 @@ Open `docs/_build/html/index.html` in a browser.
 - `clang-format-all` and `check_syntax` are adapted from MRtrix3
   (https://github.com/MRtrix3/mrtrix3) and retain their original copyright
   notices under the Mozilla Public License 2.0.
-
-## Usage Examples
-
-See the documentation in `docs/` for examples and API details.
-
