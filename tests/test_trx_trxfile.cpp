@@ -1,4 +1,5 @@
 #include <any>
+#include <memory>
 #include <sstream>
 
 #define private public
@@ -13,12 +14,12 @@
 #include <set>
 
 using namespace Eigen;
-using namespace trxmmap;
+using namespace trx;
 namespace fs = std::filesystem;
 
 namespace {
-template <typename DT> trxmmap::TrxFile<DT> *load_trx_dir(const fs::path &path) {
-  return trxmmap::load_from_directory<DT>(path.string());
+template <typename DT> trx::TrxReader<DT> load_trx_dir(const fs::path &path) {
+  return trx::TrxReader<DT>(path.string());
 }
 
 fs::path make_temp_test_dir(const std::string &prefix) {
@@ -69,59 +70,59 @@ fs::path create_float_trx_dir() {
 
   Matrix<float, Dynamic, Dynamic, RowMajor> positions(4, 3);
   positions << 0.0f, 0.1f, 0.2f, 1.0f, 1.1f, 1.2f, 2.0f, 2.1f, 2.2f, 3.0f, 3.1f, 3.2f;
-  trxmmap::write_binary((root / "positions.3.float32").string(), positions);
+  trx::write_binary((root / "positions.3.float32").string(), positions);
 
   Matrix<uint32_t, Dynamic, Dynamic, RowMajor> offsets(3, 1);
   offsets << 0, 2, 4;
-  trxmmap::write_binary((root / "offsets.uint32").string(), offsets);
+  trx::write_binary((root / "offsets.uint32").string(), offsets);
 
   fs::path dpv_dir = root / "dpv";
   std::error_code ec;
   fs::create_directories(dpv_dir, ec);
   Matrix<float, Dynamic, Dynamic, RowMajor> dpv(4, 1);
   dpv << 0.0f, 0.3f, 0.6f, 0.9f;
-  trxmmap::write_binary((dpv_dir / "color.float32").string(), dpv);
+  trx::write_binary((dpv_dir / "color.float32").string(), dpv);
 
   fs::path dps_dir = root / "dps";
   fs::create_directories(dps_dir, ec);
   Matrix<float, Dynamic, Dynamic, RowMajor> dps(2, 1);
   dps << 0.25f, 0.75f;
-  trxmmap::write_binary((dps_dir / "weight.float32").string(), dps);
+  trx::write_binary((dps_dir / "weight.float32").string(), dps);
 
   fs::path groups_dir = root / "groups";
   fs::create_directories(groups_dir, ec);
   Matrix<uint32_t, Dynamic, Dynamic, RowMajor> group_vals(2, 1);
   group_vals << 0, 1;
-  trxmmap::write_binary((groups_dir / "GroupA.uint32").string(), group_vals);
+  trx::write_binary((groups_dir / "GroupA.uint32").string(), group_vals);
 
   fs::path dpg_dir = root / "dpg" / "GroupA";
   fs::create_directories(dpg_dir, ec);
   Matrix<float, Dynamic, Dynamic, RowMajor> dpg(1, 1);
   dpg << 1.0f;
-  trxmmap::write_binary((dpg_dir / "mean.float32").string(), dpg);
+  trx::write_binary((dpg_dir / "mean.float32").string(), dpg);
 
   return root;
 }
 } // namespace
 
 TEST(TrxFileTpp, DeepcopyEmpty) {
-  trxmmap::TrxFile<half> empty;
-  trxmmap::TrxFile<half> *copy = empty.deepcopy();
+  trx::TrxFile<half> empty;
+  auto copy = empty.deepcopy();
   EXPECT_EQ(copy->header, empty.header);
   if (copy->streamlines != nullptr) {
     EXPECT_EQ(copy->streamlines->_data.size(), 0);
     EXPECT_EQ(copy->streamlines->_offsets.size(), 0);
     EXPECT_EQ(copy->streamlines->_lengths.size(), 0);
   }
-  delete copy;
 }
 
 // Deepcopy preserves streamlines, dpv/dps, groups, and dpg shapes/content.
 TEST(TrxFileTpp, DeepcopyWithGroupsDpgDpvDps) {
   const fs::path data_dir = create_float_trx_dir();
 
-  trxmmap::TrxFile<float> *trx = load_trx_dir<float>(data_dir);
-  trxmmap::TrxFile<float> *copy = trx->deepcopy();
+  auto reader = load_trx_dir<float>(data_dir);
+  auto *trx = reader.get();
+  auto copy = trx->deepcopy();
 
   EXPECT_EQ(copy->header, trx->header);
   EXPECT_EQ(copy->streamlines->_data, trx->streamlines->_data);
@@ -168,8 +169,6 @@ TEST(TrxFileTpp, DeepcopyWithGroupsDpgDpvDps) {
 
   trx->close();
   copy->close();
-  delete trx;
-  delete copy;
 
   std::error_code ec;
   fs::remove_all(data_dir, ec);
@@ -178,10 +177,11 @@ TEST(TrxFileTpp, DeepcopyWithGroupsDpgDpvDps) {
 // _copy_fixed_arrays_from copies streamlines + dpv/dps into a preallocated target.
 TEST(TrxFileTpp, CopyFixedArraysFrom) {
   const fs::path data_dir = create_float_trx_dir();
-  trxmmap::TrxFile<float> *src = load_trx_dir<float>(data_dir);
+  auto src_reader = load_trx_dir<float>(data_dir);
+  auto *src = src_reader.get();
   const int nb_vertices = src->header["NB_VERTICES"].int_value();
   const int nb_streamlines = src->header["NB_STREAMLINES"].int_value();
-  trxmmap::TrxFile<float> *dst = new trxmmap::TrxFile<float>(nb_vertices, nb_streamlines, src);
+  auto dst = std::make_unique<trx::TrxFile<float>>(nb_vertices, nb_streamlines, src);
 
   dst->_copy_fixed_arrays_from(src, 0, 0, nb_streamlines);
 
@@ -205,22 +205,102 @@ TEST(TrxFileTpp, CopyFixedArraysFrom) {
 
   src->close();
   dst->close();
-  delete src;
-  delete dst;
 
   std::error_code ec;
   fs::remove_all(data_dir, ec);
 }
 
+TEST(TrxFileTpp, AddGroupAndDpvFromVector) {
+  const int nb_vertices = 5;
+  const int nb_streamlines = 3;
+  trx::TrxFile<float> trx(nb_vertices, nb_streamlines);
+
+  trx.streamlines->_offsets(0, 0) = 0;
+  trx.streamlines->_offsets(1, 0) = 2;
+  trx.streamlines->_offsets(2, 0) = 4;
+  trx.streamlines->_offsets(3, 0) = 5;
+  trx.streamlines->_lengths(0) = 2;
+  trx.streamlines->_lengths(1) = 2;
+  trx.streamlines->_lengths(2) = 1;
+
+  const std::vector<uint32_t> group_indices = {0, 2};
+  trx.add_group_from_indices("GroupA", group_indices);
+  ASSERT_EQ(trx.groups.size(), 1u);
+  auto group_it = trx.groups.find("GroupA");
+  ASSERT_NE(group_it, trx.groups.end());
+  EXPECT_EQ(group_it->second->_matrix.rows(), 2);
+  EXPECT_EQ(group_it->second->_matrix.cols(), 1);
+  EXPECT_EQ(group_it->second->_matrix(0, 0), 0u);
+  EXPECT_EQ(group_it->second->_matrix(1, 0), 2u);
+
+  const std::vector<float> dpv_values = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f};
+  trx.add_dpv_from_vector("quality", "float32", dpv_values);
+  ASSERT_EQ(trx.data_per_vertex.size(), 1u);
+  auto dpv_it = trx.data_per_vertex.find("quality");
+  ASSERT_NE(dpv_it, trx.data_per_vertex.end());
+  EXPECT_EQ(dpv_it->second->_data.rows(), nb_vertices);
+  EXPECT_EQ(dpv_it->second->_data.cols(), 1);
+  for (int i = 0; i < nb_vertices; ++i) {
+    EXPECT_FLOAT_EQ(dpv_it->second->_data(i, 0), dpv_values[static_cast<size_t>(i)]);
+  }
+}
+
+TEST(TrxFileTpp, TrxStreamFinalize) {
+  auto tmp_dir = make_temp_test_dir("trx_proto");
+  const fs::path out_path = tmp_dir / "proto.trx";
+
+  TrxStream proto;
+  std::vector<float> sl1 = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+  std::vector<float> sl2 = {2.0f, 0.0f, 0.0f, 2.0f, 1.0f, 0.0f, 2.0f, 2.0f, 0.0f};
+  proto.push_streamline(sl1);
+  proto.push_streamline(sl2);
+  proto.push_group_from_indices("GroupA", {0, 1});
+  proto.push_dps_from_vector("weight", "float32", std::vector<float>{0.5f, 1.5f});
+  proto.push_dpv_from_vector("score", "float32", std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f});
+  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);
+
+  auto trx = load_any(out_path.string());
+  EXPECT_EQ(trx.num_streamlines(), 2u);
+  EXPECT_EQ(trx.num_vertices(), 5u);
+
+  auto grp_it = trx.groups.find("GroupA");
+  ASSERT_NE(grp_it, trx.groups.end());
+  auto grp_mat = grp_it->second.as_matrix<uint32_t>();
+  EXPECT_EQ(grp_mat.rows(), 2);
+  EXPECT_EQ(grp_mat.cols(), 1);
+  EXPECT_EQ(grp_mat(0, 0), 0u);
+  EXPECT_EQ(grp_mat(1, 0), 1u);
+
+  auto dps_it = trx.data_per_streamline.find("weight");
+  ASSERT_NE(dps_it, trx.data_per_streamline.end());
+  auto dps_mat = dps_it->second.as_matrix<float>();
+  EXPECT_EQ(dps_mat.rows(), 2);
+  EXPECT_EQ(dps_mat.cols(), 1);
+  EXPECT_FLOAT_EQ(dps_mat(0, 0), 0.5f);
+  EXPECT_FLOAT_EQ(dps_mat(1, 0), 1.5f);
+
+  auto dpv_it = trx.data_per_vertex.find("score");
+  ASSERT_NE(dpv_it, trx.data_per_vertex.end());
+  auto dpv_mat = dpv_it->second.as_matrix<float>();
+  EXPECT_EQ(dpv_mat.rows(), 5);
+  EXPECT_EQ(dpv_mat.cols(), 1);
+  EXPECT_FLOAT_EQ(dpv_mat(0, 0), 1.0f);
+  EXPECT_FLOAT_EQ(dpv_mat(4, 0), 5.0f);
+
+  trx.close();
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
+
 // resize() with default arguments is a no-op when sizes already match.
 TEST(TrxFileTpp, ResizeNoChange) {
   const fs::path data_dir = create_float_trx_dir();
-  trxmmap::TrxFile<float> *trx = load_trx_dir<float>(data_dir);
+  auto reader = load_trx_dir<float>(data_dir);
+  auto *trx = reader.get();
   json header_before = trx->header;
   trx->resize();
   EXPECT_EQ(trx->header, header_before);
   trx->close();
-  delete trx;
 
   std::error_code ec;
   fs::remove_all(data_dir, ec);
@@ -230,7 +310,8 @@ TEST(TrxFileTpp, ResizeNoChange) {
 // dpv/dps/groups/dpg.
 TEST(TrxFileTpp, ResizeDeleteDpgCloses) {
   const fs::path data_dir = create_float_trx_dir();
-  trxmmap::TrxFile<float> *trx = load_trx_dir<float>(data_dir);
+  auto reader = load_trx_dir<float>(data_dir);
+  auto *trx = reader.get();
   trx->resize(1, -1, true);
 
   EXPECT_EQ(trx->header["NB_STREAMLINES"].int_value(), 0);
@@ -240,7 +321,7 @@ TEST(TrxFileTpp, ResizeDeleteDpgCloses) {
   EXPECT_EQ(trx->data_per_vertex.size(), 0u);
   EXPECT_EQ(trx->data_per_streamline.size(), 0u);
 
-  delete trx;
+  trx->close();
 
   std::error_code ec;
   fs::remove_all(data_dir, ec);

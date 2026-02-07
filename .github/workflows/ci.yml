@@ -29,7 +29,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install libzip eigen googletest ninja lcov
+          brew install libzip eigen googletest ninja lcov zlib
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -45,6 +45,7 @@ jobs:
             libzip `
             eigen3 `
             gtest `
+            zlib `
             --triplet x64-windows
 
       - name: Setup MSVC environment (Windows)
@@ -60,6 +61,7 @@ jobs:
             -DTRX_USE_CONAN=OFF \
             -DTRX_BUILD_TESTS=ON \
             -DTRX_BUILD_EXAMPLES=ON \
+            -DTRX_ENABLE_NIFTI=ON \
             -DCMAKE_PREFIX_PATH="${BREW_PREFIX}" \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_C_FLAGS="--coverage" \
@@ -72,6 +74,7 @@ jobs:
           -G Ninja
           -DTRX_USE_CONAN=OFF
           -DTRX_BUILD_TESTS=ON
+          -DTRX_ENABLE_NIFTI=ON
           -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
 

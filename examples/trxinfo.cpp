@@ -55,9 +55,7 @@ std::string format_matrix_row(const json &row) {
   return out.str();
 }
 
-template <typename DT>
-void print_trx_info(
-    trxmmap::TrxFile<DT> *trx, const std::string &path, bool is_dir, trxmmap::TrxScalarType dtype, bool show_stats) {
+void print_trx_info(const trx::AnyTrxFile &trx, const std::string &path, bool is_dir, bool show_stats) {
   trx_cli::Colors colors;
   colors.enabled = trx_cli::stdout_supports_color();
 
@@ -65,10 +63,9 @@ void print_trx_info(
   std::cout << trx_cli::colorize(colors, colors.cyan, "Path") << ": " << path << "\n";
   std::cout << trx_cli::colorize(colors, colors.cyan, "Storage") << ": " << (is_dir ? "directory" : "zip archive")
             << "\n";
-  std::cout << trx_cli::colorize(colors, colors.cyan, "Positions dtype") << ": " << trxmmap::scalar_type_name(dtype)
-            << "\n";
+  std::cout << trx_cli::colorize(colors, colors.cyan, "Positions dtype") << ": " << trx.positions.dtype << "\n";
 
-  const json &header = trx->header;
+  const json &header = trx.header;
   if (!header.is_null()) {
     std::cout << trx_cli::colorize(colors, colors.green, "Header") << ":\n";
     const json &nb_streamlines = header["NB_STREAMLINES"];
@@ -90,15 +87,15 @@ void print_trx_info(
     }
   }
 
-  if (show_stats && trx->streamlines != nullptr) {
-    const auto &lengths = trx->streamlines->_lengths;
-    const Eigen::Index count = lengths.size(); // NOLINT(misc-include-cleaner)
+  if (show_stats && !trx.lengths.empty()) {
+    const auto &lengths = trx.lengths;
+    const size_t count = lengths.size();
     if (count > 0) {
-      uint64_t min_len = lengths(0);
-      uint64_t max_len = lengths(0);
+      uint64_t min_len = lengths[0];
+      uint64_t max_len = lengths[0];
       uint64_t total_len = 0;
-      for (Eigen::Index i = 0; i < count; ++i) {
-        const uint64_t value = lengths(i);
+      for (size_t i = 0; i < count; ++i) {
+        const uint64_t value = lengths[i];
         min_len = std::min<uint64_t>(min_len, value);
         max_len = std::max<uint64_t>(max_len, value);
         total_len += value;
@@ -112,63 +109,52 @@ void print_trx_info(
   }
 
   std::cout << trx_cli::colorize(colors, colors.green, "Data arrays") << ":\n";
-  if (!trx->data_per_vertex.empty()) {
-    std::cout << "  " << trx_cli::colorize(colors, colors.cyan, "Data per vertex") << ": "
-              << trx->data_per_vertex.size() << "\n";
-    for (const auto &kv : trx->data_per_vertex) {
-      const auto &arr = kv.second->_data;
-      std::cout << "    - " << kv.first << " (" << arr.rows() << "x" << arr.cols() << ")\n";
+  if (!trx.data_per_vertex.empty()) {
+    std::cout << "  " << trx_cli::colorize(colors, colors.cyan, "Data per vertex") << ": " << trx.data_per_vertex.size()
+              << "\n";
+    for (const auto &kv : trx.data_per_vertex) {
+      const auto &arr = kv.second;
+      std::cout << "    - " << kv.first << " (" << arr.rows << "x" << arr.cols << ")\n";
     }
   } else {
     std::cout << "  " << trx_cli::colorize(colors, colors.cyan, "Data per vertex") << ": none\n";
   }
 
-  if (!trx->data_per_streamline.empty()) {
+  if (!trx.data_per_streamline.empty()) {
     std::cout << "  " << trx_cli::colorize(colors, colors.cyan, "Data per streamline") << ": "
-              << trx->data_per_streamline.size() << "\n";
-    for (const auto &kv : trx->data_per_streamline) {
-      const auto &arr = kv.second->_matrix;
-      std::cout << "    - " << kv.first << " (" << arr.rows() << "x" << arr.cols() << ")\n";
+              << trx.data_per_streamline.size() << "\n";
+    for (const auto &kv : trx.data_per_streamline) {
+      const auto &arr = kv.second;
+      std::cout << "    - " << kv.first << " (" << arr.rows << "x" << arr.cols << ")\n";
     }
   } else {
     std::cout << "  " << trx_cli::colorize(colors, colors.cyan, "Data per streamline") << ": none\n";
   }
 
-  if (!trx->groups.empty()) {
-    std::cout << "  " << trx_cli::colorize(colors, colors.cyan, "Groups") << ": " << trx->groups.size() << "\n";
-    for (const auto &kv : trx->groups) {
-      const auto &arr = kv.second->_matrix;
-      std::cout << "    - " << kv.first << " (" << arr.rows() << "x" << arr.cols() << ")\n";
+  if (!trx.groups.empty()) {
+    std::cout << "  " << trx_cli::colorize(colors, colors.cyan, "Groups") << ": " << trx.groups.size() << "\n";
+    for (const auto &kv : trx.groups) {
+      const auto &arr = kv.second;
+      std::cout << "    - " << kv.first << " (" << arr.rows << "x" << arr.cols << ")\n";
     }
   } else {
     std::cout << "  " << trx_cli::colorize(colors, colors.cyan, "Groups") << ": none\n";
   }
 
-  if (!trx->data_per_group.empty()) {
+  if (!trx.data_per_group.empty()) {
     std::cout << "  " << trx_cli::colorize(colors, colors.cyan, "Data per group") << ":\n";
-    for (const auto &grp : trx->data_per_group) {
+    for (const auto &grp : trx.data_per_group) {
       std::cout << "    - " << trx_cli::colorize(colors, colors.magenta, grp.first) << ": " << grp.second.size()
                 << "\n";
       for (const auto &kv : grp.second) {
-        const auto &arr = kv.second->_matrix;
-        std::cout << "      * " << kv.first << " (" << arr.rows() << "x" << arr.cols() << ")\n";
+        const auto &arr = kv.second;
+        std::cout << "      * " << kv.first << " (" << arr.rows << "x" << arr.cols << ")\n";
       }
     }
   } else {
     std::cout << "  " << colorize(colors, colors.cyan, "Data per group") << ": none\n";
   }
 }
-
-struct ReaderPrinter {
-  std::string path;
-  bool is_dir;
-  bool show_stats;
-
-  template <typename ReaderT> int operator()(ReaderT &reader, trxmmap::TrxScalarType dtype) const {
-    print_trx_info(reader.get(), path, is_dir, dtype, show_stats);
-    return 0;
-  }
-};
 
 } // namespace
 
@@ -192,9 +178,11 @@ int main(int argc, char **argv) { // check_syntax off
     path = result["path"].as<std::string>();
     show_stats = result["stats"].as<bool>();
 
-    const bool is_dir = trxmmap::is_trx_directory(path);
-    const ReaderPrinter printer{path, is_dir, show_stats};
-    return trxmmap::with_trx_reader(path, printer);
+    const bool is_dir = trx::is_trx_directory(path);
+    auto trx_file = trx::load_any(path);
+    print_trx_info(trx_file, path, is_dir, show_stats);
+    trx_file.close();
+    return 0;
   } catch (const cxxopts::exceptions::exception &e) {
     std::cerr << "trxinfo: " << e.what() << "\n";
     if (!help_text.empty()) {

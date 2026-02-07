@@ -7,6 +7,7 @@ project(trx VERSION 0.1.0)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(FetchContent)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 set(TRX_IS_TOP_LEVEL OFF)
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
@@ -25,6 +26,8 @@ option(TRX_BUILD_TESTS "Build trx tests" OFF)
 option(TRX_BUILD_EXAMPLES "Build trx example commandline programs" ON)
 option(TRX_ENABLE_CLANG_TIDY "Run clang-tidy during builds" OFF)
 option(TRX_ENABLE_INSTALL "Install trx-cpp targets" ${TRX_IS_TOP_LEVEL})
+option(TRX_BUILD_DOCS "Build API documentation with Doxygen/Sphinx" OFF)
+option(TRX_ENABLE_NIFTI "Enable optional NIfTI header utilities" ${TRX_BUILD_EXAMPLES})
 
 if(TRX_ENABLE_CLANG_TIDY)
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -84,6 +87,7 @@ endif()
 
 add_library(trx
     src/trx.cpp
+    src/detail/dtype_helpers.cpp
     include/trx/trx.h
     include/trx/trx.tpp
     third_party/json11/json11.cpp
@@ -144,6 +148,25 @@ if(TRX_BUILD_TESTS)
     endif()
 endif()
 
+if(TRX_ENABLE_NIFTI)
+    find_package(ZLIB REQUIRED)
+    add_library(trx-nifti
+        src/nifti_io.cpp
+    )
+    add_library(trx-cpp::trx-nifti ALIAS trx-nifti)
+    target_compile_features(trx-nifti PUBLIC cxx_std_17)
+    target_include_directories(trx-nifti
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    target_link_libraries(trx-nifti
+        PUBLIC
+            Eigen3::Eigen
+            ZLIB::ZLIB
+    )
+endif()
+
 if(TRX_BUILD_EXAMPLES)
     FetchContent_Declare(
         cxxopts
@@ -152,6 +175,25 @@ if(TRX_BUILD_EXAMPLES)
     )
     FetchContent_MakeAvailable(cxxopts)
     add_subdirectory(examples)
+endif()
+
+if(TRX_BUILD_DOCS)
+    find_package(Doxygen QUIET)
+    find_program(TRX_SPHINX_BUILD_EXE NAMES sphinx-build)
+    if(DOXYGEN_FOUND AND TRX_SPHINX_BUILD_EXE)
+        add_custom_target(docs
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/docs/_build/doxygen
+            COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/docs/Doxyfile
+            COMMAND ${TRX_SPHINX_BUILD_EXE} -b html
+                    ${CMAKE_CURRENT_SOURCE_DIR}/docs
+                    ${CMAKE_CURRENT_SOURCE_DIR}/docs/_build/html
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/docs
+            COMMENT "Building Doxygen XML and Sphinx HTML docs"
+            VERBATIM
+        )
+    else()
+        message(STATUS "Docs disabled: Doxygen or sphinx-build not found.")
+    endif()
 endif()
 
 # Installation and package config

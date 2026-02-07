@@ -2,7 +2,7 @@
 
 int main() {
   // Basic construction and cleanup exercises the public API and linkage.
-  trxmmap::TrxFile<float> file;
+  trx::TrxFile<float> file;
   file.close();
   return 0;
 }

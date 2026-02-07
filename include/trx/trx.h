@@ -13,13 +13,10 @@
 #include <fstream>
 #include <iostream>
 #include <json11.hpp>
-#include <limits.h>
 #include <limits>
-#include <math.h>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
-#include <stdlib.h>
-#include <string.h>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -33,10 +30,9 @@ namespace trx {
 namespace fs = std::filesystem;
 }
 
-using namespace Eigen;
 using json = json11::Json;
 
-namespace trxmmap {
+namespace trx {
 inline json::object _json_object(const json &value) {
   if (value.is_object()) {
     return value.object_items();
@@ -161,34 +157,29 @@ template <> struct DTypeName<uint64_t> {
   static constexpr std::string_view value() { return "uint64"; }
 };
 
-template <> struct DTypeName<bool> {
-  static constexpr std::string_view value() { return "bit"; }
-};
-
 template <typename T> inline std::string dtype_from_scalar() {
   typedef typename std::remove_cv<typename std::remove_reference<T>::type>::type CleanT;
   return std::string(DTypeName<CleanT>::value());
 }
 
-const std::string SEPARATOR = "/";
-const std::vector<std::string> dtypes({"float16",
-                                       "bit",
-                                       "uint8",
-                                       "uint16",
-                                       "ushort",
-                                       "uint32",
-                                       "uint64",
-                                       "int8",
-                                       "int16",
-                                       "int32",
-                                       "int64",
-                                       "float32",
-                                       "float64"});
+inline constexpr const char *SEPARATOR = "/";
+inline const std::array<std::string_view, 12> dtypes = {"float16",
+                                                        "uint8",
+                                                        "uint16",
+                                                        "ushort",
+                                                        "uint32",
+                                                        "uint64",
+                                                        "int8",
+                                                        "int16",
+                                                        "int32",
+                                                        "int64",
+                                                        "float32",
+                                                        "float64"};
 
 template <typename DT> struct ArraySequence {
-  Map<Matrix<DT, Dynamic, Dynamic, RowMajor>> _data;
-  Map<Matrix<uint64_t, Dynamic, Dynamic, RowMajor>> _offsets;
-  Matrix<uint32_t, Dynamic, 1> _lengths;
+  Eigen::Map<Eigen::Matrix<DT, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> _data;
+  Eigen::Map<Eigen::Matrix<uint64_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> _offsets;
+  Eigen::Matrix<uint32_t, Eigen::Dynamic, 1> _lengths;
   std::vector<uint64_t> _offsets_owned;
   mio::shared_mmap_sink mmap_pos;
   mio::shared_mmap_sink mmap_off;
@@ -197,7 +188,7 @@ template <typename DT> struct ArraySequence {
 };
 
 template <typename DT> struct MMappedMatrix {
-  Map<Matrix<DT, Dynamic, Dynamic>> _matrix;
+  Eigen::Map<Eigen::Matrix<DT, Eigen::Dynamic, Eigen::Dynamic>> _matrix;
   mio::shared_mmap_sink mmap;
 
   MMappedMatrix() : _matrix(nullptr, 1, 1) {}
@@ -208,14 +199,14 @@ template <typename DT> class TrxFile {
 public:
   // Data Members
   json header;
-  ArraySequence<DT> *streamlines;
+  std::unique_ptr<ArraySequence<DT>> streamlines;
 
-  std::map<std::string, MMappedMatrix<uint32_t> *> groups; // vector of indices
+  std::map<std::string, std::unique_ptr<MMappedMatrix<uint32_t>>> groups; // vector of indices
 
-  // int or float --check python floa<t precision (singletons)
-  std::map<std::string, MMappedMatrix<DT> *> data_per_streamline;
-  std::map<std::string, ArraySequence<DT> *> data_per_vertex;
-  std::map<std::string, std::map<std::string, MMappedMatrix<DT> *>> data_per_group;
+  // int or float --check python float precision (singletons)
+  std::map<std::string, std::unique_ptr<MMappedMatrix<DT>>> data_per_streamline;
+  std::map<std::string, std::unique_ptr<ArraySequence<DT>>> data_per_vertex;
+  std::map<std::string, std::map<std::string, std::unique_ptr<MMappedMatrix<DT>>>> data_per_group;
   std::string _uncompressed_folder_handle;
   bool _copy_safe;
   bool _owns_uncompressed_folder = false;
@@ -238,18 +229,20 @@ public:
    * @param root The dirname of the ZipFile pointer
    * @return TrxFile*
    */
-  static TrxFile<DT> *
+  static std::unique_ptr<TrxFile<DT>>
   _create_trx_from_pointer(json header,
                            std::map<std::string, std::tuple<long long, long long>> dict_pointer_size,
                            std::string root_zip = "",
                            std::string root = "");
+
+  template <typename> friend class TrxReader;
 
   /**
    * @brief Create a deepcopy of the TrxFile
    *
    * @return TrxFile<DT>* A deepcopied TrxFile of the current object
    */
-  TrxFile<DT> *deepcopy();
+  std::unique_ptr<TrxFile<DT>> deepcopy();
 
   /**
    * @brief Remove the ununsed portion of preallocated memmaps
@@ -261,13 +254,186 @@ public:
   void resize(int nb_streamlines = -1, int nb_vertices = -1, bool delete_dpg = false);
 
   /**
+   * @brief Save a TrxFile
+   *
+   * @param filename  The path to save the TrxFile to
+   * @param compression_standard The compression standard to use, as defined by libzip (default: no compression)
+   */
+  void save(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+
+  void add_dps_from_text(const std::string &name, const std::string &dtype, const std::string &path);
+  template <typename T>
+  void add_dps_from_vector(const std::string &name, const std::string &dtype, const std::vector<T> &values);
+  /**
+   * @brief Add per-vertex values as DPV from an in-memory vector.
+   *
+   * @param name DPV name (used as filename in dpv/).
+   * @param dtype Output dtype (float16/float32/float64).
+   * @param values Per-vertex values; size must match NB_VERTICES.
+   */
+  template <typename T>
+  void add_dpv_from_vector(const std::string &name, const std::string &dtype, const std::vector<T> &values);
+  /**
+   * @brief Add a group from a list of streamline indices.
+   *
+   * @param name Group name (used as filename in groups/).
+   * @param indices Streamline indices (uint32) belonging to the group.
+   */
+  void add_group_from_indices(const std::string &name, const std::vector<uint32_t> &indices);
+  /**
+   * @brief Set the VOXEL_TO_RASMM affine matrix in the TRX header.
+   *
+   * This updates header["VOXEL_TO_RASMM"] with the provided 4x4 matrix.
+   */
+  void set_voxel_to_rasmm(const Eigen::Matrix4f &affine);
+  void add_dpv_from_tsf(const std::string &name, const std::string &dtype, const std::string &path);
+  void export_dpv_to_tsf(const std::string &name,
+                         const std::string &path,
+                         const std::string &timestamp,
+                         const std::string &dtype = "float32") const;
+
+  /**
    * @brief Cleanup on-disk temporary folder and initialize an empty TrxFile
    *
    */
   void close();
   void _cleanup_temporary_directory();
 
+  size_t num_vertices() const {
+    if (streamlines && streamlines->_offsets.size() > 0) {
+      const auto last = streamlines->_offsets(streamlines->_offsets.size() - 1);
+      return static_cast<size_t>(last);
+    }
+    if (streamlines && streamlines->_data.size() > 0) {
+      return static_cast<size_t>(streamlines->_data.rows());
+    }
+    if (header["NB_VERTICES"].is_number()) {
+      return static_cast<size_t>(header["NB_VERTICES"].int_value());
+    }
+    return 0;
+  }
+
+  size_t num_streamlines() const {
+    if (streamlines && streamlines->_offsets.size() > 0) {
+      return static_cast<size_t>(streamlines->_offsets.size() - 1);
+    }
+    if (streamlines && streamlines->_lengths.size() > 0) {
+      return static_cast<size_t>(streamlines->_lengths.size());
+    }
+    if (header["NB_STREAMLINES"].is_number()) {
+      return static_cast<size_t>(header["NB_STREAMLINES"].int_value());
+    }
+    return 0;
+  }
+
+  /**
+   * @brief Build per-streamline axis-aligned bounding boxes (AABB).
+   *
+   * Each entry is {min_x, min_y, min_z, max_x, max_y, max_z} in TRX coordinates.
+   */
+  std::vector<std::array<Eigen::half, 6>> build_streamline_aabbs() const;
+
+  /**
+   * @brief Extract a subset of streamlines intersecting an axis-aligned box.
+   *
+   * The box is defined by min/max corners in TRX coordinates.
+   * Returns a new TrxFile with positions, DPV/DPS, and groups remapped.
+   * Optionally builds the AABB cache for the returned TrxFile.
+   */
+  /**
+   * @brief Extract a subset of streamlines intersecting an axis-aligned box.
+   *
+   * The box is defined by min/max corners in TRX coordinates.
+   * Returns a new TrxFile with positions, DPV/DPS, and groups remapped.
+   * Optionally builds the AABB cache for the returned TrxFile.
+   */
+  std::unique_ptr<TrxFile<DT>>
+  query_aabb(const std::array<float, 3> &min_corner,
+             const std::array<float, 3> &max_corner,
+             const std::vector<std::array<Eigen::half, 6>> *precomputed_aabbs = nullptr,
+             bool build_cache_for_result = false) const;
+
+  /**
+   * @brief Extract a subset of streamlines by index.
+   *
+   * The returned TrxFile remaps positions, DPV/DPS, and groups.
+   * Optionally builds the AABB cache for the returned TrxFile.
+   */
+  std::unique_ptr<TrxFile<DT>>
+  subset_streamlines(const std::vector<uint32_t> &streamline_ids,
+                     bool build_cache_for_result = false) const;
+
+  /**
+   * @brief Add a data-per-group (DPG) field from a flat vector.
+   *
+   * Values are stored as a matrix of shape (rows, cols). If cols is -1,
+   * it is inferred from values.size() / rows.
+   */
+  template <typename T>
+  void add_dpg_from_vector(const std::string &group,
+                           const std::string &name,
+                           const std::string &dtype,
+                           const std::vector<T> &values,
+                           int rows = 1,
+                           int cols = -1);
+
+  /**
+   * @brief Add a data-per-group (DPG) field from an Eigen matrix.
+   */
+  template <typename Derived>
+  void add_dpg_from_matrix(const std::string &group,
+                           const std::string &name,
+                           const std::string &dtype,
+                           const Eigen::MatrixBase<Derived> &matrix);
+
+  /**
+   * @brief Get a DPG field or nullptr if missing.
+   */
+  const MMappedMatrix<DT> *get_dpg(const std::string &group, const std::string &name) const;
+
+  /**
+   * @brief List DPG groups present in this TrxFile.
+   */
+  std::vector<std::string> list_dpg_groups() const;
+
+  /**
+   * @brief List DPG fields for a given group.
+   */
+  std::vector<std::string> list_dpg_fields(const std::string &group) const;
+
+  /**
+   * @brief Remove a DPG field from a group.
+   */
+  void remove_dpg(const std::string &group, const std::string &name);
+
+  /**
+   * @brief Remove all DPG fields for a group.
+   */
+  void remove_dpg_group(const std::string &group);
+
 private:
+  void invalidate_aabb_cache() const;
+  mutable std::vector<std::array<Eigen::half, 6>> aabb_cache_;
+  /**
+   * @brief Load a TrxFile from a zip archive.
+   *
+   * Internal: prefer TrxReader / with_trx_reader in public API.
+   */
+  static std::unique_ptr<TrxFile<DT>> load_from_zip(const std::string &path);
+
+  /**
+   * @brief Load a TrxFile from an on-disk directory.
+   *
+   * Internal: prefer TrxReader / with_trx_reader in public API.
+   */
+  static std::unique_ptr<TrxFile<DT>> load_from_directory(const std::string &path);
+
+  /**
+   * @brief Load a TrxFile from either a zip archive or directory.
+   *
+   * Internal: prefer TrxReader / with_trx_reader in public API.
+   */
+  static std::unique_ptr<TrxFile<DT>> load(const std::string &path);
   /**
    * @brief Get the real size of data (ignoring zeros of preallocation)
    *
@@ -291,6 +457,224 @@ private:
   int len();
 };
 
+namespace detail {
+int _sizeof_dtype(const std::string &dtype);
+} // namespace detail
+
+struct TypedArray {
+  std::string dtype;
+  int rows = 0;
+  int cols = 0;
+  mio::shared_mmap_sink mmap;
+
+  bool empty() const { return rows == 0 || cols == 0 || mmap.data() == nullptr; }
+  size_t size() const { return static_cast<size_t>(rows) * static_cast<size_t>(cols); }
+
+  /**
+   * @brief View the buffer as a row-major Eigen matrix of type T.
+   *
+   * This is a zero-copy view over the underlying memory map. The dtype must
+   * match the requested T or an exception is thrown.
+   */
+  template <typename T> Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> as_matrix() {
+    return Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(data_as<T>(), rows, cols);
+  }
+
+  /**
+   * @brief View the buffer as a const row-major Eigen matrix of type T.
+   *
+   * This is a zero-copy view over the underlying memory map. The dtype must
+   * match the requested T or an exception is thrown.
+   */
+  template <typename T>
+  Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> as_matrix() const {
+    return Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(
+        data_as<T>(), rows, cols);
+  }
+
+  struct ByteView {
+    const std::uint8_t *data = nullptr;
+    size_t size = 0;
+  };
+
+  struct MutableByteView {
+    std::uint8_t *data = nullptr;
+    size_t size = 0;
+  };
+
+  /**
+   * @brief Return a read-only byte view of the underlying buffer.
+   *
+   * The size is computed from dtype * rows * cols. This is useful for
+   * interop, hashing, or serialization without exposing raw pointers.
+   */
+  ByteView to_bytes() const {
+    if (empty()) {
+      return {};
+    }
+    return {reinterpret_cast<const std::uint8_t *>(mmap.data()),
+            static_cast<size_t>(detail::_sizeof_dtype(dtype)) * size()};
+  }
+
+  /**
+   * @brief Return a mutable byte view of the underlying buffer.
+   *
+   * The size is computed from dtype * rows * cols. Use with care: mutating
+   * the bytes will mutate the mapped file contents.
+   */
+  MutableByteView to_bytes_mutable() {
+    if (empty()) {
+      return {};
+    }
+    return {reinterpret_cast<std::uint8_t *>(mmap.data()), static_cast<size_t>(detail::_sizeof_dtype(dtype)) * size()};
+  }
+
+private:
+  const void *data() const { return mmap.data(); }
+  void *data() { return mmap.data(); }
+
+  template <typename T> T *data_as() {
+    const std::string expected = dtype_from_scalar<T>();
+    if (dtype != expected) {
+      throw std::invalid_argument("TypedArray dtype mismatch: expected " + expected + " got " + dtype);
+    }
+    return reinterpret_cast<T *>(mmap.data());
+  }
+
+  template <typename T> const T *data_as() const {
+    const std::string expected = dtype_from_scalar<T>();
+    if (dtype != expected) {
+      throw std::invalid_argument("TypedArray dtype mismatch: expected " + expected + " got " + dtype);
+    }
+    return reinterpret_cast<const T *>(mmap.data());
+  }
+};
+
+class AnyTrxFile {
+public:
+  AnyTrxFile() = default;
+  ~AnyTrxFile();
+
+  AnyTrxFile(const AnyTrxFile &) = delete;
+  AnyTrxFile &operator=(const AnyTrxFile &) = delete;
+  AnyTrxFile(AnyTrxFile &&) noexcept = default;
+  AnyTrxFile &operator=(AnyTrxFile &&) noexcept = default;
+
+  json header;
+  TypedArray positions;
+  TypedArray offsets;
+  std::vector<uint64_t> offsets_u64;
+  std::vector<uint32_t> lengths;
+
+  std::map<std::string, TypedArray> groups;
+  std::map<std::string, TypedArray> data_per_streamline;
+  std::map<std::string, TypedArray> data_per_vertex;
+  std::map<std::string, std::map<std::string, TypedArray>> data_per_group;
+
+  size_t num_vertices() const;
+  size_t num_streamlines() const;
+  void close();
+  void save(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+
+  static AnyTrxFile load(const std::string &path);
+  static AnyTrxFile load_from_zip(const std::string &path);
+  static AnyTrxFile load_from_directory(const std::string &path);
+
+private:
+  std::string _uncompressed_folder_handle;
+  bool _owns_uncompressed_folder = false;
+  std::string _backing_directory;
+
+  static std::string _normalize_dtype(const std::string &dtype);
+  static AnyTrxFile
+  _create_from_pointer(json header,
+                       const std::map<std::string, std::tuple<long long, long long>> &dict_pointer_size,
+                       const std::string &root);
+  void _cleanup_temporary_directory();
+};
+
+inline AnyTrxFile load_any(const std::string &path) { return AnyTrxFile::load(path); }
+
+/**
+ * @brief Streaming-friendly TRX builder that spools positions and finalizes to TrxFile.
+ *
+ * TrxStream allows appending streamlines without knowing totals up front.
+ * It writes positions to a temporary binary file, tracks lengths, and can
+ * add DPS/DPV/group metadata. Call finalize() to produce a standard TRX.
+ */
+class TrxStream {
+public:
+  explicit TrxStream(std::string positions_dtype = "float32");
+  ~TrxStream();
+
+  TrxStream(const TrxStream &) = delete;
+  TrxStream &operator=(const TrxStream &) = delete;
+  TrxStream(TrxStream &&) noexcept = default;
+  TrxStream &operator=(TrxStream &&) noexcept = default;
+
+  /**
+   * @brief Append a streamline from a flat xyz buffer.
+   *
+   * @param xyz Pointer to interleaved x,y,z data.
+   * @param point_count Number of 3D points in the buffer.
+   */
+  void push_streamline(const float *xyz, size_t point_count);
+  /**
+   * @brief Append a streamline from a flat xyz vector.
+   */
+  void push_streamline(const std::vector<float> &xyz_flat);
+  /**
+   * @brief Append a streamline from a vector of 3D points.
+   */
+  void push_streamline(const std::vector<std::array<float, 3>> &points);
+
+  /**
+   * @brief Add per-streamline values (DPS) from an in-memory vector.
+   */
+  template <typename T>
+  void push_dps_from_vector(const std::string &name, const std::string &dtype, const std::vector<T> &values);
+  /**
+   * @brief Add per-vertex values (DPV) from an in-memory vector.
+   */
+  template <typename T>
+  void push_dpv_from_vector(const std::string &name, const std::string &dtype, const std::vector<T> &values);
+  /**
+   * @brief Add a group from a list of streamline indices.
+   */
+  void push_group_from_indices(const std::string &name, const std::vector<uint32_t> &indices);
+
+  /**
+   * @brief Finalize and write a TRX file.
+   */
+  template <typename DT> void finalize(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+
+  size_t num_streamlines() const { return lengths_.size(); }
+  size_t num_vertices() const { return total_vertices_; }
+
+  json header;
+
+private:
+  struct FieldValues {
+    std::string dtype;
+    std::vector<double> values;
+  };
+
+  void ensure_positions_stream();
+  void cleanup_tmp();
+
+  std::string positions_dtype_;
+  std::string tmp_dir_;
+  std::string positions_path_;
+  std::ofstream positions_out_;
+  std::vector<uint32_t> lengths_;
+  size_t total_vertices_ = 0;
+  bool finalized_ = false;
+
+  std::map<std::string, std::vector<uint32_t>> groups_;
+  std::map<std::string, FieldValues> dps_;
+  std::map<std::string, FieldValues> dpv_;
+};
+
 /**
  * TODO: This function might be completely unecessary
  *
@@ -298,33 +682,6 @@ private:
  * @param[out] header a header containing the same elements as the original root
  * */
 json assignHeader(const json &root);
-
-/**
- * Returns the properly formatted datatype name
- *
- * @param[in] dtype the returned Eigen datatype
- * @param[out] fmt_dtype the formatted datatype
- *
- * */
-std::string _get_dtype(const std::string &dtype);
-
-/**
- * @brief Get the size of the datatype
- *
- * @param dtype the string name of the datatype
- * @return int corresponding to the size of the datatype
- */
-int _sizeof_dtype(const std::string &dtype);
-
-/**
- * Determine whether the extension is a valid extension
- *
- *
- * @param[in] ext a string consisting of the extension starting by a .
- * @param[out] is_valid a boolean denoting whether the extension is valid.
- *
- * */
-bool _is_dtype_valid(const std::string &ext);
 
 /**
  * This function loads the header json file
@@ -343,7 +700,7 @@ json load_header(zip_t *zfolder);
  * @param[out] status return 0 if success else 1
  *
  * */
-template <typename DT> TrxFile<DT> *load_from_zip(std::string path);
+template <typename DT> std::unique_ptr<TrxFile<DT>> load_from_zip(const std::string &path);
 
 /**
  * @brief Load a TrxFile from a folder containing memmaps
@@ -352,7 +709,7 @@ template <typename DT> TrxFile<DT> *load_from_zip(std::string path);
  * @param path path of the zipped TrxFile
  * @return TrxFile<DT>* TrxFile representing the read data
  */
-template <typename DT> TrxFile<DT> *load_from_directory(std::string path);
+template <typename DT> std::unique_ptr<TrxFile<DT>> load_from_directory(const std::string &path);
 
 /**
  * @brief Detect the dtype of the positions array for a TRX path.
@@ -407,7 +764,7 @@ bool is_trx_directory(const std::string &path);
  * @param path Path to TRX archive or directory
  * @return TrxFile<DT>* TrxFile representing the read data
  */
-template <typename DT> TrxFile<DT> *load(std::string path);
+template <typename DT> std::unique_ptr<TrxFile<DT>> load(const std::string &path);
 
 /**
  * @brief RAII wrapper for loading TRX files from a path.
@@ -417,19 +774,19 @@ template <typename DT> TrxFile<DT> *load(std::string path);
 template <typename DT> class TrxReader {
 public:
   explicit TrxReader(const std::string &path);
-  ~TrxReader();
+  ~TrxReader() = default;
 
   TrxReader(const TrxReader &) = delete;
   TrxReader &operator=(const TrxReader &) = delete;
   TrxReader(TrxReader &&other) noexcept;
   TrxReader &operator=(TrxReader &&other) noexcept;
 
-  TrxFile<DT> *get() const { return trx_; }
+  TrxFile<DT> *get() const { return trx_.get(); }
   TrxFile<DT> &operator*() const { return *trx_; }
-  TrxFile<DT> *operator->() const { return trx_; }
+  TrxFile<DT> *operator->() const { return trx_.get(); }
 
 private:
-  TrxFile<DT> *trx_ = nullptr;
+  std::unique_ptr<TrxFile<DT>> trx_;
 };
 
 /**
@@ -452,7 +809,9 @@ auto with_trx_reader(const std::string &path, Fn &&fn)
  * @param[in] dimensions vector of size 3
  *
  * */
-void get_reference_info(const std::string &reference, const MatrixXf &affine, const RowVectorXi &dimensions);
+void get_reference_info(const std::string &reference,
+                        const Eigen::MatrixXf &affine,
+                        const Eigen::RowVectorXi &dimensions);
 
 template <typename DT> std::ostream &operator<<(std::ostream &out, const TrxFile<DT> &trx);
 // private:
@@ -473,34 +832,13 @@ void allocate_file(const std::string &path, std::size_t size);
 // TODO: change tuple to vector to support ND arrays?
 // TODO: remove data type as that's done outside of this function
 mio::shared_mmap_sink _create_memmap(std::string filename,
-                                     std::tuple<int, int> &shape,
+                                     const std::tuple<int, int> &shape,
                                      const std::string &mode = "r",
                                      const std::string &dtype = "float32",
                                      long long offset = 0);
 
-template <typename DT> std::string _generate_filename_from_data(const MatrixBase<DT> &arr, const std::string filename);
-std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string &filename);
-
-/**
- * @brief Compute the lengths from offsets and header information
- *
- * @tparam DT The datatype (used for the input matrix)
- * @param[in] offsets An array of offsets
- * @param[in] nb_vertices the number of vertices
- * @return Matrix<uint32_t, Dynamic, Dynamic> of lengths
- */
-template <typename DT> Matrix<uint32_t, Dynamic, 1> _compute_lengths(const MatrixBase<DT> &offsets, int nb_vertices);
-
-/**
- * @brief Find where data of a contiguous array is actually ending
- *
- * @tparam DT (the datatype)
- * @param x Matrix of values
- * @param l_bound lower bound index for search
- * @param r_bound upper bound index for search
- * @return int index at which array value is 0 (if possible), otherwise returns -1
- */
-template <typename DT> int _dichotomic_search(const MatrixBase<DT> &x, int l_bound = -1, int r_bound = -1);
+template <typename DT>
+std::string _generate_filename_from_data(const Eigen::MatrixBase<DT> &arr, const std::string filename);
 
 /**
  * @brief Create on-disk memmaps of a certain size (preallocation)
@@ -511,10 +849,13 @@ template <typename DT> int _dichotomic_search(const MatrixBase<DT> &x, int l_bou
  * @return TrxFile<DT> An empty TrxFile preallocated with a certain size
  */
 template <typename DT>
-TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const TrxFile<DT> *init_as = nullptr);
+std::unique_ptr<TrxFile<DT>>
+_initialize_empty_trx(int nb_streamlines, int nb_vertices, const TrxFile<DT> *init_as = nullptr);
 
 template <typename DT>
-void ediff1d(Matrix<DT, Dynamic, 1> &lengths, const Matrix<DT, Dynamic, Dynamic> &tmp, uint32_t to_end);
+void ediff1d(Eigen::Matrix<DT, Eigen::Dynamic, 1> &lengths,
+             const Eigen::Matrix<DT, Eigen::Dynamic, Eigen::Dynamic> &tmp,
+             uint32_t to_end);
 
 /**
  * @brief Save a TrxFile
@@ -525,21 +866,6 @@ void ediff1d(Matrix<DT, Dynamic, 1> &lengths, const Matrix<DT, Dynamic, Dynamic>
  * @param compression_standard The compression standard to use, as defined by libzip (default: no
  * compression)
  */
-template <typename DT>
-void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
-
-template <typename DT>
-void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::string &dtype, const std::string &path);
-
-template <typename DT>
-void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::string &dtype, const std::string &path);
-
-template <typename DT>
-void export_dpv_to_tsf(const TrxFile<DT> &trx,
-                       const std::string &name,
-                       const std::string &path,
-                       const std::string &timestamp,
-                       const std::string &dtype = "float32");
 
 /**
  * @brief Utils function to zip on-disk memmaps
@@ -564,8 +890,17 @@ std::string make_temp_dir(const std::string &prefix);
 std::string extract_zip_to_directory(zip_t *zfolder);
 
 std::string rm_root(const std::string &root, const std::string &path);
-#include <trx/trx.tpp>
+#ifndef TRX_TPP_STANDALONE
+#endif
 
-} // namespace trxmmap
+} // namespace trx
+
+#include <trx/detail/dtype_helpers.h>
+
+namespace trx {
+#ifndef TRX_TPP_STANDALONE
+#include <trx/trx.tpp>
+#endif
+} // namespace trx
 
 #endif /* TRX_H */

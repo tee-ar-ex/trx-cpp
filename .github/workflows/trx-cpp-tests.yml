@@ -50,6 +50,7 @@ jobs:
             -G Ninja \
             -DTRX_BUILD_TESTS=ON \
             -DTRX_BUILD_EXAMPLES=ON \
+            -DTRX_ENABLE_NIFTI=ON \
             -DGTest_DIR=${GITHUB_WORKSPACE}/deps/googletest/install/lib/cmake/GTest \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_C_FLAGS="--coverage" \

@@ -1,4 +1,17 @@
 // Taken from: https://stackoverflow.com/a/25389481
+#ifndef TRX_H
+#define TRX_TPP_STANDALONE
+#define TRX_TPP_OPEN_NAMESPACE
+#include <trx/trx.h>
+#undef TRX_TPP_STANDALONE
+namespace trx {
+#endif
+using Eigen::Dynamic;
+using Eigen::half;
+using Eigen::Index;
+using Eigen::Map;
+using Eigen::Matrix;
+using Eigen::RowMajor;
 template <class Matrix> void write_binary(const std::string &filename, const Matrix &matrix) {
   std::ofstream out(filename, std::ios::out | std::ios::binary | std::ios::trunc);
   typename Matrix::Index rows = matrix.rows(), cols = matrix.cols();
@@ -23,7 +36,7 @@ template <class Matrix> void read_binary(const std::string &filename, Matrix &ma
 
 template <typename DT>
 void ediff1d(Matrix<DT, Dynamic, 1> &lengths, Matrix<DT, Dynamic, Dynamic> &tmp, uint32_t to_end) {
-  Map<RowVector<uint32_t, Dynamic>> v(tmp.data(), tmp.size());
+  Map<Matrix<uint32_t, 1, Dynamic>> v(tmp.data(), tmp.size());
   lengths.resize(v.size(), 1);
 
   // TODO: figure out if there's a built in way to manage this
@@ -35,7 +48,7 @@ void ediff1d(Matrix<DT, Dynamic, 1> &lengths, Matrix<DT, Dynamic, Dynamic> &tmp,
 
 template <typename DT>
 // Caveat: if filename has an extension, it will be replaced by the generated dtype extension.
-std::string _generate_filename_from_data(const MatrixBase<DT> &arr, std::string filename) {
+std::string _generate_filename_from_data(const Eigen::MatrixBase<DT> &arr, std::string filename) {
 
   std::string base, ext;
 
@@ -58,43 +71,6 @@ std::string _generate_filename_from_data(const MatrixBase<DT> &arr, std::string 
   }
 
   return new_filename;
-}
-
-template <typename DT> Matrix<uint32_t, Dynamic, 1> _compute_lengths(const MatrixBase<DT> &offsets, int nb_vertices) {
-  if (offsets.size() > 1) {
-    const auto casted = offsets.template cast<uint64_t>();
-    const Eigen::Index len = offsets.size() - 1;
-    Matrix<uint32_t, Dynamic, 1> lengths(len);
-    for (Eigen::Index i = 0; i < len; ++i) {
-      lengths(i) = static_cast<uint32_t>(casted(i + 1) - casted(i));
-    }
-    return lengths;
-  }
-  // If offsets are empty or only contain the sentinel, there are zero streamlines.
-  return Matrix<uint32_t, Dynamic, 1>(0);
-}
-
-template <typename DT> int _dichotomic_search(const MatrixBase<DT> &x, int l_bound, int r_bound) {
-  if (l_bound == -1 && r_bound == -1) {
-    l_bound = 0;
-    r_bound = static_cast<int>(x.size()) - 1;
-  }
-
-  if (l_bound == r_bound) {
-    int val;
-    if (x(l_bound) != 0)
-      val = l_bound;
-    else
-      val = -1;
-    return val;
-  }
-
-  int mid_bound = (l_bound + r_bound + 1) / 2;
-
-  if (x(mid_bound) == 0)
-    return _dichotomic_search(x, l_bound, mid_bound - 1);
-  else
-    return _dichotomic_search(x, mid_bound, r_bound);
 }
 
 template <typename DT>
@@ -133,7 +109,7 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 
     // will remove as completely unecessary. using as placeholders
     this->header = {};
-    this->streamlines = nullptr;
+    this->streamlines.reset();
 
     // TODO: maybe create a matrix to map to of specified DT. Do we need this??
     // set default datatype to half
@@ -144,18 +120,17 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
     nb_vertices = 0;
     nb_streamlines = 0;
   } else if (nb_vertices > 0 && nb_streamlines > 0) {
-    TrxFile<DT> *trx = _initialize_empty_trx<DT>(nb_streamlines, nb_vertices, init_as);
-    this->streamlines = trx->streamlines;
-    this->groups = trx->groups;
-    this->data_per_streamline = trx->data_per_streamline;
-    this->data_per_vertex = trx->data_per_vertex;
-    this->data_per_group = trx->data_per_group;
-    this->_uncompressed_folder_handle = trx->_uncompressed_folder_handle;
+    auto trx = _initialize_empty_trx<DT>(nb_streamlines, nb_vertices, init_as);
+    this->streamlines = std::move(trx->streamlines);
+    this->groups = std::move(trx->groups);
+    this->data_per_streamline = std::move(trx->data_per_streamline);
+    this->data_per_vertex = std::move(trx->data_per_vertex);
+    this->data_per_group = std::move(trx->data_per_group);
+    this->_uncompressed_folder_handle = std::move(trx->_uncompressed_folder_handle);
     this->_owns_uncompressed_folder = trx->_owns_uncompressed_folder;
     this->_copy_safe = trx->_copy_safe;
     trx->_owns_uncompressed_folder = false;
     trx->_uncompressed_folder_handle.clear();
-    delete trx;
   } else {
     throw std::invalid_argument("You must declare both NB_VERTICES AND NB_STREAMLINES");
   }
@@ -171,8 +146,8 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
 }
 
 template <typename DT>
-TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const TrxFile<DT> *init_as) {
-  TrxFile<DT> *trx = new TrxFile<DT>();
+std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_vertices, const TrxFile<DT> *init_as) {
+  auto trx = std::make_unique<TrxFile<DT>>();
 
   std::string tmp_dir = make_temp_dir("trx");
 
@@ -203,8 +178,8 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 
   std::tuple<int, int> shape = std::make_tuple(nb_vertices, 3);
 
-  trx->streamlines = new ArraySequence<DT>();
-  trx->streamlines->mmap_pos = trxmmap::_create_memmap(positions_filename, shape, "w+", positions_dtype);
+  trx->streamlines = std::make_unique<ArraySequence<DT>>();
+  trx->streamlines->mmap_pos = trx::_create_memmap(positions_filename, shape, "w+", positions_dtype);
 
   // TODO: find a better way to get the dtype than using all these switch cases. Also refactor
   // into function as per specifications, positions can only be floats
@@ -224,7 +199,7 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 
   std::tuple<int, int> shape_off = std::make_tuple(nb_streamlines + 1, 1);
 
-  trx->streamlines->mmap_off = trxmmap::_create_memmap(offsets_filename, shape_off, "w+", offsets_dtype);
+  trx->streamlines->mmap_off = trx::_create_memmap(offsets_filename, shape_off, "w+", offsets_dtype);
   new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(
       reinterpret_cast<uint64_t *>(trx->streamlines->mmap_off.data()), std::get<0>(shape_off), std::get<1>(shape_off));
 
@@ -269,8 +244,8 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
       }
 
       std::tuple<int, int> dpv_shape = std::make_tuple(rows, cols);
-      trx->data_per_vertex[x.first] = new ArraySequence<DT>();
-      trx->data_per_vertex[x.first]->mmap_pos = trxmmap::_create_memmap(dpv_filename, dpv_shape, "w+", dpv_dtype);
+      trx->data_per_vertex[x.first] = std::make_unique<ArraySequence<DT>>();
+      trx->data_per_vertex[x.first]->mmap_pos = trx::_create_memmap(dpv_filename, dpv_shape, "w+", dpv_dtype);
       if (dpv_dtype.compare("float16") == 0) {
         new (&(trx->data_per_vertex[x.first]->_data)) Map<Matrix<half, Dynamic, Dynamic>>(
             reinterpret_cast<half *>(trx->data_per_vertex[x.first]->mmap_pos.data()), rows, cols);
@@ -307,9 +282,9 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
       }
 
       std::tuple<int, int> dps_shape = std::make_tuple(rows, cols);
-      trx->data_per_streamline[x.first] = new trxmmap::MMappedMatrix<DT>();
+      trx->data_per_streamline[x.first] = std::make_unique<trx::MMappedMatrix<DT>>();
       trx->data_per_streamline[x.first]->mmap =
-          trxmmap::_create_memmap(dps_filename, dps_shape, std::string("w+"), dps_dtype);
+          trx::_create_memmap(dps_filename, dps_shape, std::string("w+"), dps_dtype);
 
       if (dps_dtype.compare("float16") == 0) {
         new (&(trx->data_per_streamline[x.first]->_matrix)) Map<Matrix<half, Dynamic, Dynamic>>(
@@ -332,14 +307,14 @@ TrxFile<DT> *_initialize_empty_trx(int nb_streamlines, int nb_vertices, const Tr
 }
 
 template <typename DT>
-TrxFile<DT> *
+std::unique_ptr<TrxFile<DT>>
 TrxFile<DT>::_create_trx_from_pointer(json header,
                                       std::map<std::string, std::tuple<long long, long long>> dict_pointer_size,
                                       std::string root_zip,
                                       std::string root) {
-  trxmmap::TrxFile<DT> *trx = new trxmmap::TrxFile<DT>();
+  auto trx = std::make_unique<trx::TrxFile<DT>>();
   trx->header = header;
-  trx->streamlines = new ArraySequence<DT>();
+  trx->streamlines = std::make_unique<ArraySequence<DT>>();
 
   std::string filename;
 
@@ -372,14 +347,10 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
     }
 
     // _split_ext_with_dimensionality
-    std::tuple<std::string, int, std::string> base_tuple = _split_ext_with_dimensionality(elem_filename);
+    std::tuple<std::string, int, std::string> base_tuple = trx::detail::_split_ext_with_dimensionality(elem_filename);
     std::string base(std::get<0>(base_tuple));
     int dim = std::get<1>(base_tuple);
     std::string ext(std::get<2>(base_tuple));
-
-    if (ext.compare("bit") == 0) {
-      ext = "bool";
-    }
 
     long long mem_adress = std::get<0>(x->second);
     long long size = std::get<1>(x->second);
@@ -392,7 +363,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
       std::tuple<int, int> shape = std::make_tuple(static_cast<int>(trx->header["NB_VERTICES"].int_value()), 3);
       trx->streamlines->mmap_pos =
-          trxmmap::_create_memmap(filename, shape, "r+", ext.substr(1, ext.size() - 1), mem_adress);
+          trx::_create_memmap(filename, shape, "r+", ext.substr(1, ext.size() - 1), mem_adress);
 
       // TODO: find a better way to get the dtype than using all these switch cases. Also
       // refactor into function as per specifications, positions can only be floats
@@ -418,7 +389,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
       const int nb_str = static_cast<int>(trx->header["NB_STREAMLINES"].int_value());
       std::tuple<int, int> shape = std::make_tuple(nb_str + 1, 1);
-      trx->streamlines->mmap_off = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      trx->streamlines->mmap_off = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
       if (ext.compare("uint64") == 0) {
         new (&(trx->streamlines->_offsets)) Map<Matrix<uint64_t, Dynamic, 1>>(
@@ -435,12 +406,13 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       }
 
       Matrix<uint64_t, Dynamic, 1> offsets = trx->streamlines->_offsets;
-      trx->streamlines->_lengths = _compute_lengths(offsets, static_cast<int>(trx->header["NB_VERTICES"].int_value()));
+      trx->streamlines->_lengths =
+          trx::detail::_compute_lengths(offsets, static_cast<int>(trx->header["NB_VERTICES"].int_value()));
     }
 
     else if (folder.compare("dps") == 0) {
       std::tuple<int, int> shape;
-      trx->data_per_streamline[base] = new MMappedMatrix<DT>();
+      trx->data_per_streamline[base] = std::make_unique<MMappedMatrix<DT>>();
       int nb_scalar = size / static_cast<int>(trx->header["NB_STREAMLINES"].int_value());
 
       if (size % static_cast<int>(trx->header["NB_STREAMLINES"].int_value()) != 0 || nb_scalar != dim) {
@@ -449,7 +421,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       } else {
         shape = std::make_tuple(static_cast<int>(trx->header["NB_STREAMLINES"].int_value()), nb_scalar);
       }
-      trx->data_per_streamline[base]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      trx->data_per_streamline[base]->mmap = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
       if (ext.compare("float16") == 0) {
         new (&(trx->data_per_streamline[base]->_matrix))
@@ -471,7 +443,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
     else if (folder.compare("dpv") == 0) {
       std::tuple<int, int> shape;
-      trx->data_per_vertex[base] = new ArraySequence<DT>();
+      trx->data_per_vertex[base] = std::make_unique<ArraySequence<DT>>();
       int nb_scalar = size / static_cast<int>(trx->header["NB_VERTICES"].int_value());
 
       if (size % static_cast<int>(trx->header["NB_VERTICES"].int_value()) != 0 || nb_scalar != dim) {
@@ -480,7 +452,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       } else {
         shape = std::make_tuple(static_cast<int>(trx->header["NB_VERTICES"].int_value()), nb_scalar);
       }
-      trx->data_per_vertex[base]->mmap_pos = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      trx->data_per_vertex[base]->mmap_pos = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
       if (ext.compare("float16") == 0) {
         new (&(trx->data_per_vertex[base]->_data))
@@ -517,9 +489,8 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       std::string data_name = path_basename(base);
       std::string sub_folder = path_basename(folder);
 
-      trx->data_per_group[sub_folder][data_name] = new MMappedMatrix<DT>();
-      trx->data_per_group[sub_folder][data_name]->mmap =
-          trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      trx->data_per_group[sub_folder][data_name] = std::make_unique<MMappedMatrix<DT>>();
+      trx->data_per_group[sub_folder][data_name]->mmap = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
       if (ext.compare("float16") == 0) {
         new (&(trx->data_per_group[sub_folder][data_name]->_matrix)) Map<Matrix<half, Dynamic, Dynamic>>(
@@ -546,8 +517,8 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       } else {
         shape = std::make_tuple(static_cast<int>(size), 1);
       }
-      trx->groups[base] = new MMappedMatrix<uint32_t>();
-      trx->groups[base]->mmap = trxmmap::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      trx->groups[base] = std::make_unique<MMappedMatrix<uint32_t>>();
+      trx->groups[base]->mmap = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
       new (&(trx->groups[base]->_matrix)) Map<Matrix<uint32_t, Dynamic, Dynamic>>(
           reinterpret_cast<uint32_t *>(trx->groups[base]->mmap.data()), std::get<0>(shape), std::get<1>(shape));
     } else {
@@ -563,9 +534,9 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 }
 
 // TODO: Major refactoring
-template <typename DT> TrxFile<DT> *TrxFile<DT>::deepcopy() {
-  if (this->streamlines == nullptr || this->streamlines->_data.size() == 0 || this->streamlines->_offsets.size() == 0) {
-    trxmmap::TrxFile<DT> *empty_copy = new trxmmap::TrxFile<DT>();
+template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::deepcopy() {
+  if (!this->streamlines || this->streamlines->_data.size() == 0 || this->streamlines->_offsets.size() == 0) {
+    auto empty_copy = std::make_unique<trx::TrxFile<DT>>();
     empty_copy->header = this->header;
     return empty_copy;
   }
@@ -577,7 +548,7 @@ template <typename DT> TrxFile<DT> *TrxFile<DT>::deepcopy() {
   // TODO: Definitely a better way to deepcopy
   json tmp_header = this->header;
 
-  ArraySequence<DT> *to_dump = new ArraySequence<DT>();
+  auto to_dump = std::make_unique<ArraySequence<DT>>();
   // TODO: Verify that this is indeed a deep copy
   new (&(to_dump->_data)) Matrix<DT, Dynamic, Dynamic, RowMajor>(this->streamlines->_data);
   new (&(to_dump->_offsets)) Matrix<uint64_t, Dynamic, Dynamic, RowMajor>(this->streamlines->_offsets);
@@ -694,7 +665,7 @@ template <typename DT> TrxFile<DT> *TrxFile<DT>::deepcopy() {
     }
   }
 
-  TrxFile<DT> *copy_trx = load_from_directory<DT>(tmp_dir);
+  auto copy_trx = TrxFile<DT>::load_from_directory(tmp_dir);
   copy_trx->_uncompressed_folder_handle = tmp_dir;
   copy_trx->_owns_uncompressed_folder = true;
 
@@ -707,11 +678,11 @@ template <typename DT> std::tuple<int, int> TrxFile<DT>::_get_real_len() {
   if (this->streamlines->_lengths.size() == 0)
     return std::make_tuple(0, 0);
 
-  int last_elem_pos = _dichotomic_search(this->streamlines->_lengths);
+  int last_elem_pos = trx::detail::_dichotomic_search(this->streamlines->_lengths);
 
   if (last_elem_pos != -1) {
     int strs_end = last_elem_pos + 1;
-    int pts_end = this->streamlines->_lengths(seq(0, last_elem_pos), 0).sum();
+    int pts_end = this->streamlines->_lengths(Eigen::seq(0, last_elem_pos), 0).sum();
 
     return std::make_tuple(strs_end, pts_end);
   }
@@ -730,7 +701,7 @@ TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int strs_start, int pts_s
     curr_pts_len = std::get<1>(curr);
   } else {
     curr_strs_len = nb_strs_to_copy;
-    curr_pts_len = trx->streamlines->_lengths(seq(0, curr_strs_len - 1)).sum();
+    curr_pts_len = trx->streamlines->_lengths(Eigen::seq(0, curr_strs_len - 1)).sum();
   }
 
   if (pts_start == -1) {
@@ -778,7 +749,26 @@ TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int strs_start, int pts_s
 
 template <typename DT> void TrxFile<DT>::close() {
   this->_cleanup_temporary_directory();
-  *this = TrxFile<DT>(); // probably dangerous to do
+  this->streamlines.reset();
+  this->groups.clear();
+  this->data_per_streamline.clear();
+  this->data_per_vertex.clear();
+  this->data_per_group.clear();
+  this->_uncompressed_folder_handle.clear();
+  this->_owns_uncompressed_folder = false;
+  this->_copy_safe = true;
+
+  std::vector<std::vector<float>> affine(4, std::vector<float>(4, 0.0f));
+  for (int i = 0; i < 4; i++) {
+    affine[i][i] = 1.0f;
+  }
+  std::vector<uint16_t> dimensions{1, 1, 1};
+  json::object header_obj;
+  header_obj["VOXEL_TO_RASMM"] = affine;
+  header_obj["DIMENSIONS"] = dimensions;
+  header_obj["NB_VERTICES"] = 0;
+  header_obj["NB_STREAMLINES"] = 0;
+  this->header = json(header_obj);
 }
 
 template <typename DT> TrxFile<DT>::~TrxFile() { this->_cleanup_temporary_directory(); }
@@ -826,7 +816,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
     return;
   }
 
-  TrxFile<DT> *trx = _initialize_empty_trx(nb_streamlines, nb_vertices, this);
+  auto trx = _initialize_empty_trx(nb_streamlines, nb_vertices, this);
 
   if (nb_streamlines < this->header["NB_STREAMLINES"].int_value())
     trx->_copy_fixed_arrays_from(this, -1, -1, nb_streamlines);
@@ -868,8 +858,8 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
       Matrix<uint32_t, Dynamic, Dynamic> tmp = this->groups[x.first]->_matrix(keep_rows, keep_cols);
       std::tuple<int, int> group_shape = std::make_tuple(tmp.size(), 1);
 
-      trx->groups[x.first] = new MMappedMatrix<uint32_t>();
-      trx->groups[x.first]->mmap = trxmmap::_create_memmap(group_name, group_shape, "w+", group_dtype);
+      trx->groups[x.first] = std::make_unique<MMappedMatrix<uint32_t>>();
+      trx->groups[x.first]->mmap = trx::_create_memmap(group_name, group_shape, "w+", group_dtype);
       new (&(trx->groups[x.first]->_matrix))
           Map<Matrix<uint32_t, Dynamic, Dynamic>>(reinterpret_cast<uint32_t *>(trx->groups[x.first]->mmap.data()),
                                                   std::get<0>(group_shape),
@@ -911,7 +901,9 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
       }
 
       if (trx->data_per_group.find(x.first) == trx->data_per_group.end()) {
-        trx->data_per_group[x.first] = {};
+        trx->data_per_group.emplace(x.first, std::map<std::string, std::unique_ptr<MMappedMatrix<DT>>>{});
+      } else {
+        trx->data_per_group[x.first].clear();
       }
 
       for (auto const &y : this->data_per_group[x.first]) {
@@ -923,7 +915,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
                                                          this->data_per_group[x.first][y.first]->_matrix.cols());
 
         if (trx->data_per_group[x.first].find(y.first) == trx->data_per_group[x.first].end()) {
-          trx->data_per_group[x.first][y.first] = new MMappedMatrix<DT>();
+          trx->data_per_group[x.first][y.first] = std::make_unique<MMappedMatrix<DT>>();
         }
 
         trx->data_per_group[x.first][y.first]->mmap = _create_memmap(dpg_filename, dpg_shape, "w+", dpg_dtype);
@@ -945,7 +937,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
   }
 }
 
-template <typename DT> TrxFile<DT> *load_from_zip(std::string filename) {
+template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::load_from_zip(const std::string &filename) {
   int errorp = 0;
   zip_t *zf = open_zip_for_read(filename, errorp);
   if (zf == nullptr) {
@@ -955,13 +947,13 @@ template <typename DT> TrxFile<DT> *load_from_zip(std::string filename) {
   std::string temp_dir = extract_zip_to_directory(zf);
   zip_close(zf);
 
-  TrxFile<DT> *trx = load_from_directory<DT>(temp_dir);
+  auto trx = TrxFile<DT>::load_from_directory(temp_dir);
   trx->_uncompressed_folder_handle = temp_dir;
   trx->_owns_uncompressed_folder = true;
   return trx;
 }
 
-template <typename DT> TrxFile<DT> *load_from_directory(std::string path) {
+template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::load_from_directory(const std::string &path) {
   std::string directory = path;
   {
     std::error_code ec;
@@ -991,38 +983,25 @@ template <typename DT> TrxFile<DT> *load_from_directory(std::string path) {
   return TrxFile<DT>::_create_trx_from_pointer(header, files_pointer_size, "", directory);
 }
 
-template <typename DT> TrxFile<DT> *load(std::string path) {
+template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::load(const std::string &path) {
   trx::fs::path input(path);
   if (!trx::fs::exists(input)) {
     throw std::runtime_error("Input path does not exist: " + path);
   }
   std::error_code ec;
   if (trx::fs::is_directory(input, ec) && !ec) {
-    return load_from_directory<DT>(path);
+    return TrxFile<DT>::load_from_directory(path);
   }
-  return load_from_zip<DT>(path);
+  return TrxFile<DT>::load_from_zip(path);
 }
 
-template <typename DT> TrxReader<DT>::TrxReader(const std::string &path) { trx_ = load<DT>(path); }
+template <typename DT> TrxReader<DT>::TrxReader(const std::string &path) { trx_ = TrxFile<DT>::load(path); }
 
-template <typename DT> TrxReader<DT>::~TrxReader() {
-  if (trx_ != nullptr) {
-    trx_->close();
-    delete trx_;
-    trx_ = nullptr;
-  }
-}
-
-template <typename DT> TrxReader<DT>::TrxReader(TrxReader &&other) noexcept : trx_(other.trx_) { other.trx_ = nullptr; }
+template <typename DT> TrxReader<DT>::TrxReader(TrxReader &&other) noexcept : trx_(std::move(other.trx_)) {}
 
 template <typename DT> TrxReader<DT> &TrxReader<DT>::operator=(TrxReader &&other) noexcept {
   if (this != &other) {
-    if (trx_ != nullptr) {
-      trx_->close();
-      delete trx_;
-    }
-    trx_ = other.trx_;
-    other.trx_ = nullptr;
+    trx_ = std::move(other.trx_);
   }
   return *this;
 }
@@ -1048,15 +1027,44 @@ auto with_trx_reader(const std::string &path, Fn &&fn)
   }
 }
 
-template <typename DT> void save(TrxFile<DT> &trx, const std::string filename, zip_uint32_t compression_standard) {
+template <typename DT> void TrxFile<DT>::save(const std::string &filename, zip_uint32_t compression_standard) {
   std::string ext = get_ext(filename);
 
   if (ext.size() > 0 && (ext != "zip" && ext != "trx")) {
     throw std::invalid_argument("Unsupported extension." + ext);
   }
 
-  TrxFile<DT> *copy_trx = trx.deepcopy();
+  auto copy_trx = this->deepcopy();
   copy_trx->resize();
+  if (!copy_trx->streamlines || copy_trx->streamlines->_offsets.size() == 0) {
+    throw std::runtime_error("Cannot save TRX without offsets data");
+  }
+  if (copy_trx->header["NB_STREAMLINES"].is_number()) {
+    const auto nb_streamlines = static_cast<size_t>(copy_trx->header["NB_STREAMLINES"].int_value());
+    if (copy_trx->streamlines->_offsets.size() != static_cast<Eigen::Index>(nb_streamlines + 1)) {
+      throw std::runtime_error("TRX offsets size does not match NB_STREAMLINES");
+    }
+  }
+  if (copy_trx->header["NB_VERTICES"].is_number()) {
+    const auto nb_vertices = static_cast<uint64_t>(copy_trx->header["NB_VERTICES"].int_value());
+    const auto last =
+        static_cast<uint64_t>(copy_trx->streamlines->_offsets(copy_trx->streamlines->_offsets.size() - 1));
+    if (last != nb_vertices) {
+      throw std::runtime_error("TRX offsets sentinel does not match NB_VERTICES");
+    }
+  }
+  for (Eigen::Index i = 1; i < copy_trx->streamlines->_offsets.size(); ++i) {
+    if (copy_trx->streamlines->_offsets(i) < copy_trx->streamlines->_offsets(i - 1)) {
+      throw std::runtime_error("TRX offsets must be monotonically increasing");
+    }
+  }
+  if (copy_trx->streamlines->_data.size() > 0) {
+    const auto last =
+        static_cast<uint64_t>(copy_trx->streamlines->_offsets(copy_trx->streamlines->_offsets.size() - 1));
+    if (last != static_cast<uint64_t>(copy_trx->streamlines->_data.rows())) {
+      throw std::runtime_error("TRX positions row count does not match offsets sentinel");
+    }
+  }
   std::string tmp_dir_name = copy_trx->_uncompressed_folder_handle;
 
   if (ext.size() > 0 && (ext == "zip" || ext == "trx")) {
@@ -1102,7 +1110,27 @@ template <typename DT> void save(TrxFile<DT> &trx, const std::string filename, z
 }
 
 template <typename DT>
-void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::string &dtype, const std::string &path) {
+void TrxFile<DT>::add_dps_from_text(const std::string &name, const std::string &dtype, const std::string &path) {
+  std::ifstream input(path);
+  if (!input.is_open()) {
+    throw std::runtime_error("Failed to open DPS text file: " + path);
+  }
+
+  std::vector<double> values;
+  double value = 0.0;
+  while (input >> value) {
+    values.push_back(value);
+  }
+  if (!input.eof() && input.fail()) {
+    throw std::runtime_error("Failed to parse DPS text file: " + path);
+  }
+
+  add_dps_from_vector(name, dtype, values);
+}
+
+template <typename DT>
+template <typename T>
+void TrxFile<DT>::add_dps_from_vector(const std::string &name, const std::string &dtype, const std::vector<T> &values) {
   if (name.empty()) {
     throw std::invalid_argument("DPS name cannot be empty");
   }
@@ -1112,37 +1140,22 @@ void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::str
     return static_cast<char>(std::tolower(c));
   });
 
-  if (!_is_dtype_valid(dtype_norm)) {
+  if (!trx::detail::_is_dtype_valid(dtype_norm)) {
     throw std::invalid_argument("Unsupported DPS dtype: " + dtype);
   }
   if (dtype_norm != "float16" && dtype_norm != "float32" && dtype_norm != "float64") {
-    throw std::invalid_argument("Unsupported DPS dtype for text input: " + dtype);
+    throw std::invalid_argument("Unsupported DPS dtype: " + dtype);
   }
 
-  if (trx._uncompressed_folder_handle.empty()) {
+  if (this->_uncompressed_folder_handle.empty()) {
     throw std::runtime_error("TRX file has no backing directory to store DPS data");
   }
 
   size_t nb_streamlines = 0;
-  if (trx.streamlines) {
-    nb_streamlines = static_cast<size_t>(trx.streamlines->_lengths.size());
-  } else if (trx.header["NB_STREAMLINES"].is_number()) {
-    nb_streamlines = static_cast<size_t>(trx.header["NB_STREAMLINES"].int_value());
-  }
-
-  std::ifstream input(path);
-  if (!input.is_open()) {
-    throw std::runtime_error("Failed to open DPS text file: " + path);
-  }
-
-  std::vector<double> values;
-  values.reserve(nb_streamlines);
-  double value = 0.0;
-  while (input >> value) {
-    values.push_back(value);
-  }
-  if (!input.eof() && input.fail()) {
-    throw std::runtime_error("Failed to parse DPS text file: " + path);
+  if (this->streamlines) {
+    nb_streamlines = static_cast<size_t>(this->streamlines->_lengths.size());
+  } else if (this->header["NB_STREAMLINES"].is_number()) {
+    nb_streamlines = static_cast<size_t>(this->header["NB_STREAMLINES"].int_value());
   }
 
   if (values.size() != nb_streamlines) {
@@ -1150,7 +1163,7 @@ void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::str
                              std::to_string(nb_streamlines) + ")");
   }
 
-  std::string dps_dirname = trx._uncompressed_folder_handle + SEPARATOR + "dps" + SEPARATOR;
+  std::string dps_dirname = this->_uncompressed_folder_handle + SEPARATOR + "dps" + SEPARATOR;
   {
     std::error_code ec;
     trx::fs::create_directories(dps_dirname, ec);
@@ -1167,18 +1180,17 @@ void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::str
     }
   }
 
-  auto existing = trx.data_per_streamline.find(name);
-  if (existing != trx.data_per_streamline.end()) {
-    delete existing->second;
-    trx.data_per_streamline.erase(existing);
+  auto existing = this->data_per_streamline.find(name);
+  if (existing != this->data_per_streamline.end()) {
+    this->data_per_streamline.erase(existing);
   }
 
   const int rows = static_cast<int>(nb_streamlines);
   const int cols = 1;
   std::tuple<int, int> shape = std::make_tuple(rows, cols);
 
-  auto *matrix = new trxmmap::MMappedMatrix<DT>();
-  matrix->mmap = trxmmap::_create_memmap(dps_filename, shape, "w+", dtype_norm);
+  auto matrix = std::make_unique<trx::MMappedMatrix<DT>>();
+  matrix->mmap = trx::_create_memmap(dps_filename, shape, "w+", dtype_norm);
 
   if (dtype_norm == "float16") {
     auto *data = reinterpret_cast<half *>(matrix->mmap.data());
@@ -1203,11 +1215,12 @@ void add_dps_from_text(TrxFile<DT> &trx, const std::string &name, const std::str
     }
   }
 
-  trx.data_per_streamline[name] = matrix;
+  this->data_per_streamline[name] = std::move(matrix);
 }
 
 template <typename DT>
-void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::string &dtype, const std::string &path) {
+template <typename T>
+void TrxFile<DT>::add_dpv_from_vector(const std::string &name, const std::string &dtype, const std::vector<T> &values) {
   if (name.empty()) {
     throw std::invalid_argument("DPV name cannot be empty");
   }
@@ -1217,23 +1230,369 @@ void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::stri
     return static_cast<char>(std::tolower(c));
   });
 
-  if (!_is_dtype_valid(dtype_norm)) {
+  if (!trx::detail::_is_dtype_valid(dtype_norm)) {
+    throw std::invalid_argument("Unsupported DPV dtype: " + dtype);
+  }
+  if (dtype_norm != "float16" && dtype_norm != "float32" && dtype_norm != "float64") {
+    throw std::invalid_argument("Unsupported DPV dtype: " + dtype);
+  }
+
+  if (this->_uncompressed_folder_handle.empty()) {
+    throw std::runtime_error("TRX file has no backing directory to store DPV data");
+  }
+
+  size_t nb_vertices = 0;
+  if (this->streamlines) {
+    nb_vertices = static_cast<size_t>(this->streamlines->_data.rows());
+  } else if (this->header["NB_VERTICES"].is_number()) {
+    nb_vertices = static_cast<size_t>(this->header["NB_VERTICES"].int_value());
+  }
+
+  if (values.size() != nb_vertices) {
+    throw std::runtime_error("DPV values (" + std::to_string(values.size()) + ") do not match number of vertices (" +
+                             std::to_string(nb_vertices) + ")");
+  }
+
+  std::string dpv_dirname = this->_uncompressed_folder_handle + SEPARATOR + "dpv" + SEPARATOR;
+  {
+    std::error_code ec;
+    trx::fs::create_directories(dpv_dirname, ec);
+    if (ec) {
+      throw std::runtime_error("Could not create directory " + dpv_dirname);
+    }
+  }
+
+  std::string dpv_filename = dpv_dirname + name + "." + dtype_norm;
+  {
+    std::error_code ec;
+    if (trx::fs::exists(dpv_filename, ec)) {
+      trx::fs::remove(dpv_filename, ec);
+    }
+  }
+
+  auto existing = this->data_per_vertex.find(name);
+  if (existing != this->data_per_vertex.end()) {
+    this->data_per_vertex.erase(existing);
+  }
+
+  const int rows = static_cast<int>(nb_vertices);
+  const int cols = 1;
+  std::tuple<int, int> shape = std::make_tuple(rows, cols);
+
+  auto seq = std::make_unique<trx::ArraySequence<DT>>();
+  seq->mmap_pos = trx::_create_memmap(dpv_filename, shape, "w+", dtype_norm);
+
+  if (dtype_norm == "float16") {
+    auto *data = reinterpret_cast<half *>(seq->mmap_pos.data());
+    Map<Matrix<half, Dynamic, Dynamic>> mapped(data, rows, cols);
+    new (&(seq->_data)) Map<Matrix<half, Dynamic, Dynamic>>(data, rows, cols);
+    for (int i = 0; i < rows; ++i) {
+      mapped(i, 0) = static_cast<half>(values[static_cast<size_t>(i)]);
+    }
+  } else if (dtype_norm == "float32") {
+    auto *data = reinterpret_cast<float *>(seq->mmap_pos.data());
+    Map<Matrix<float, Dynamic, Dynamic>> mapped(data, rows, cols);
+    new (&(seq->_data)) Map<Matrix<float, Dynamic, Dynamic>>(data, rows, cols);
+    for (int i = 0; i < rows; ++i) {
+      mapped(i, 0) = static_cast<float>(values[static_cast<size_t>(i)]);
+    }
+  } else {
+    auto *data = reinterpret_cast<double *>(seq->mmap_pos.data());
+    Map<Matrix<double, Dynamic, Dynamic>> mapped(data, rows, cols);
+    new (&(seq->_data)) Map<Matrix<double, Dynamic, Dynamic>>(data, rows, cols);
+    for (int i = 0; i < rows; ++i) {
+      mapped(i, 0) = static_cast<double>(values[static_cast<size_t>(i)]);
+    }
+  }
+
+  if (this->streamlines && this->streamlines->_offsets.size() > 0) {
+    new (&(seq->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(this->streamlines->_offsets.data(),
+                                                                   int(this->streamlines->_offsets.rows()),
+                                                                   int(this->streamlines->_offsets.cols()));
+    seq->_lengths = this->streamlines->_lengths;
+  }
+
+  this->data_per_vertex[name] = std::move(seq);
+}
+
+template <typename DT>
+void TrxFile<DT>::add_group_from_indices(const std::string &name, const std::vector<uint32_t> &indices) {
+  if (name.empty()) {
+    throw std::invalid_argument("Group name cannot be empty");
+  }
+  if (this->_uncompressed_folder_handle.empty()) {
+    throw std::runtime_error("TRX file has no backing directory to store groups");
+  }
+
+  size_t nb_streamlines = 0;
+  if (this->streamlines) {
+    nb_streamlines = static_cast<size_t>(this->streamlines->_lengths.size());
+  } else if (this->header["NB_STREAMLINES"].is_number()) {
+    nb_streamlines = static_cast<size_t>(this->header["NB_STREAMLINES"].int_value());
+  }
+
+  for (const auto idx : indices) {
+    if (idx >= nb_streamlines) {
+      throw std::runtime_error("Group index out of range: " + std::to_string(idx));
+    }
+  }
+
+  std::string groups_dirname = this->_uncompressed_folder_handle + SEPARATOR + "groups" + SEPARATOR;
+  {
+    std::error_code ec;
+    trx::fs::create_directories(groups_dirname, ec);
+    if (ec) {
+      throw std::runtime_error("Could not create directory " + groups_dirname);
+    }
+  }
+
+  std::string group_filename = groups_dirname + name + ".uint32";
+  {
+    std::error_code ec;
+    if (trx::fs::exists(group_filename, ec)) {
+      trx::fs::remove(group_filename, ec);
+    }
+  }
+
+  auto existing = this->groups.find(name);
+  if (existing != this->groups.end()) {
+    this->groups.erase(existing);
+  }
+
+  const int rows = static_cast<int>(indices.size());
+  const int cols = 1;
+  std::tuple<int, int> shape = std::make_tuple(rows, cols);
+
+  auto group = std::make_unique<trx::MMappedMatrix<uint32_t>>();
+  group->mmap = trx::_create_memmap(group_filename, shape, "w+", "uint32");
+  new (&(group->_matrix)) Map<Matrix<uint32_t, Dynamic, Dynamic>>(
+      reinterpret_cast<uint32_t *>(group->mmap.data()), std::get<0>(shape), std::get<1>(shape));
+  for (int i = 0; i < rows; ++i) {
+    group->_matrix(i, 0) = indices[static_cast<size_t>(i)];
+  }
+  this->groups[name] = std::move(group);
+}
+
+template <typename DT>
+void TrxFile<DT>::set_voxel_to_rasmm(const Eigen::Matrix4f &affine) {
+  std::vector<std::vector<float>> matrix(4, std::vector<float>(4, 0.0f));
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) {
+      matrix[static_cast<size_t>(i)][static_cast<size_t>(j)] = affine(i, j);
+    }
+  }
+  this->header = _json_set(this->header, "VOXEL_TO_RASMM", matrix);
+}
+
+inline TrxStream::TrxStream(std::string positions_dtype) : positions_dtype_(std::move(positions_dtype)) {
+  std::transform(positions_dtype_.begin(), positions_dtype_.end(), positions_dtype_.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  if (positions_dtype_ != "float32") {
+    throw std::invalid_argument("TrxStream only supports float32 positions for now");
+  }
+  tmp_dir_ = make_temp_dir("trx_proto");
+  positions_path_ = tmp_dir_ + SEPARATOR + "positions.tmp";
+  ensure_positions_stream();
+}
+
+inline TrxStream::~TrxStream() { cleanup_tmp(); }
+
+inline void TrxStream::ensure_positions_stream() {
+  if (!positions_out_.is_open()) {
+    positions_out_.open(positions_path_, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!positions_out_.is_open()) {
+      throw std::runtime_error("Failed to open TrxStream temp positions file: " + positions_path_);
+    }
+  }
+}
+
+inline void TrxStream::cleanup_tmp() {
+  if (positions_out_.is_open()) {
+    positions_out_.close();
+  }
+  if (!tmp_dir_.empty()) {
+    rm_dir(tmp_dir_);
+    tmp_dir_.clear();
+  }
+}
+
+inline void TrxStream::push_streamline(const float *xyz, size_t point_count) {
+  if (finalized_) {
+    throw std::runtime_error("TrxStream already finalized");
+  }
+  if (point_count == 0) {
+    lengths_.push_back(0);
+    return;
+  }
+  ensure_positions_stream();
+  const size_t byte_count = point_count * 3 * sizeof(float);
+  positions_out_.write(reinterpret_cast<const char *>(xyz), static_cast<std::streamsize>(byte_count));
+  if (!positions_out_) {
+    throw std::runtime_error("Failed to write TrxStream positions");
+  }
+  total_vertices_ += point_count;
+  lengths_.push_back(static_cast<uint32_t>(point_count));
+}
+
+inline void TrxStream::push_streamline(const std::vector<float> &xyz_flat) {
+  if (xyz_flat.size() % 3 != 0) {
+    throw std::invalid_argument("TrxStream streamline buffer must be a multiple of 3");
+  }
+  push_streamline(xyz_flat.data(), xyz_flat.size() / 3);
+}
+
+inline void TrxStream::push_streamline(const std::vector<std::array<float, 3>> &points) {
+  push_streamline(reinterpret_cast<const float *>(points.data()), points.size());
+}
+
+template <typename T>
+inline void
+TrxStream::push_dps_from_vector(const std::string &name, const std::string &dtype, const std::vector<T> &values) {
+  if (name.empty()) {
+    throw std::invalid_argument("DPS name cannot be empty");
+  }
+  std::string dtype_norm = dtype;
+  std::transform(dtype_norm.begin(), dtype_norm.end(), dtype_norm.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  if (!trx::detail::_is_dtype_valid(dtype_norm)) {
+    throw std::invalid_argument("Unsupported DPS dtype: " + dtype);
+  }
+  if (dtype_norm != "float16" && dtype_norm != "float32" && dtype_norm != "float64") {
+    throw std::invalid_argument("Unsupported DPS dtype: " + dtype);
+  }
+  FieldValues field;
+  field.dtype = dtype_norm;
+  field.values.reserve(values.size());
+  for (const auto &v : values) {
+    field.values.push_back(static_cast<double>(v));
+  }
+  dps_[name] = std::move(field);
+}
+
+template <typename T>
+inline void
+TrxStream::push_dpv_from_vector(const std::string &name, const std::string &dtype, const std::vector<T> &values) {
+  if (name.empty()) {
+    throw std::invalid_argument("DPV name cannot be empty");
+  }
+  std::string dtype_norm = dtype;
+  std::transform(dtype_norm.begin(), dtype_norm.end(), dtype_norm.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  if (!trx::detail::_is_dtype_valid(dtype_norm)) {
+    throw std::invalid_argument("Unsupported DPV dtype: " + dtype);
+  }
+  if (dtype_norm != "float16" && dtype_norm != "float32" && dtype_norm != "float64") {
+    throw std::invalid_argument("Unsupported DPV dtype: " + dtype);
+  }
+  FieldValues field;
+  field.dtype = dtype_norm;
+  field.values.reserve(values.size());
+  for (const auto &v : values) {
+    field.values.push_back(static_cast<double>(v));
+  }
+  dpv_[name] = std::move(field);
+}
+
+inline void TrxStream::push_group_from_indices(const std::string &name, const std::vector<uint32_t> &indices) {
+  if (name.empty()) {
+    throw std::invalid_argument("Group name cannot be empty");
+  }
+  groups_[name] = indices;
+}
+
+template <typename DT> void TrxStream::finalize(const std::string &filename, zip_uint32_t compression_standard) {
+  if (finalized_) {
+    throw std::runtime_error("TrxStream already finalized");
+  }
+  finalized_ = true;
+
+  if (positions_out_.is_open()) {
+    positions_out_.flush();
+    positions_out_.close();
+  }
+
+  const size_t nb_streamlines = lengths_.size();
+  const size_t nb_vertices = total_vertices_;
+
+  TrxFile<DT> trx(static_cast<int>(nb_vertices), static_cast<int>(nb_streamlines));
+
+  json header_out = header;
+  header_out = _json_set(header_out, "NB_VERTICES", static_cast<int>(nb_vertices));
+  header_out = _json_set(header_out, "NB_STREAMLINES", static_cast<int>(nb_streamlines));
+  trx.header = header_out;
+
+  auto &positions = trx.streamlines->_data;
+  auto &offsets = trx.streamlines->_offsets;
+  auto &lengths = trx.streamlines->_lengths;
+
+  offsets(0, 0) = 0;
+  for (size_t i = 0; i < nb_streamlines; ++i) {
+    lengths(static_cast<Eigen::Index>(i)) = static_cast<uint32_t>(lengths_[i]);
+    offsets(static_cast<Eigen::Index>(i + 1), 0) = offsets(static_cast<Eigen::Index>(i), 0) + lengths_[i];
+  }
+
+  std::ifstream in(positions_path_, std::ios::binary);
+  if (!in.is_open()) {
+    throw std::runtime_error("Failed to open TrxStream temp positions file for read: " + positions_path_);
+  }
+  for (size_t i = 0; i < nb_vertices; ++i) {
+    float xyz[3];
+    in.read(reinterpret_cast<char *>(xyz), sizeof(xyz));
+    if (!in) {
+      throw std::runtime_error("Failed to read TrxStream positions");
+    }
+    positions(static_cast<Eigen::Index>(i), 0) = static_cast<DT>(xyz[0]);
+    positions(static_cast<Eigen::Index>(i), 1) = static_cast<DT>(xyz[1]);
+    positions(static_cast<Eigen::Index>(i), 2) = static_cast<DT>(xyz[2]);
+  }
+
+  for (const auto &kv : dps_) {
+    trx.add_dps_from_vector(kv.first, kv.second.dtype, kv.second.values);
+  }
+  for (const auto &kv : dpv_) {
+    trx.add_dpv_from_vector(kv.first, kv.second.dtype, kv.second.values);
+  }
+  for (const auto &kv : groups_) {
+    trx.add_group_from_indices(kv.first, kv.second);
+  }
+
+  trx.save(filename, compression_standard);
+  trx.close();
+
+  cleanup_tmp();
+}
+
+template <typename DT>
+void TrxFile<DT>::add_dpv_from_tsf(const std::string &name, const std::string &dtype, const std::string &path) {
+  if (name.empty()) {
+    throw std::invalid_argument("DPV name cannot be empty");
+  }
+
+  std::string dtype_norm = dtype;
+  std::transform(dtype_norm.begin(), dtype_norm.end(), dtype_norm.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+
+  if (!trx::detail::_is_dtype_valid(dtype_norm)) {
     throw std::invalid_argument("Unsupported DPV dtype: " + dtype);
   }
   if (dtype_norm != "float16" && dtype_norm != "float32" && dtype_norm != "float64") {
     throw std::invalid_argument("Unsupported DPV dtype for TSF input: " + dtype);
   }
 
-  if (!trx.streamlines) {
+  if (!this->streamlines) {
     throw std::runtime_error("TRX file has no streamlines to attach DPV data");
   }
-  if (trx._uncompressed_folder_handle.empty()) {
+  if (this->_uncompressed_folder_handle.empty()) {
     throw std::runtime_error("TRX file has no backing directory to store DPV data");
   }
 
-  const auto &lengths = trx.streamlines->_lengths;
+  const auto &lengths = this->streamlines->_lengths;
   const size_t nb_streamlines = static_cast<size_t>(lengths.size());
-  const size_t nb_vertices = static_cast<size_t>(trx.streamlines->_data.rows());
+  const size_t nb_vertices = static_cast<size_t>(this->streamlines->_data.rows());
 
   std::ifstream input(path);
   if (!input.is_open()) {
@@ -1422,7 +1781,7 @@ void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::stri
                              std::to_string(nb_vertices) + ")");
   }
 
-  std::string dpv_dirname = trx._uncompressed_folder_handle + SEPARATOR + "dpv" + SEPARATOR;
+  std::string dpv_dirname = this->_uncompressed_folder_handle + SEPARATOR + "dpv" + SEPARATOR;
   {
     std::error_code ec;
     trx::fs::create_directories(dpv_dirname, ec);
@@ -1439,18 +1798,17 @@ void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::stri
     }
   }
 
-  auto existing = trx.data_per_vertex.find(name);
-  if (existing != trx.data_per_vertex.end()) {
-    delete existing->second;
-    trx.data_per_vertex.erase(existing);
+  auto existing = this->data_per_vertex.find(name);
+  if (existing != this->data_per_vertex.end()) {
+    this->data_per_vertex.erase(existing);
   }
 
   const int rows = static_cast<int>(nb_vertices);
   const int cols = 1;
   std::tuple<int, int> shape = std::make_tuple(rows, cols);
 
-  auto *seq = new trxmmap::ArraySequence<DT>();
-  seq->mmap_pos = trxmmap::_create_memmap(dpv_filename, shape, "w+", dtype_norm);
+  auto seq = std::make_unique<trx::ArraySequence<DT>>();
+  seq->mmap_pos = trx::_create_memmap(dpv_filename, shape, "w+", dtype_norm);
 
   if (dtype_norm == "float16") {
     auto *data = reinterpret_cast<half *>(seq->mmap_pos.data());
@@ -1475,20 +1833,19 @@ void add_dpv_from_tsf(TrxFile<DT> &trx, const std::string &name, const std::stri
     }
   }
 
-  new (&(seq->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(trx.streamlines->_offsets.data(),
-                                                                 static_cast<int>(trx.streamlines->_offsets.rows()),
-                                                                 static_cast<int>(trx.streamlines->_offsets.cols()));
-  seq->_lengths = trx.streamlines->_lengths;
+  new (&(seq->_offsets)) Map<Matrix<uint64_t, Dynamic, Dynamic>>(this->streamlines->_offsets.data(),
+                                                                 static_cast<int>(this->streamlines->_offsets.rows()),
+                                                                 static_cast<int>(this->streamlines->_offsets.cols()));
+  seq->_lengths = this->streamlines->_lengths;
 
-  trx.data_per_vertex[name] = seq;
+  this->data_per_vertex[name] = std::move(seq);
 }
 
 template <typename DT>
-void export_dpv_to_tsf(const TrxFile<DT> &trx,
-                       const std::string &name,
-                       const std::string &path,
-                       const std::string &timestamp,
-                       const std::string &dtype) {
+void TrxFile<DT>::export_dpv_to_tsf(const std::string &name,
+                                    const std::string &path,
+                                    const std::string &timestamp,
+                                    const std::string &dtype) const {
   if (name.empty()) {
     throw std::invalid_argument("DPV name cannot be empty");
   }
@@ -1501,31 +1858,34 @@ void export_dpv_to_tsf(const TrxFile<DT> &trx,
     return static_cast<char>(std::tolower(c));
   });
 
-  if (!_is_dtype_valid(dtype_norm)) {
+  if (!trx::detail::_is_dtype_valid(dtype_norm)) {
     throw std::invalid_argument("Unsupported TSF dtype: " + dtype);
   }
   if (dtype_norm != "float32" && dtype_norm != "float64") {
     throw std::invalid_argument("Unsupported TSF dtype for output: " + dtype);
   }
 
-  if (!trx.streamlines) {
+  if (!this->streamlines) {
     throw std::runtime_error("TRX file has no streamlines to export DPV data");
   }
 
-  const auto dpv_it = trx.data_per_vertex.find(name);
-  if (dpv_it == trx.data_per_vertex.end()) {
+  const auto dpv_it = this->data_per_vertex.find(name);
+  if (dpv_it == this->data_per_vertex.end()) {
     throw std::runtime_error("DPV entry not found: " + name);
   }
 
-  const auto *seq = dpv_it->second;
+  const auto *seq = dpv_it->second.get();
+  if (!seq) {
+    throw std::runtime_error("DPV entry is null: " + name);
+  }
   if (seq->_data.cols() != 1) {
     throw std::runtime_error("DPV must be 1D to export as TSF: " + name);
   }
 
-  const auto &lengths = trx.streamlines->_lengths;
+  const auto &lengths = this->streamlines->_lengths;
   const size_t nb_streamlines = static_cast<size_t>(lengths.size());
   const size_t nb_vertices = static_cast<size_t>(seq->_data.rows());
-  if (nb_vertices != static_cast<size_t>(trx.streamlines->_data.rows())) {
+  if (nb_vertices != static_cast<size_t>(this->streamlines->_data.rows())) {
     throw std::runtime_error("DPV vertex count does not match streamlines data");
   }
 
@@ -1626,3 +1986,533 @@ template <typename DT> std::ostream &operator<<(std::ostream &out, const TrxFile
   out << trx.header.dump();
   return out;
 }
+
+template <typename DT>
+std::vector<std::array<Eigen::half, 6>> TrxFile<DT>::build_streamline_aabbs() const {
+  std::vector<std::array<Eigen::half, 6>> aabbs;
+  if (!this->streamlines) {
+    return aabbs;
+  }
+
+  std::vector<uint64_t> offsets;
+  if (this->streamlines->_offsets.size() > 0) {
+    offsets.resize(static_cast<size_t>(this->streamlines->_offsets.size()));
+    for (Eigen::Index i = 0; i < this->streamlines->_offsets.size(); ++i) {
+      offsets[static_cast<size_t>(i)] = this->streamlines->_offsets(i, 0);
+    }
+  } else if (this->streamlines->_lengths.size() > 0) {
+    const size_t nb_streamlines = static_cast<size_t>(this->streamlines->_lengths.size());
+    offsets.resize(nb_streamlines + 1);
+    offsets[0] = 0;
+    for (size_t i = 0; i < nb_streamlines; ++i) {
+      offsets[i + 1] = offsets[i] + static_cast<uint64_t>(this->streamlines->_lengths(static_cast<Eigen::Index>(i)));
+    }
+  } else {
+    return aabbs;
+  }
+
+  const size_t nb_streamlines = offsets.size() > 0 ? offsets.size() - 1 : 0;
+  aabbs.resize(nb_streamlines);
+
+  for (size_t i = 0; i < nb_streamlines; ++i) {
+    const uint64_t start = offsets[i];
+    const uint64_t end = offsets[i + 1];
+    if (end <= start) {
+      aabbs[i] = {Eigen::half(0), Eigen::half(0), Eigen::half(0),
+                  Eigen::half(0), Eigen::half(0), Eigen::half(0)};
+      continue;
+    }
+
+    float min_x = std::numeric_limits<float>::infinity();
+    float min_y = std::numeric_limits<float>::infinity();
+    float min_z = std::numeric_limits<float>::infinity();
+    float max_x = -std::numeric_limits<float>::infinity();
+    float max_y = -std::numeric_limits<float>::infinity();
+    float max_z = -std::numeric_limits<float>::infinity();
+
+    for (uint64_t p = start; p < end; ++p) {
+      const float x = static_cast<float>(this->streamlines->_data(static_cast<Eigen::Index>(p), 0));
+      const float y = static_cast<float>(this->streamlines->_data(static_cast<Eigen::Index>(p), 1));
+      const float z = static_cast<float>(this->streamlines->_data(static_cast<Eigen::Index>(p), 2));
+      min_x = std::min(min_x, x);
+      min_y = std::min(min_y, y);
+      min_z = std::min(min_z, z);
+      max_x = std::max(max_x, x);
+      max_y = std::max(max_y, y);
+      max_z = std::max(max_z, z);
+    }
+
+    aabbs[i] = {static_cast<Eigen::half>(min_x), static_cast<Eigen::half>(min_y), static_cast<Eigen::half>(min_z),
+                static_cast<Eigen::half>(max_x), static_cast<Eigen::half>(max_y), static_cast<Eigen::half>(max_z)};
+  }
+
+  this->aabb_cache_ = aabbs;
+  return aabbs;
+}
+
+template <typename DT>
+std::unique_ptr<TrxFile<DT>> TrxFile<DT>::query_aabb(
+    const std::array<float, 3> &min_corner,
+    const std::array<float, 3> &max_corner,
+    const std::vector<std::array<Eigen::half, 6>> *precomputed_aabbs,
+    bool build_cache_for_result) const {
+  if (!this->streamlines) {
+    auto empty = std::make_unique<TrxFile<DT>>();
+    empty->header = _json_set(this->header, "NB_VERTICES", 0);
+    empty->header = _json_set(empty->header, "NB_STREAMLINES", 0);
+    return empty;
+  }
+
+  size_t nb_streamlines = 0;
+  if (this->streamlines->_offsets.size() > 0) {
+    nb_streamlines = static_cast<size_t>(this->streamlines->_offsets.size() - 1);
+  } else if (this->streamlines->_lengths.size() > 0) {
+    nb_streamlines = static_cast<size_t>(this->streamlines->_lengths.size());
+  } else {
+    auto empty = std::make_unique<TrxFile<DT>>();
+    empty->header = _json_set(this->header, "NB_VERTICES", 0);
+    empty->header = _json_set(empty->header, "NB_STREAMLINES", 0);
+    return empty;
+  }
+
+  std::vector<std::array<Eigen::half, 6>> aabbs_local;
+  const std::vector<std::array<Eigen::half, 6>> &aabbs = precomputed_aabbs
+      ? *precomputed_aabbs
+      : (!this->aabb_cache_.empty() ? this->aabb_cache_ : (aabbs_local = this->build_streamline_aabbs()));
+  if (aabbs.size() != nb_streamlines) {
+    throw std::invalid_argument("AABB size does not match streamlines count");
+  }
+
+  const float min_x = min_corner[0];
+  const float min_y = min_corner[1];
+  const float min_z = min_corner[2];
+  const float max_x = max_corner[0];
+  const float max_y = max_corner[1];
+  const float max_z = max_corner[2];
+
+  std::vector<uint32_t> selected;
+  selected.reserve(nb_streamlines);
+
+  for (size_t i = 0; i < nb_streamlines; ++i) {
+    const auto &box = aabbs[i];
+    const float box_min_x = static_cast<float>(box[0]);
+    const float box_min_y = static_cast<float>(box[1]);
+    const float box_min_z = static_cast<float>(box[2]);
+    const float box_max_x = static_cast<float>(box[3]);
+    const float box_max_y = static_cast<float>(box[4]);
+    const float box_max_z = static_cast<float>(box[5]);
+
+    if (box_min_x <= max_x && box_max_x >= min_x &&
+        box_min_y <= max_y && box_max_y >= min_y &&
+        box_min_z <= max_z && box_max_z >= min_z) {
+      selected.push_back(static_cast<uint32_t>(i));
+    }
+  }
+
+  return this->subset_streamlines(selected, build_cache_for_result);
+}
+
+template <typename DT>
+void TrxFile<DT>::invalidate_aabb_cache() const {
+  this->aabb_cache_.clear();
+}
+
+template <typename DT>
+template <typename T>
+void TrxFile<DT>::add_dpg_from_vector(const std::string &group,
+                                      const std::string &name,
+                                      const std::string &dtype,
+                                      const std::vector<T> &values,
+                                      int rows,
+                                      int cols) {
+  if (group.empty()) {
+    throw std::invalid_argument("DPG group cannot be empty");
+  }
+  if (name.empty()) {
+    throw std::invalid_argument("DPG name cannot be empty");
+  }
+  std::string dtype_norm = dtype;
+  std::transform(dtype_norm.begin(), dtype_norm.end(), dtype_norm.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  if (!trx::detail::_is_dtype_valid(dtype_norm)) {
+    throw std::invalid_argument("Unsupported DPG dtype: " + dtype);
+  }
+  if (dtype_norm != "float16" && dtype_norm != "float32" && dtype_norm != "float64") {
+    throw std::invalid_argument("Unsupported DPG dtype: " + dtype);
+  }
+  if (this->_uncompressed_folder_handle.empty()) {
+    throw std::runtime_error("TRX file has no backing directory to store DPG data");
+  }
+  if (rows <= 0) {
+    throw std::invalid_argument("DPG rows must be positive");
+  }
+  if (cols < 0) {
+    if (values.size() % static_cast<size_t>(rows) != 0) {
+      throw std::invalid_argument("DPG values size does not match rows");
+    }
+    cols = static_cast<int>(values.size() / static_cast<size_t>(rows));
+  }
+  if (cols <= 0) {
+    throw std::invalid_argument("DPG cols must be positive");
+  }
+  if (static_cast<size_t>(rows) * static_cast<size_t>(cols) != values.size()) {
+    throw std::invalid_argument("DPG values size does not match rows*cols");
+  }
+
+  std::string dpg_dir = this->_uncompressed_folder_handle + SEPARATOR + "dpg" + SEPARATOR;
+  {
+    std::error_code ec;
+    trx::fs::create_directories(dpg_dir, ec);
+    if (ec) {
+      throw std::runtime_error("Could not create directory " + dpg_dir);
+    }
+  }
+  std::string dpg_subdir = dpg_dir + group;
+  {
+    std::error_code ec;
+    trx::fs::create_directories(dpg_subdir, ec);
+    if (ec) {
+      throw std::runtime_error("Could not create directory " + dpg_subdir);
+    }
+  }
+
+  std::string dpg_filename = dpg_subdir + SEPARATOR + name + "." + dtype_norm;
+  {
+    std::error_code ec;
+    if (trx::fs::exists(dpg_filename, ec)) {
+      trx::fs::remove(dpg_filename, ec);
+    }
+  }
+
+  auto &group_map = this->data_per_group[group];
+  group_map.erase(name);
+
+  std::tuple<int, int> shape = std::make_tuple(rows, cols);
+  group_map[name] = std::make_unique<MMappedMatrix<DT>>();
+  group_map[name]->mmap = _create_memmap(dpg_filename, shape, "w+", dtype_norm);
+
+  if (dtype_norm == "float16") {
+    auto *data = reinterpret_cast<half *>(group_map[name]->mmap.data());
+    Map<Matrix<half, Dynamic, Dynamic>> mapped(data, rows, cols);
+    new (&(group_map[name]->_matrix)) Map<Matrix<half, Dynamic, Dynamic>>(data, rows, cols);
+    for (int i = 0; i < rows * cols; ++i) {
+      data[i] = static_cast<half>(values[static_cast<size_t>(i)]);
+    }
+  } else if (dtype_norm == "float32") {
+    auto *data = reinterpret_cast<float *>(group_map[name]->mmap.data());
+    Map<Matrix<float, Dynamic, Dynamic>> mapped(data, rows, cols);
+    new (&(group_map[name]->_matrix)) Map<Matrix<float, Dynamic, Dynamic>>(data, rows, cols);
+    for (int i = 0; i < rows * cols; ++i) {
+      data[i] = static_cast<float>(values[static_cast<size_t>(i)]);
+    }
+  } else {
+    auto *data = reinterpret_cast<double *>(group_map[name]->mmap.data());
+    Map<Matrix<double, Dynamic, Dynamic>> mapped(data, rows, cols);
+    new (&(group_map[name]->_matrix)) Map<Matrix<double, Dynamic, Dynamic>>(data, rows, cols);
+    for (int i = 0; i < rows * cols; ++i) {
+      data[i] = static_cast<double>(values[static_cast<size_t>(i)]);
+    }
+  }
+}
+
+template <typename DT>
+template <typename Derived>
+void TrxFile<DT>::add_dpg_from_matrix(const std::string &group,
+                                      const std::string &name,
+                                      const std::string &dtype,
+                                      const Eigen::MatrixBase<Derived> &matrix) {
+  if (matrix.size() == 0) {
+    throw std::invalid_argument("DPG matrix cannot be empty");
+  }
+  std::vector<typename Derived::Scalar> values;
+  values.reserve(static_cast<size_t>(matrix.size()));
+  for (Eigen::Index i = 0; i < matrix.rows(); ++i) {
+    for (Eigen::Index j = 0; j < matrix.cols(); ++j) {
+      values.push_back(matrix(i, j));
+    }
+  }
+  add_dpg_from_vector(group, name, dtype, values, static_cast<int>(matrix.rows()),
+                      static_cast<int>(matrix.cols()));
+}
+
+template <typename DT>
+const MMappedMatrix<DT> *TrxFile<DT>::get_dpg(const std::string &group, const std::string &name) const {
+  auto group_it = this->data_per_group.find(group);
+  if (group_it == this->data_per_group.end()) {
+    return nullptr;
+  }
+  auto field_it = group_it->second.find(name);
+  if (field_it == group_it->second.end()) {
+    return nullptr;
+  }
+  return field_it->second.get();
+}
+
+template <typename DT>
+std::vector<std::string> TrxFile<DT>::list_dpg_groups() const {
+  std::vector<std::string> groups;
+  groups.reserve(this->data_per_group.size());
+  for (const auto &kv : this->data_per_group) {
+    groups.push_back(kv.first);
+  }
+  return groups;
+}
+
+template <typename DT>
+std::vector<std::string> TrxFile<DT>::list_dpg_fields(const std::string &group) const {
+  std::vector<std::string> fields;
+  auto it = this->data_per_group.find(group);
+  if (it == this->data_per_group.end()) {
+    return fields;
+  }
+  fields.reserve(it->second.size());
+  for (const auto &kv : it->second) {
+    fields.push_back(kv.first);
+  }
+  return fields;
+}
+
+template <typename DT>
+void TrxFile<DT>::remove_dpg(const std::string &group, const std::string &name) {
+  auto group_it = this->data_per_group.find(group);
+  if (group_it == this->data_per_group.end()) {
+    return;
+  }
+  group_it->second.erase(name);
+  if (group_it->second.empty()) {
+    this->data_per_group.erase(group_it);
+  }
+}
+
+template <typename DT>
+void TrxFile<DT>::remove_dpg_group(const std::string &group) {
+  this->data_per_group.erase(group);
+}
+
+template <typename DT>
+std::unique_ptr<TrxFile<DT>> TrxFile<DT>::subset_streamlines(const std::vector<uint32_t> &streamline_ids,
+                                                             bool build_cache_for_result) const {
+  if (!this->streamlines) {
+    auto empty = std::make_unique<TrxFile<DT>>();
+    empty->header = _json_set(this->header, "NB_VERTICES", 0);
+    empty->header = _json_set(empty->header, "NB_STREAMLINES", 0);
+    return empty;
+  }
+
+  std::vector<uint64_t> offsets;
+  if (this->streamlines->_offsets.size() > 0) {
+    offsets.resize(static_cast<size_t>(this->streamlines->_offsets.size()));
+    for (Eigen::Index i = 0; i < this->streamlines->_offsets.size(); ++i) {
+      offsets[static_cast<size_t>(i)] = this->streamlines->_offsets(i, 0);
+    }
+  } else if (this->streamlines->_lengths.size() > 0) {
+    const size_t nb_streamlines = static_cast<size_t>(this->streamlines->_lengths.size());
+    offsets.resize(nb_streamlines + 1);
+    offsets[0] = 0;
+    for (size_t i = 0; i < nb_streamlines; ++i) {
+      offsets[i + 1] = offsets[i] + static_cast<uint64_t>(this->streamlines->_lengths(static_cast<Eigen::Index>(i)));
+    }
+  } else {
+    auto empty = std::make_unique<TrxFile<DT>>();
+    empty->header = _json_set(this->header, "NB_VERTICES", 0);
+    empty->header = _json_set(empty->header, "NB_STREAMLINES", 0);
+    return empty;
+  }
+
+  const size_t nb_streamlines = offsets.size() > 0 ? offsets.size() - 1 : 0;
+  if (nb_streamlines == 0) {
+    auto empty = std::make_unique<TrxFile<DT>>();
+    empty->header = _json_set(this->header, "NB_VERTICES", 0);
+    empty->header = _json_set(empty->header, "NB_STREAMLINES", 0);
+    return empty;
+  }
+
+  std::vector<uint32_t> selected;
+  selected.reserve(streamline_ids.size());
+  std::vector<uint8_t> seen(nb_streamlines, 0);
+  for (uint32_t id : streamline_ids) {
+    if (id >= nb_streamlines) {
+      throw std::invalid_argument("Streamline id out of range");
+    }
+    if (!seen[id]) {
+      selected.push_back(id);
+      seen[id] = 1;
+    }
+  }
+
+  if (selected.empty()) {
+    auto empty = std::make_unique<TrxFile<DT>>();
+    empty->header = _json_set(this->header, "NB_VERTICES", 0);
+    empty->header = _json_set(empty->header, "NB_STREAMLINES", 0);
+    return empty;
+  }
+
+  std::vector<int> old_to_new(nb_streamlines, -1);
+  size_t total_vertices = 0;
+  for (size_t i = 0; i < selected.size(); ++i) {
+    const uint32_t idx = selected[i];
+    old_to_new[idx] = static_cast<int>(i);
+    const uint64_t start = offsets[idx];
+    const uint64_t end = offsets[idx + 1];
+    total_vertices += static_cast<size_t>(end - start);
+  }
+
+  auto out = std::make_unique<TrxFile<DT>>(static_cast<int>(total_vertices),
+                                           static_cast<int>(selected.size()),
+                                           this);
+  out->header = _json_set(this->header, "NB_VERTICES", static_cast<int>(total_vertices));
+  out->header = _json_set(out->header, "NB_STREAMLINES", static_cast<int>(selected.size()));
+
+  auto &out_positions = out->streamlines->_data;
+  auto &out_offsets = out->streamlines->_offsets;
+  auto &out_lengths = out->streamlines->_lengths;
+
+  size_t cursor = 0;
+  out_offsets(0, 0) = 0;
+  for (size_t new_idx = 0; new_idx < selected.size(); ++new_idx) {
+    const uint32_t old_idx = selected[new_idx];
+    const uint64_t start = offsets[old_idx];
+    const uint64_t end = offsets[old_idx + 1];
+    const uint64_t len = end - start;
+
+    out_lengths(static_cast<Eigen::Index>(new_idx)) = static_cast<uint32_t>(len);
+    out_offsets(static_cast<Eigen::Index>(new_idx + 1), 0) =
+        out_offsets(static_cast<Eigen::Index>(new_idx), 0) + len;
+
+    if (len > 0) {
+      out_positions.block(static_cast<Eigen::Index>(cursor), 0,
+                          static_cast<Eigen::Index>(len), 3) =
+          this->streamlines->_data.block(static_cast<Eigen::Index>(start), 0,
+                                         static_cast<Eigen::Index>(len), 3);
+
+      for (const auto &kv : this->data_per_vertex) {
+        const std::string &name = kv.first;
+        auto out_it = out->data_per_vertex.find(name);
+        if (out_it == out->data_per_vertex.end()) {
+          continue;
+        }
+        auto &out_dpv = out_it->second->_data;
+        auto &src_dpv = kv.second->_data;
+        const Eigen::Index cols = src_dpv.cols();
+        out_dpv.block(static_cast<Eigen::Index>(cursor), 0,
+                      static_cast<Eigen::Index>(len), cols) =
+            src_dpv.block(static_cast<Eigen::Index>(start), 0,
+                          static_cast<Eigen::Index>(len), cols);
+      }
+    }
+
+    for (const auto &kv : this->data_per_streamline) {
+      const std::string &name = kv.first;
+      auto out_it = out->data_per_streamline.find(name);
+      if (out_it == out->data_per_streamline.end()) {
+        continue;
+      }
+      out_it->second->_matrix.row(static_cast<Eigen::Index>(new_idx)) =
+          kv.second->_matrix.row(static_cast<Eigen::Index>(old_idx));
+    }
+
+    cursor += static_cast<size_t>(len);
+  }
+
+  for (const auto &kv : this->groups) {
+    const std::string &group_name = kv.first;
+    std::vector<uint32_t> indices;
+    auto &matrix = kv.second->_matrix;
+    indices.reserve(static_cast<size_t>(matrix.size()));
+    for (Eigen::Index r = 0; r < matrix.rows(); ++r) {
+      for (Eigen::Index c = 0; c < matrix.cols(); ++c) {
+        const uint32_t old_idx = matrix(r, c);
+        if (old_idx >= old_to_new.size()) {
+          continue;
+        }
+        const int new_idx = old_to_new[old_idx];
+        if (new_idx >= 0) {
+          indices.push_back(static_cast<uint32_t>(new_idx));
+        }
+      }
+    }
+    if (!indices.empty()) {
+      out->add_group_from_indices(group_name, indices);
+    }
+  }
+
+  if (!this->data_per_group.empty() && !out->groups.empty()) {
+    std::string dpg_dir = out->_uncompressed_folder_handle + SEPARATOR + "dpg" + SEPARATOR;
+    {
+      std::error_code ec;
+      trx::fs::create_directories(dpg_dir, ec);
+      if (ec) {
+        throw std::runtime_error("Could not create directory " + dpg_dir);
+      }
+    }
+
+    for (const auto &group_kv : out->groups) {
+      const std::string &group_name = group_kv.first;
+      auto src_group_it = this->data_per_group.find(group_name);
+      if (src_group_it == this->data_per_group.end()) {
+        continue;
+      }
+
+      std::string dpg_subdir = dpg_dir + group_name;
+      {
+        std::error_code ec;
+        trx::fs::create_directories(dpg_subdir, ec);
+        if (ec) {
+          throw std::runtime_error("Could not create directory " + dpg_subdir);
+        }
+      }
+
+      if (out->data_per_group.find(group_name) == out->data_per_group.end()) {
+        out->data_per_group.emplace(group_name, std::map<std::string, std::unique_ptr<MMappedMatrix<DT>>>{});
+      } else {
+        out->data_per_group[group_name].clear();
+      }
+
+      for (const auto &field_kv : src_group_it->second) {
+        const std::string &field_name = field_kv.first;
+        std::string dpg_dtype = dtype_from_scalar<DT>();
+        std::string dpg_filename = dpg_subdir + SEPARATOR + field_name;
+        dpg_filename = _generate_filename_from_data(field_kv.second->_matrix, dpg_filename);
+
+        std::tuple<int, int> dpg_shape = std::make_tuple(field_kv.second->_matrix.rows(),
+                                                         field_kv.second->_matrix.cols());
+
+        out->data_per_group[group_name][field_name] = std::make_unique<MMappedMatrix<DT>>();
+        out->data_per_group[group_name][field_name]->mmap =
+            _create_memmap(dpg_filename, dpg_shape, "w+", dpg_dtype);
+
+        if (dpg_dtype.compare("float16") == 0) {
+          new (&(out->data_per_group[group_name][field_name]->_matrix)) Map<Matrix<half, Dynamic, Dynamic>>(
+              reinterpret_cast<half *>(out->data_per_group[group_name][field_name]->mmap.data()),
+              std::get<0>(dpg_shape), std::get<1>(dpg_shape));
+        } else if (dpg_dtype.compare("float32") == 0) {
+          new (&(out->data_per_group[group_name][field_name]->_matrix)) Map<Matrix<float, Dynamic, Dynamic>>(
+              reinterpret_cast<float *>(out->data_per_group[group_name][field_name]->mmap.data()),
+              std::get<0>(dpg_shape), std::get<1>(dpg_shape));
+        } else {
+          new (&(out->data_per_group[group_name][field_name]->_matrix)) Map<Matrix<double, Dynamic, Dynamic>>(
+              reinterpret_cast<double *>(out->data_per_group[group_name][field_name]->mmap.data()),
+              std::get<0>(dpg_shape), std::get<1>(dpg_shape));
+        }
+
+        for (int i = 0; i < out->data_per_group[group_name][field_name]->_matrix.rows(); ++i) {
+          for (int j = 0; j < out->data_per_group[group_name][field_name]->_matrix.cols(); ++j) {
+            out->data_per_group[group_name][field_name]->_matrix(i, j) =
+                field_kv.second->_matrix(i, j);
+          }
+        }
+      }
+    }
+  }
+
+  if (build_cache_for_result) {
+    out->build_streamline_aabbs();
+  }
+  return out;
+}
+
+#ifdef TRX_TPP_OPEN_NAMESPACE
+} // namespace trx
+#undef TRX_TPP_OPEN_NAMESPACE
+#endif

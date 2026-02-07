@@ -1,0 +1,29 @@
+version: 2
+
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.11"
+  apt_packages:
+    - cmake
+    - g++
+    - pkg-config
+    - zlib1g-dev
+    - libeigen3-dev
+    - libzip-dev
+    - ninja-build
+    - zipcmp
+    - zipmerge
+    - ziptool
+
+  jobs:
+    pre_build:
+      - cmake -S . -B build -DTRX_BUILD_DOCS=ON
+      - cmake --build build --target docs
+
+python:
+  install:
+    - requirements: docs/requirements.txt
+
+sphinx:
+  configuration: docs/conf.py
