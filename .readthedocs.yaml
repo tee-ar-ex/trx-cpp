@@ -11,7 +11,6 @@ build:
     - zlib1g-dev
     - libeigen3-dev
     - libzip-dev
-    - libzip-tools
     - ninja-build
     - zipcmp
     - zipmerge
