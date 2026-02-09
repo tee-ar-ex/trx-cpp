@@ -169,7 +169,7 @@ std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_ve
     offsets_dtype = dtype_from_scalar<uint64_t>();
     lengths_dtype = dtype_from_scalar<uint32_t>();
   } else {
-    positions_dtype = dtype_from_scalar<half>();
+    positions_dtype = dtype_from_scalar<DT>();
     offsets_dtype = dtype_from_scalar<uint64_t>();
     lengths_dtype = dtype_from_scalar<uint32_t>();
   }
@@ -181,8 +181,7 @@ std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_ve
   trx->streamlines = std::make_unique<ArraySequence<DT>>();
   trx->streamlines->mmap_pos = trx::_create_memmap(positions_filename, shape, "w+", positions_dtype);
 
-  // TODO: find a better way to get the dtype than using all these switch cases. Also refactor
-  // into function as per specifications, positions can only be floats
+  // TODO: find a better way to get the dtype than using all these switch cases.
   if (positions_dtype.compare("float16") == 0) {
     new (&(trx->streamlines->_data)) Map<Matrix<half, Dynamic, Dynamic>>(
         reinterpret_cast<half *>(trx->streamlines->mmap_pos.data()), std::get<0>(shape), std::get<1>(shape));
@@ -356,9 +355,12 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
     long long size = std::get<1>(x->second);
 
     if (base.compare("positions") == 0 && (folder.compare("") == 0 || folder.compare(".") == 0)) {
-      if (size != static_cast<int>(trx->header["NB_VERTICES"].int_value()) * 3 || dim != 3) {
-
-        throw std::invalid_argument("Wrong data size/dimensionality");
+      const auto nb_vertices = static_cast<int64_t>(trx->header["NB_VERTICES"].int_value());
+      const auto expected = nb_vertices * 3;
+      if (size != expected || dim != 3) {
+        throw std::invalid_argument("Wrong data size/dimensionality: size=" + std::to_string(size) +
+                                    " expected=" + std::to_string(expected) + " dim=" + std::to_string(dim) +
+                                    " filename=" + elem_filename);
       }
 
       std::tuple<int, int> shape = std::make_tuple(static_cast<int>(trx->header["NB_VERTICES"].int_value()), 3);
@@ -380,11 +382,12 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
     }
 
     else if (base.compare("offsets") == 0 && (folder.compare("") == 0 || folder.compare(".") == 0)) {
-      if (size != static_cast<int>(trx->header["NB_STREAMLINES"].int_value()) + 1 || dim != 1) {
-        throw std::invalid_argument(
-            "Wrong offsets size/dimensionality: size=" + std::to_string(size) +
-            " nb_streamlines=" + std::to_string(static_cast<int>(trx->header["NB_STREAMLINES"].int_value())) +
-            " dim=" + std::to_string(dim) + " filename=" + elem_filename);
+      const auto nb_streamlines = static_cast<int64_t>(trx->header["NB_STREAMLINES"].int_value());
+      const auto expected = nb_streamlines + 1;
+      if (size != expected || dim != 1) {
+        throw std::invalid_argument("Wrong offsets size/dimensionality: size=" + std::to_string(size) +
+                                    " expected=" + std::to_string(expected) + " dim=" + std::to_string(dim) +
+                                    " filename=" + elem_filename);
       }
 
       const int nb_str = static_cast<int>(trx->header["NB_STREAMLINES"].int_value());
@@ -965,9 +968,42 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::load_from_direc
   std::string header_name = directory + SEPARATOR + "header.json";
 
   // TODO: add check to verify that it's open
-  std::ifstream header_file(header_name);
+  std::ifstream header_file;
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    header_file.open(header_name);
+    if (header_file.is_open()) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
   if (!header_file.is_open()) {
-    throw std::runtime_error("Failed to open header.json at: " + header_name);
+    std::error_code ec;
+    const bool exists = trx::fs::exists(directory, ec);
+    const int open_err = errno;
+    std::string detail = "Failed to open header.json at: " + header_name;
+    detail += " exists=" + std::string(exists ? "true" : "false");
+    detail += " errno=" + std::to_string(open_err) + " msg=" + std::string(std::strerror(open_err));
+    if (exists) {
+      std::vector<std::string> files;
+      for (const auto &entry : trx::fs::directory_iterator(directory, ec)) {
+        if (ec) {
+          break;
+        }
+        files.push_back(entry.path().filename().string());
+      }
+      if (!files.empty()) {
+        std::sort(files.begin(), files.end());
+        detail += " files=[";
+        for (size_t i = 0; i < files.size(); ++i) {
+          if (i > 0) {
+            detail += ",";
+          }
+          detail += files[i];
+        }
+        detail += "]";
+      }
+    }
+    throw std::runtime_error(detail);
   }
   std::string jstream((std::istreambuf_iterator<char>(header_file)), std::istreambuf_iterator<char>());
   header_file.close();
@@ -993,6 +1029,10 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::load(const std:
     return TrxFile<DT>::load_from_directory(path);
   }
   return TrxFile<DT>::load_from_zip(path);
+}
+
+template <typename DT> std::unique_ptr<TrxFile<DT>> load(const std::string &path) {
+  return TrxFile<DT>::load(path);
 }
 
 template <typename DT> TrxReader<DT>::TrxReader(const std::string &path) { trx_ = TrxFile<DT>::load(path); }
@@ -1067,13 +1107,58 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, zip_u
   }
   std::string tmp_dir_name = copy_trx->_uncompressed_folder_handle;
 
+  if (!tmp_dir_name.empty()) {
+    const std::string header_path = tmp_dir_name + SEPARATOR + "header.json";
+    std::ofstream out_json(header_path, std::ios::out | std::ios::trunc);
+    if (!out_json.is_open()) {
+      throw std::runtime_error("Failed to write header.json to: " + header_path);
+    }
+    out_json << copy_trx->header.dump() << std::endl;
+    out_json.close();
+  }
+
   if (ext.size() > 0 && (ext == "zip" || ext == "trx")) {
+    auto sync_unmap_seq = [](auto &seq) {
+      if (!seq) {
+        return;
+      }
+      std::error_code ec;
+      seq->mmap_pos.sync(ec);
+      seq->mmap_pos.unmap();
+      seq->mmap_off.sync(ec);
+      seq->mmap_off.unmap();
+    };
+    auto sync_unmap_mat = [](auto &mat) {
+      if (!mat) {
+        return;
+      }
+      std::error_code ec;
+      mat->mmap.sync(ec);
+      mat->mmap.unmap();
+    };
+
+    sync_unmap_seq(copy_trx->streamlines);
+    for (auto &kv : copy_trx->groups) {
+      sync_unmap_mat(kv.second);
+    }
+    for (auto &kv : copy_trx->data_per_streamline) {
+      sync_unmap_mat(kv.second);
+    }
+    for (auto &kv : copy_trx->data_per_vertex) {
+      sync_unmap_seq(kv.second);
+    }
+    for (auto &group_kv : copy_trx->data_per_group) {
+      for (auto &kv : group_kv.second) {
+        sync_unmap_mat(kv.second);
+      }
+    }
+
     int errorp;
     zip_t *zf;
     if ((zf = zip_open(filename.c_str(), ZIP_CREATE + ZIP_TRUNCATE, &errorp)) == nullptr) {
       throw std::runtime_error("Could not open archive " + filename + ": " + strerror(errorp));
     } else {
-      zip_from_folder(zf, tmp_dir_name, tmp_dir_name, compression_standard);
+      zip_from_folder(zf, tmp_dir_name, tmp_dir_name, compression_standard, nullptr);
       if (zip_close(zf) != 0) {
         throw std::runtime_error("Unable to close archive " + filename + ": " + zip_strerror(zf));
       }
@@ -1388,8 +1473,8 @@ inline TrxStream::TrxStream(std::string positions_dtype) : positions_dtype_(std:
   std::transform(positions_dtype_.begin(), positions_dtype_.end(), positions_dtype_.begin(), [](unsigned char c) {
     return static_cast<char>(std::tolower(c));
   });
-  if (positions_dtype_ != "float32") {
-    throw std::invalid_argument("TrxStream only supports float32 positions for now");
+  if (positions_dtype_ != "float32" && positions_dtype_ != "float16") {
+    throw std::invalid_argument("TrxStream only supports float16/float32 positions for now");
   }
   tmp_dir_ = make_temp_dir("trx_proto");
   positions_path_ = tmp_dir_ + SEPARATOR + "positions.tmp";
@@ -1397,6 +1482,20 @@ inline TrxStream::TrxStream(std::string positions_dtype) : positions_dtype_(std:
 }
 
 inline TrxStream::~TrxStream() { cleanup_tmp(); }
+
+inline void TrxStream::set_metadata_mode(MetadataMode mode) {
+  if (finalized_) {
+    throw std::runtime_error("Cannot adjust metadata mode after finalize");
+  }
+  metadata_mode_ = mode;
+}
+
+inline void TrxStream::set_metadata_buffer_max_bytes(std::size_t max_bytes) {
+  if (finalized_) {
+    throw std::runtime_error("Cannot adjust metadata buffer after finalize");
+  }
+  metadata_buffer_max_bytes_ = max_bytes;
+}
 
 inline void TrxStream::ensure_positions_stream() {
   if (!positions_out_.is_open()) {
@@ -1407,7 +1506,50 @@ inline void TrxStream::ensure_positions_stream() {
   }
 }
 
+inline void TrxStream::ensure_metadata_dir(const std::string &subdir) {
+  if (tmp_dir_.empty()) {
+    throw std::runtime_error("TrxStream temp directory not initialized");
+  }
+  const std::string dir = tmp_dir_ + SEPARATOR + subdir + SEPARATOR;
+  std::error_code ec;
+  trx::fs::create_directories(dir, ec);
+  if (ec) {
+    throw std::runtime_error("Could not create directory " + dir);
+  }
+}
+
+inline void TrxStream::flush_positions_buffer() {
+  if (positions_dtype_ == "float16") {
+    if (positions_buffer_half_.empty()) {
+      return;
+    }
+    ensure_positions_stream();
+    const size_t byte_count = positions_buffer_half_.size() * sizeof(half);
+    positions_out_.write(reinterpret_cast<const char *>(positions_buffer_half_.data()),
+                         static_cast<std::streamsize>(byte_count));
+    if (!positions_out_) {
+      throw std::runtime_error("Failed to write TrxStream positions buffer");
+    }
+    positions_buffer_half_.clear();
+    return;
+  }
+
+  if (positions_buffer_float_.empty()) {
+    return;
+  }
+  ensure_positions_stream();
+  const size_t byte_count = positions_buffer_float_.size() * sizeof(float);
+  positions_out_.write(reinterpret_cast<const char *>(positions_buffer_float_.data()),
+                       static_cast<std::streamsize>(byte_count));
+  if (!positions_out_) {
+    throw std::runtime_error("Failed to write TrxStream positions buffer");
+  }
+  positions_buffer_float_.clear();
+}
+
 inline void TrxStream::cleanup_tmp() {
+  positions_buffer_float_.clear();
+  positions_buffer_half_.clear();
   if (positions_out_.is_open()) {
     positions_out_.close();
   }
@@ -1425,11 +1567,42 @@ inline void TrxStream::push_streamline(const float *xyz, size_t point_count) {
     lengths_.push_back(0);
     return;
   }
-  ensure_positions_stream();
-  const size_t byte_count = point_count * 3 * sizeof(float);
-  positions_out_.write(reinterpret_cast<const char *>(xyz), static_cast<std::streamsize>(byte_count));
-  if (!positions_out_) {
-    throw std::runtime_error("Failed to write TrxStream positions");
+  if (positions_buffer_max_entries_ == 0) {
+    ensure_positions_stream();
+    if (positions_dtype_ == "float16") {
+      std::vector<half> tmp;
+      tmp.reserve(point_count * 3);
+      for (size_t i = 0; i < point_count * 3; ++i) {
+        tmp.push_back(static_cast<half>(xyz[i]));
+      }
+      const size_t byte_count = tmp.size() * sizeof(half);
+      positions_out_.write(reinterpret_cast<const char *>(tmp.data()), static_cast<std::streamsize>(byte_count));
+      if (!positions_out_) {
+        throw std::runtime_error("Failed to write TrxStream positions");
+      }
+    } else {
+      const size_t byte_count = point_count * 3 * sizeof(float);
+      positions_out_.write(reinterpret_cast<const char *>(xyz), static_cast<std::streamsize>(byte_count));
+      if (!positions_out_) {
+        throw std::runtime_error("Failed to write TrxStream positions");
+      }
+    }
+  } else {
+    const size_t floats_count = point_count * 3;
+    if (positions_dtype_ == "float16") {
+      positions_buffer_half_.reserve(positions_buffer_half_.size() + floats_count);
+      for (size_t i = 0; i < floats_count; ++i) {
+        positions_buffer_half_.push_back(static_cast<half>(xyz[i]));
+      }
+      if (positions_buffer_half_.size() >= positions_buffer_max_entries_) {
+        flush_positions_buffer();
+      }
+    } else {
+      positions_buffer_float_.insert(positions_buffer_float_.end(), xyz, xyz + floats_count);
+      if (positions_buffer_float_.size() >= positions_buffer_max_entries_) {
+        flush_positions_buffer();
+      }
+    }
   }
   total_vertices_ += point_count;
   lengths_.push_back(static_cast<uint32_t>(point_count));
@@ -1443,7 +1616,32 @@ inline void TrxStream::push_streamline(const std::vector<float> &xyz_flat) {
 }
 
 inline void TrxStream::push_streamline(const std::vector<std::array<float, 3>> &points) {
-  push_streamline(reinterpret_cast<const float *>(points.data()), points.size());
+  if (points.empty()) {
+    push_streamline(static_cast<const float *>(nullptr), 0);
+    return;
+  }
+  std::vector<float> xyz_flat;
+  xyz_flat.reserve(points.size() * 3);
+  for (const auto &point : points) {
+    xyz_flat.push_back(point[0]);
+    xyz_flat.push_back(point[1]);
+    xyz_flat.push_back(point[2]);
+  }
+  push_streamline(xyz_flat);
+}
+
+inline void TrxStream::set_voxel_to_rasmm(const Eigen::Matrix4f &affine) {
+  std::vector<std::vector<float>> matrix(4, std::vector<float>(4, 0.0f));
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) {
+      matrix[static_cast<size_t>(i)][static_cast<size_t>(j)] = affine(i, j);
+    }
+  }
+  header = _json_set(header, "VOXEL_TO_RASMM", matrix);
+}
+
+inline void TrxStream::set_dimensions(const std::array<uint16_t, 3> &dims) {
+  header = _json_set(header, "DIMENSIONS", std::vector<uint16_t>{dims[0], dims[1], dims[2]});
 }
 
 template <typename T>
@@ -1462,13 +1660,67 @@ TrxStream::push_dps_from_vector(const std::string &name, const std::string &dtyp
   if (dtype_norm != "float16" && dtype_norm != "float32" && dtype_norm != "float64") {
     throw std::invalid_argument("Unsupported DPS dtype: " + dtype);
   }
-  FieldValues field;
-  field.dtype = dtype_norm;
-  field.values.reserve(values.size());
-  for (const auto &v : values) {
-    field.values.push_back(static_cast<double>(v));
+  if (metadata_mode_ == MetadataMode::OnDisk) {
+    ensure_metadata_dir("dps");
+    const std::string filename = tmp_dir_ + SEPARATOR + "dps" + SEPARATOR + name + "." + dtype_norm;
+    std::ofstream out(filename, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!out.is_open()) {
+      throw std::runtime_error("Failed to open DPS file: " + filename);
+    }
+    if (dtype_norm == "float16") {
+      const size_t chunk_elems = std::max<std::size_t>(1, metadata_buffer_max_bytes_ / sizeof(half));
+      std::vector<half> tmp;
+      tmp.reserve(chunk_elems);
+      size_t offset = 0;
+      while (offset < values.size()) {
+        const size_t count = std::min(chunk_elems, values.size() - offset);
+        tmp.clear();
+        for (size_t i = 0; i < count; ++i) {
+          tmp.push_back(static_cast<half>(values[offset + i]));
+        }
+        out.write(reinterpret_cast<const char *>(tmp.data()), static_cast<std::streamsize>(count * sizeof(half)));
+        offset += count;
+      }
+    } else if (dtype_norm == "float32") {
+      const size_t chunk_elems = std::max<std::size_t>(1, metadata_buffer_max_bytes_ / sizeof(float));
+      std::vector<float> tmp;
+      tmp.reserve(chunk_elems);
+      size_t offset = 0;
+      while (offset < values.size()) {
+        const size_t count = std::min(chunk_elems, values.size() - offset);
+        tmp.clear();
+        for (size_t i = 0; i < count; ++i) {
+          tmp.push_back(static_cast<float>(values[offset + i]));
+        }
+        out.write(reinterpret_cast<const char *>(tmp.data()), static_cast<std::streamsize>(count * sizeof(float)));
+        offset += count;
+      }
+    } else {
+      const size_t chunk_elems = std::max<std::size_t>(1, metadata_buffer_max_bytes_ / sizeof(double));
+      std::vector<double> tmp;
+      tmp.reserve(chunk_elems);
+      size_t offset = 0;
+      while (offset < values.size()) {
+        const size_t count = std::min(chunk_elems, values.size() - offset);
+        tmp.clear();
+        for (size_t i = 0; i < count; ++i) {
+          tmp.push_back(static_cast<double>(values[offset + i]));
+        }
+        out.write(reinterpret_cast<const char *>(tmp.data()), static_cast<std::streamsize>(count * sizeof(double)));
+        offset += count;
+      }
+    }
+    out.close();
+    metadata_files_.push_back({std::string("dps") + SEPARATOR + name + "." + dtype_norm, filename});
+  } else {
+    FieldValues field;
+    field.dtype = dtype_norm;
+    field.values.reserve(values.size());
+    for (const auto &v : values) {
+      field.values.push_back(static_cast<double>(v));
+    }
+    dps_[name] = std::move(field);
   }
-  dps_[name] = std::move(field);
 }
 
 template <typename T>
@@ -1487,20 +1739,113 @@ TrxStream::push_dpv_from_vector(const std::string &name, const std::string &dtyp
   if (dtype_norm != "float16" && dtype_norm != "float32" && dtype_norm != "float64") {
     throw std::invalid_argument("Unsupported DPV dtype: " + dtype);
   }
-  FieldValues field;
-  field.dtype = dtype_norm;
-  field.values.reserve(values.size());
-  for (const auto &v : values) {
-    field.values.push_back(static_cast<double>(v));
+  if (metadata_mode_ == MetadataMode::OnDisk) {
+    ensure_metadata_dir("dpv");
+    const std::string filename = tmp_dir_ + SEPARATOR + "dpv" + SEPARATOR + name + "." + dtype_norm;
+    std::ofstream out(filename, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!out.is_open()) {
+      throw std::runtime_error("Failed to open DPV file: " + filename);
+    }
+    if (dtype_norm == "float16") {
+      const size_t chunk_elems = std::max<std::size_t>(1, metadata_buffer_max_bytes_ / sizeof(half));
+      std::vector<half> tmp;
+      tmp.reserve(chunk_elems);
+      size_t offset = 0;
+      while (offset < values.size()) {
+        const size_t count = std::min(chunk_elems, values.size() - offset);
+        tmp.clear();
+        for (size_t i = 0; i < count; ++i) {
+          tmp.push_back(static_cast<half>(values[offset + i]));
+        }
+        out.write(reinterpret_cast<const char *>(tmp.data()), static_cast<std::streamsize>(count * sizeof(half)));
+        offset += count;
+      }
+    } else if (dtype_norm == "float32") {
+      const size_t chunk_elems = std::max<std::size_t>(1, metadata_buffer_max_bytes_ / sizeof(float));
+      std::vector<float> tmp;
+      tmp.reserve(chunk_elems);
+      size_t offset = 0;
+      while (offset < values.size()) {
+        const size_t count = std::min(chunk_elems, values.size() - offset);
+        tmp.clear();
+        for (size_t i = 0; i < count; ++i) {
+          tmp.push_back(static_cast<float>(values[offset + i]));
+        }
+        out.write(reinterpret_cast<const char *>(tmp.data()), static_cast<std::streamsize>(count * sizeof(float)));
+        offset += count;
+      }
+    } else {
+      const size_t chunk_elems = std::max<std::size_t>(1, metadata_buffer_max_bytes_ / sizeof(double));
+      std::vector<double> tmp;
+      tmp.reserve(chunk_elems);
+      size_t offset = 0;
+      while (offset < values.size()) {
+        const size_t count = std::min(chunk_elems, values.size() - offset);
+        tmp.clear();
+        for (size_t i = 0; i < count; ++i) {
+          tmp.push_back(static_cast<double>(values[offset + i]));
+        }
+        out.write(reinterpret_cast<const char *>(tmp.data()), static_cast<std::streamsize>(count * sizeof(double)));
+        offset += count;
+      }
+    }
+    out.close();
+    metadata_files_.push_back({std::string("dpv") + SEPARATOR + name + "." + dtype_norm, filename});
+  } else {
+    FieldValues field;
+    field.dtype = dtype_norm;
+    field.values.reserve(values.size());
+    for (const auto &v : values) {
+      field.values.push_back(static_cast<double>(v));
+    }
+    dpv_[name] = std::move(field);
   }
-  dpv_[name] = std::move(field);
+}
+
+inline void TrxStream::set_positions_buffer_max_bytes(std::size_t max_bytes) {
+  if (finalized_) {
+    throw std::runtime_error("Cannot adjust buffer after finalize");
+  }
+  if (max_bytes == 0) {
+    positions_buffer_max_entries_ = 0;
+    positions_buffer_float_.clear();
+    positions_buffer_half_.clear();
+    return;
+  }
+  const std::size_t element_size = positions_dtype_ == "float16" ? sizeof(half) : sizeof(float);
+  const std::size_t entries = max_bytes / element_size;
+  const std::size_t aligned = (entries / 3) * 3;
+  positions_buffer_max_entries_ = aligned;
+  if (positions_buffer_max_entries_ == 0) {
+    positions_buffer_float_.clear();
+    positions_buffer_half_.clear();
+  }
 }
 
 inline void TrxStream::push_group_from_indices(const std::string &name, const std::vector<uint32_t> &indices) {
   if (name.empty()) {
     throw std::invalid_argument("Group name cannot be empty");
   }
-  groups_[name] = indices;
+  if (metadata_mode_ == MetadataMode::OnDisk) {
+    ensure_metadata_dir("groups");
+    const std::string filename = tmp_dir_ + SEPARATOR + "groups" + SEPARATOR + name + ".uint32";
+    std::ofstream out(filename, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!out.is_open()) {
+      throw std::runtime_error("Failed to open group file: " + filename);
+    }
+    const size_t chunk_elems = std::max<std::size_t>(1, metadata_buffer_max_bytes_ / sizeof(uint32_t));
+    size_t offset = 0;
+    while (offset < indices.size()) {
+      const size_t count = std::min(chunk_elems, indices.size() - offset);
+      out.write(reinterpret_cast<const char *>(indices.data() + offset),
+                static_cast<std::streamsize>(count * sizeof(uint32_t)));
+      offset += count;
+    }
+    out.close();
+    metadata_files_.push_back({std::string("groups") + SEPARATOR + name + ".uint32", filename});
+  } else {
+    groups_[name] = indices;
+  }
 }
 
 template <typename DT> void TrxStream::finalize(const std::string &filename, zip_uint32_t compression_standard) {
@@ -1509,6 +1854,7 @@ template <typename DT> void TrxStream::finalize(const std::string &filename, zip
   }
   finalized_ = true;
 
+  flush_positions_buffer();
   if (positions_out_.is_open()) {
     positions_out_.flush();
     positions_out_.close();
@@ -1539,14 +1885,25 @@ template <typename DT> void TrxStream::finalize(const std::string &filename, zip
     throw std::runtime_error("Failed to open TrxStream temp positions file for read: " + positions_path_);
   }
   for (size_t i = 0; i < nb_vertices; ++i) {
-    float xyz[3];
-    in.read(reinterpret_cast<char *>(xyz), sizeof(xyz));
-    if (!in) {
-      throw std::runtime_error("Failed to read TrxStream positions");
+    if (positions_dtype_ == "float16") {
+      half xyz[3];
+      in.read(reinterpret_cast<char *>(xyz), sizeof(xyz));
+      if (!in) {
+        throw std::runtime_error("Failed to read TrxStream positions");
+      }
+      positions(static_cast<Eigen::Index>(i), 0) = static_cast<DT>(xyz[0]);
+      positions(static_cast<Eigen::Index>(i), 1) = static_cast<DT>(xyz[1]);
+      positions(static_cast<Eigen::Index>(i), 2) = static_cast<DT>(xyz[2]);
+    } else {
+      float xyz[3];
+      in.read(reinterpret_cast<char *>(xyz), sizeof(xyz));
+      if (!in) {
+        throw std::runtime_error("Failed to read TrxStream positions");
+      }
+      positions(static_cast<Eigen::Index>(i), 0) = static_cast<DT>(xyz[0]);
+      positions(static_cast<Eigen::Index>(i), 1) = static_cast<DT>(xyz[1]);
+      positions(static_cast<Eigen::Index>(i), 2) = static_cast<DT>(xyz[2]);
     }
-    positions(static_cast<Eigen::Index>(i), 0) = static_cast<DT>(xyz[0]);
-    positions(static_cast<Eigen::Index>(i), 1) = static_cast<DT>(xyz[1]);
-    positions(static_cast<Eigen::Index>(i), 2) = static_cast<DT>(xyz[2]);
   }
 
   for (const auto &kv : dps_) {
@@ -1559,10 +1916,203 @@ template <typename DT> void TrxStream::finalize(const std::string &filename, zip
     trx.add_group_from_indices(kv.first, kv.second);
   }
 
+  if (metadata_mode_ == MetadataMode::OnDisk) {
+    for (const auto &meta : metadata_files_) {
+      const std::string dest = trx._uncompressed_folder_handle + SEPARATOR + meta.relative_path;
+      const trx::fs::path dest_path(dest);
+      if (dest_path.has_parent_path()) {
+        std::error_code parent_ec;
+        trx::fs::create_directories(dest_path.parent_path(), parent_ec);
+      }
+      std::error_code copy_ec;
+      trx::fs::copy_file(meta.absolute_path, dest, trx::fs::copy_options::overwrite_existing, copy_ec);
+      if (copy_ec) {
+        throw std::runtime_error("Failed to copy metadata file: " + meta.absolute_path + " -> " + dest);
+      }
+    }
+  }
+
   trx.save(filename, compression_standard);
   trx.close();
 
   cleanup_tmp();
+}
+
+inline void TrxStream::finalize_directory_impl(const std::string &directory, bool remove_existing) {
+  if (finalized_) {
+    throw std::runtime_error("TrxStream already finalized");
+  }
+  finalized_ = true;
+
+  flush_positions_buffer();
+  if (positions_out_.is_open()) {
+    positions_out_.flush();
+    positions_out_.close();
+  }
+
+  const size_t nb_streamlines = lengths_.size();
+  const size_t nb_vertices = total_vertices_;
+
+  std::error_code ec;
+  if (remove_existing && trx::fs::exists(directory, ec)) {
+    trx::fs::remove_all(directory, ec);
+    ec.clear();
+  }
+  
+  // Create directory if it doesn't exist
+  if (!trx::fs::exists(directory, ec)) {
+    trx::fs::create_directories(directory, ec);
+    if (ec) {
+      throw std::runtime_error("Failed to create output directory: " + directory);
+    }
+  }
+  ec.clear();
+
+  json header_out = header;
+  header_out = _json_set(header_out, "NB_VERTICES", static_cast<int>(nb_vertices));
+  header_out = _json_set(header_out, "NB_STREAMLINES", static_cast<int>(nb_streamlines));
+  const std::string header_path = directory + SEPARATOR + "header.json";
+  std::ofstream out_header(header_path, std::ios::out | std::ios::trunc);
+  if (!out_header.is_open()) {
+    throw std::runtime_error("Failed to write header.json to: " + header_path);
+  }
+  out_header << header_out.dump() << std::endl;
+  out_header.close();
+
+  const std::string positions_name = "positions.3." + positions_dtype_;
+  const std::string positions_dst = directory + SEPARATOR + positions_name;
+  trx::fs::rename(positions_path_, positions_dst, ec);
+  if (ec) {
+    ec.clear();
+    trx::fs::copy_file(positions_path_, positions_dst, trx::fs::copy_options::overwrite_existing, ec);
+    if (ec) {
+      throw std::runtime_error("Failed to copy positions file to: " + positions_dst);
+    }
+  }
+
+  const std::string offsets_dst = directory + SEPARATOR + "offsets.uint64";
+  std::ofstream offsets_out(offsets_dst, std::ios::binary | std::ios::out | std::ios::trunc);
+  if (!offsets_out.is_open()) {
+    throw std::runtime_error("Failed to open offsets file for write: " + offsets_dst);
+  }
+  uint64_t offset = 0;
+  offsets_out.write(reinterpret_cast<const char *>(&offset), sizeof(offset));
+  for (const auto length : lengths_) {
+    offset += static_cast<uint64_t>(length);
+    offsets_out.write(reinterpret_cast<const char *>(&offset), sizeof(offset));
+  }
+  offsets_out.flush();
+  offsets_out.close();
+
+  auto write_field_values = [&](const std::string &path, const FieldValues &values) {
+    std::ofstream out(path, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!out.is_open()) {
+      throw std::runtime_error("Failed to open metadata file: " + path);
+    }
+    const size_t count = values.values.size();
+    if (values.dtype == "float16") {
+      const size_t chunk = std::max<std::size_t>(1, metadata_buffer_max_bytes_ / sizeof(half));
+      std::vector<half> tmp;
+      tmp.reserve(chunk);
+      size_t idx = 0;
+      while (idx < count) {
+        const size_t n = std::min(chunk, count - idx);
+        tmp.clear();
+        for (size_t i = 0; i < n; ++i) {
+          tmp.push_back(static_cast<half>(values.values[idx + i]));
+        }
+        out.write(reinterpret_cast<const char *>(tmp.data()), static_cast<std::streamsize>(n * sizeof(half)));
+        idx += n;
+      }
+    } else if (values.dtype == "float32") {
+      const size_t chunk = std::max<std::size_t>(1, metadata_buffer_max_bytes_ / sizeof(float));
+      std::vector<float> tmp;
+      tmp.reserve(chunk);
+      size_t idx = 0;
+      while (idx < count) {
+        const size_t n = std::min(chunk, count - idx);
+        tmp.clear();
+        for (size_t i = 0; i < n; ++i) {
+          tmp.push_back(static_cast<float>(values.values[idx + i]));
+        }
+        out.write(reinterpret_cast<const char *>(tmp.data()), static_cast<std::streamsize>(n * sizeof(float)));
+        idx += n;
+      }
+    } else if (values.dtype == "float64") {
+      const size_t chunk = std::max<std::size_t>(1, metadata_buffer_max_bytes_ / sizeof(double));
+      std::vector<double> tmp;
+      tmp.reserve(chunk);
+      size_t idx = 0;
+      while (idx < count) {
+        const size_t n = std::min(chunk, count - idx);
+        tmp.clear();
+        for (size_t i = 0; i < n; ++i) {
+          tmp.push_back(values.values[idx + i]);
+        }
+        out.write(reinterpret_cast<const char *>(tmp.data()), static_cast<std::streamsize>(n * sizeof(double)));
+        idx += n;
+      }
+    } else {
+      throw std::runtime_error("Unsupported metadata dtype: " + values.dtype);
+    }
+    out.close();
+  };
+
+  if (metadata_mode_ == MetadataMode::OnDisk) {
+    for (const auto &meta : metadata_files_) {
+      const std::string dest = directory + SEPARATOR + meta.relative_path;
+      const trx::fs::path dest_path(dest);
+      if (dest_path.has_parent_path()) {
+        std::error_code parent_ec;
+        trx::fs::create_directories(dest_path.parent_path(), parent_ec);
+      }
+      std::error_code copy_ec;
+      trx::fs::copy_file(meta.absolute_path, dest, trx::fs::copy_options::overwrite_existing, copy_ec);
+      if (copy_ec) {
+        throw std::runtime_error("Failed to copy metadata file: " + meta.absolute_path + " -> " + dest);
+      }
+    }
+  } else {
+    if (!dps_.empty()) {
+      trx::fs::create_directories(directory + SEPARATOR + "dps", ec);
+      for (const auto &kv : dps_) {
+        const std::string path = directory + SEPARATOR + "dps" + SEPARATOR + kv.first + "." + kv.second.dtype;
+        write_field_values(path, kv.second);
+      }
+    }
+    if (!dpv_.empty()) {
+      trx::fs::create_directories(directory + SEPARATOR + "dpv", ec);
+      for (const auto &kv : dpv_) {
+        const std::string path = directory + SEPARATOR + "dpv" + SEPARATOR + kv.first + "." + kv.second.dtype;
+        write_field_values(path, kv.second);
+      }
+    }
+    if (!groups_.empty()) {
+      trx::fs::create_directories(directory + SEPARATOR + "groups", ec);
+      for (const auto &kv : groups_) {
+        const std::string path = directory + SEPARATOR + "groups" + SEPARATOR + kv.first + ".uint32";
+        std::ofstream out(path, std::ios::binary | std::ios::out | std::ios::trunc);
+        if (!out.is_open()) {
+          throw std::runtime_error("Failed to open group file: " + path);
+        }
+        if (!kv.second.empty()) {
+          out.write(reinterpret_cast<const char *>(kv.second.data()),
+                    static_cast<std::streamsize>(kv.second.size() * sizeof(uint32_t)));
+        }
+        out.close();
+      }
+    }
+  }
+
+  cleanup_tmp();
+}
+
+inline void TrxStream::finalize_directory(const std::string &directory) {
+  finalize_directory_impl(directory, true);
+}
+
+inline void TrxStream::finalize_directory_persistent(const std::string &directory) {
+  finalize_directory_impl(directory, false);
 }
 
 template <typename DT>

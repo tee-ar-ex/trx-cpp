@@ -24,6 +24,7 @@ endif()
 option(TRX_USE_CONAN "Should Conan package manager be used?" OFF)
 option(TRX_BUILD_TESTS "Build trx tests" OFF)
 option(TRX_BUILD_EXAMPLES "Build trx example commandline programs" ON)
+option(TRX_BUILD_BENCHMARKS "Build trx benchmarks" OFF)
 option(TRX_ENABLE_CLANG_TIDY "Run clang-tidy during builds" OFF)
 option(TRX_ENABLE_INSTALL "Install trx-cpp targets" ${TRX_IS_TOP_LEVEL})
 option(TRX_BUILD_DOCS "Build API documentation with Doxygen/Sphinx" OFF)
@@ -146,6 +147,21 @@ if(TRX_BUILD_TESTS)
     else()
         message(STATUS "GTest not found; skipping tests. Set GTest_DIR to a config path to enable.")
     endif()
+endif()
+
+if(TRX_BUILD_BENCHMARKS)
+    find_package(benchmark CONFIG QUIET)
+    if(NOT benchmark_FOUND)
+        set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Disable benchmark tests" FORCE)
+        set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "Disable benchmark gtest" FORCE)
+        FetchContent_Declare(
+            benchmark
+            GIT_REPOSITORY https://github.com/google/benchmark.git
+            GIT_TAG v1.8.3
+        )
+        FetchContent_MakeAvailable(benchmark)
+    endif()
+    add_subdirectory(bench)
 endif()
 
 if(TRX_ENABLE_NIFTI)

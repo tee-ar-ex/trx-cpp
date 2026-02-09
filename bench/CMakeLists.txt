@@ -1,0 +1,3 @@
+add_executable(bench_trx_stream bench_trx_stream.cpp)
+target_link_libraries(bench_trx_stream PRIVATE trx benchmark::benchmark)
+target_compile_features(bench_trx_stream PRIVATE cxx_std_17)

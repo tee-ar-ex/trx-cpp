@@ -9,18 +9,24 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <chrono>
+#include <cerrno>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <functional>
 #include <json11.hpp>
 #include <limits>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
+#include <system_error>
 #include <type_traits>
+#include <unordered_set>
 #include <utility>
 #include <vector>
+#include <thread>
 #include <zip.h>
 
 #include <mio/mmap.hpp>
@@ -110,55 +116,68 @@ inline zip_t *open_zip_for_read(const std::string &path, int &errorp) {
 }
 
 template <typename T> struct DTypeName {
-  static constexpr std::string_view value() { return "float16"; }
+  static constexpr bool supported = false;
+  static constexpr std::string_view value() { return ""; }
 };
 
 template <> struct DTypeName<Eigen::half> {
+  static constexpr bool supported = true;
   static constexpr std::string_view value() { return "float16"; }
 };
 
 template <> struct DTypeName<float> {
+  static constexpr bool supported = true;
   static constexpr std::string_view value() { return "float32"; }
 };
 
 template <> struct DTypeName<double> {
+  static constexpr bool supported = true;
   static constexpr std::string_view value() { return "float64"; }
 };
 
 template <> struct DTypeName<int8_t> {
+  static constexpr bool supported = true;
   static constexpr std::string_view value() { return "int8"; }
 };
 
 template <> struct DTypeName<int16_t> {
+  static constexpr bool supported = true;
   static constexpr std::string_view value() { return "int16"; }
 };
 
 template <> struct DTypeName<int32_t> {
+  static constexpr bool supported = true;
   static constexpr std::string_view value() { return "int32"; }
 };
 
 template <> struct DTypeName<int64_t> {
+  static constexpr bool supported = true;
   static constexpr std::string_view value() { return "int64"; }
 };
 
 template <> struct DTypeName<uint8_t> {
+  static constexpr bool supported = true;
   static constexpr std::string_view value() { return "uint8"; }
 };
 
 template <> struct DTypeName<uint16_t> {
+  static constexpr bool supported = true;
   static constexpr std::string_view value() { return "uint16"; }
 };
 
 template <> struct DTypeName<uint32_t> {
+  static constexpr bool supported = true;
   static constexpr std::string_view value() { return "uint32"; }
 };
 
 template <> struct DTypeName<uint64_t> {
+  static constexpr bool supported = true;
   static constexpr std::string_view value() { return "uint64"; }
 };
 
 template <typename T> inline std::string dtype_from_scalar() {
-  typedef typename std::remove_cv<typename std::remove_reference<T>::type>::type CleanT;
+  using CleanT = std::remove_cv_t<std::remove_reference_t<T>>;
+  static_assert(DTypeName<CleanT>::supported, "Unsupported dtype for TRX scalar.");
   return std::string(DTypeName<CleanT>::value());
 }
 
@@ -236,6 +255,7 @@ public:
                            std::string root = "");
 
   template <typename> friend class TrxReader;
+  template <typename U> friend std::unique_ptr<TrxFile<U>> load(const std::string &path);
 
   /**
    * @brief Create a deepcopy of the TrxFile
@@ -550,6 +570,8 @@ private:
   }
 };
 
+enum class TrxScalarType;
+
 class AnyTrxFile {
 public:
   AnyTrxFile() = default;
@@ -575,6 +597,14 @@ public:
   size_t num_streamlines() const;
   void close();
   void save(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+
+  using PositionsChunkCallback =
+      std::function<void(TrxScalarType dtype, const void *data, size_t point_offset, size_t point_count)>;
+  using PositionsChunkMutableCallback =
+      std::function<void(TrxScalarType dtype, void *data, size_t point_offset, size_t point_count)>;
+
+  void for_each_positions_chunk(size_t chunk_bytes, const PositionsChunkCallback &fn) const;
+  void for_each_positions_chunk_mutable(size_t chunk_bytes, const PositionsChunkMutableCallback &fn);
 
   static AnyTrxFile load(const std::string &path);
   static AnyTrxFile load_from_zip(const std::string &path);
@@ -629,6 +659,42 @@ public:
   void push_streamline(const std::vector<std::array<float, 3>> &points);
 
   /**
+   * @brief Set max in-memory position buffer size (bytes).
+   *
+   * When set to a non-zero value, positions are buffered in memory and flushed
+   * to the temp file once the buffer reaches this size. Useful for reducing
+   * small I/O writes on slow disks.
+   */
+  void set_positions_buffer_max_bytes(std::size_t max_bytes);
+
+  enum class MetadataMode { InMemory, OnDisk };
+
+  /**
+   * @brief Control how DPS/DPV/groups are stored during streaming.
+   *
+   * InMemory keeps metadata in RAM until finalize (default).
+   * OnDisk writes metadata to temp files and copies them at finalize.
+   */
+  void set_metadata_mode(MetadataMode mode);
+
+  /**
+   * @brief Set max in-memory buffer size for metadata writes (bytes).
+   *
+   * Applies when MetadataMode::OnDisk. Larger buffers reduce write calls.
+   */
+  void set_metadata_buffer_max_bytes(std::size_t max_bytes);
+
+  /**
+   * @brief Set the VOXEL_TO_RASMM affine matrix in the header.
+   */
+  void set_voxel_to_rasmm(const Eigen::Matrix4f &affine);
+
+  /**
+   * @brief Set DIMENSIONS in the header.
+   */
+  void set_dimensions(const std::array<uint16_t, 3> &dims);
+
+  /**
    * @brief Add per-streamline values (DPS) from an in-memory vector.
    */
   template <typename T>
@@ -648,6 +714,54 @@ public:
    */
   template <typename DT> void finalize(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
 
+  /**
+   * @brief Finalize and write a TRX directory (no zip).
+   *
+   * This method removes any existing directory at the output path before
+   * writing. Use this for single-process writes or when you control the
+   * entire output location lifecycle.
+   *
+   * @param directory Path where the uncompressed TRX directory will be created.
+   *
+   * @throws std::runtime_error if already finalized or if I/O fails.
+   *
+   * @see finalize_directory_persistent for multiprocess-safe variant.
+   */
+  void finalize_directory(const std::string &directory);
+
+  /**
+   * @brief Finalize and write a TRX directory without removing existing files.
+   *
+   * This variant is designed for multiprocess workflows where the output
+   * directory is pre-created by a parent process. Unlike finalize_directory(),
+   * this method does NOT remove the output directory if it exists, making it
+   * safe for coordinated parallel writes where multiple processes may check
+   * for the directory's existence.
+   *
+   * @param directory Path where the uncompressed TRX directory will be created.
+   *                  If the directory exists, its contents will be overwritten
+   *                  but the directory itself will not be removed and recreated.
+   *
+   * @throws std::runtime_error if already finalized or if I/O fails.
+   *
+   * @note Typical usage pattern:
+   * @code
+   *   // Parent process creates shard directories
+   *   fs::create_directories("shards/shard_0");
+   *   
+   *   // Child process writes without removing directory
+   *   trx::TrxStream stream("float16");
+   *   // ... push streamlines ...
+   *   stream.finalize_directory_persistent("shards/shard_0");
+   *   std::ofstream("shards/shard_0/SHARD_OK") << "ok\n";
+   *   
+   *   // Parent waits for SHARD_OK before reading results
+   * @endcode
+   *
+   * @see finalize_directory for single-process variant that ensures clean slate.
+   */
+  void finalize_directory_persistent(const std::string &directory);
+
   size_t num_streamlines() const { return lengths_.size(); }
   size_t num_vertices() const { return total_vertices_; }
 
@@ -659,13 +773,24 @@ private:
     std::vector<double> values;
   };
 
+  struct MetadataFile {
+    std::string relative_path;
+    std::string absolute_path;
+  };
+
   void ensure_positions_stream();
+  void flush_positions_buffer();
   void cleanup_tmp();
+  void ensure_metadata_dir(const std::string &subdir);
+  void finalize_directory_impl(const std::string &directory, bool remove_existing);
 
   std::string positions_dtype_;
   std::string tmp_dir_;
   std::string positions_path_;
   std::ofstream positions_out_;
+  std::vector<float> positions_buffer_float_;
+  std::vector<Eigen::half> positions_buffer_half_;
+  std::size_t positions_buffer_max_entries_ = 0;
   std::vector<uint32_t> lengths_;
   size_t total_vertices_ = 0;
   bool finalized_ = false;
@@ -673,6 +798,9 @@ private:
   std::map<std::string, std::vector<uint32_t>> groups_;
   std::map<std::string, FieldValues> dps_;
   std::map<std::string, FieldValues> dpv_;
+  MetadataMode metadata_mode_ = MetadataMode::InMemory;
+  std::vector<MetadataFile> metadata_files_;
+  std::size_t metadata_buffer_max_bytes_ = 8 * 1024 * 1024;
 };
 
 /**
@@ -739,6 +867,22 @@ inline std::string scalar_type_name(TrxScalarType dtype) {
     return "float32";
   }
 }
+
+struct PositionsOutputInfo {
+  std::string directory;
+  std::string positions_path;
+  std::string dtype;
+  size_t points = 0;
+};
+
+/**
+ * @brief Prepare an output directory with copied metadata and offsets.
+ *
+ * Creates a new TRX directory (no zip) that contains header, offsets, and
+ * metadata (groups, dps, dpv, dpg), and returns where the positions file
+ * should be written.
+ */
+PositionsOutputInfo prepare_positions_output(const AnyTrxFile &input, const std::string &output_directory);
 
 /**
  * @brief Detect the positions scalar type for a TRX path.
@@ -877,7 +1021,8 @@ void ediff1d(Eigen::Matrix<DT, Eigen::Dynamic, 1> &lengths,
 void zip_from_folder(zip_t *zf,
                      const std::string &root,
                      const std::string &directory,
-                     zip_uint32_t compression_standard = ZIP_CM_STORE);
+                     zip_uint32_t compression_standard = ZIP_CM_STORE,
+                     const std::unordered_set<std::string> *skip = nullptr);
 
 std::string get_base(const std::string &delimiter, const std::string &str);
 std::string get_ext(const std::string &str);

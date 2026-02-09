@@ -292,6 +292,45 @@ TEST(TrxFileTpp, TrxStreamFinalize) {
   fs::remove_all(tmp_dir, ec);
 }
 
+TEST(TrxFileTpp, QueryAabbCounts) {
+  constexpr int kStreamlineCount = 1000;
+  constexpr int kInsideCount = 250;
+  constexpr int kPointsPerStreamline = 5;
+
+  const int nb_vertices = kStreamlineCount * kPointsPerStreamline;
+  trx::TrxFile<float> trx(nb_vertices, kStreamlineCount);
+
+  trx.streamlines->_offsets(0, 0) = 0;
+  for (int i = 0; i < kStreamlineCount; ++i) {
+    trx.streamlines->_lengths(i) = kPointsPerStreamline;
+    trx.streamlines->_offsets(i + 1, 0) = (i + 1) * kPointsPerStreamline;
+  }
+
+  int cursor = 0;
+  for (int i = 0; i < kStreamlineCount; ++i) {
+    const bool inside = i < kInsideCount;
+    for (int p = 0; p < kPointsPerStreamline; ++p, ++cursor) {
+      if (inside) {
+        trx.streamlines->_data(cursor, 0) = -0.8f + 0.05f * static_cast<float>(p);
+        trx.streamlines->_data(cursor, 1) = 0.3f + 0.1f * static_cast<float>(p);
+        trx.streamlines->_data(cursor, 2) = 0.1f + 0.05f * static_cast<float>(p);
+      } else {
+        trx.streamlines->_data(cursor, 0) = 0.0f;
+        trx.streamlines->_data(cursor, 1) = 0.0f;
+        trx.streamlines->_data(cursor, 2) = -1000.0f - static_cast<float>(i);
+      }
+    }
+  }
+
+  const std::array<float, 3> min_corner{ -0.9f, 0.2f, 0.05f };
+  const std::array<float, 3> max_corner{ -0.1f, 1.1f, 0.55f };
+
+  auto subset = trx.query_aabb(min_corner, max_corner);
+  EXPECT_EQ(subset->num_streamlines(), static_cast<size_t>(kInsideCount));
+  EXPECT_EQ(subset->num_vertices(), static_cast<size_t>(kInsideCount * kPointsPerStreamline));
+  subset->close();
+}
+
 // resize() with default arguments is a no-op when sizes already match.
 TEST(TrxFileTpp, ResizeNoChange) {
   const fs::path data_dir = create_float_trx_dir();

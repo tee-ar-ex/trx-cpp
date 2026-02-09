@@ -16,6 +16,7 @@ tractography file format.
    building
    usage
    downstream_usage
+   benchmarks
    linting
 
 .. toctree::
