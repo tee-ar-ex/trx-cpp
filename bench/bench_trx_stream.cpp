@@ -363,14 +363,23 @@ size_t group_count_for(GroupScenario scenario) {
   }
 }
 
+// Compute position buffer size based on streamline count.
+// For slow storage (spinning disks, network filesystems), set TRX_BENCH_BUFFER_MULTIPLIER
+// to 2-8 to reduce I/O frequency at the cost of higher memory usage.
+// Example: multiplier=4 scales 256 MB → 1 GB for 1M streamlines.
 std::size_t buffer_bytes_for_streamlines(std::size_t streamlines) {
+  std::size_t base_bytes;
   if (streamlines >= 5000000) {
-    return 2ULL * 1024ULL * 1024ULL * 1024ULL;
+    base_bytes = 2ULL * 1024ULL * 1024ULL * 1024ULL;  // 2 GB
+  } else if (streamlines >= 1000000) {
+    base_bytes = 256ULL * 1024ULL * 1024ULL;  // 256 MB
+  } else {
+    base_bytes = 16ULL * 1024ULL * 1024ULL;  // 16 MB
   }
-  if (streamlines >= 1000000) {
-    return 256ULL * 1024ULL * 1024ULL;
-  }
-  return 16ULL * 1024ULL * 1024ULL;
+  
+  // Allow scaling buffer sizes for slower storage (HDD, NFS) to amortize I/O latency
+  const size_t multiplier = std::max<size_t>(1, parse_env_size("TRX_BENCH_BUFFER_MULTIPLIER", 1));
+  return base_bytes * multiplier;
 }
 
 std::vector<size_t> streamlines_for_benchmarks() {
@@ -693,7 +702,10 @@ TrxWriteStats run_trx_file_size(size_t streamlines,
                                 zip_uint32_t compression) {
   trx::TrxStream stream("float16");
   stream.set_metadata_mode(trx::TrxStream::MetadataMode::OnDisk);
-  stream.set_metadata_buffer_max_bytes(64ULL * 1024ULL * 1024ULL);
+  
+  // Scale metadata buffer with TRX_BENCH_BUFFER_MULTIPLIER for slow storage
+  const size_t buffer_multiplier = std::max<size_t>(1, parse_env_size("TRX_BENCH_BUFFER_MULTIPLIER", 1));
+  stream.set_metadata_buffer_max_bytes(64ULL * 1024ULL * 1024ULL * buffer_multiplier);
   stream.set_positions_buffer_max_bytes(buffer_bytes_for_streamlines(streamlines));
 
   const size_t threads = bench_threads();
@@ -830,7 +842,10 @@ TrxOnDisk build_trx_file_on_disk_single(size_t streamlines,
                                         bool finalize_to_directory = false) {
   trx::TrxStream stream("float16");
   stream.set_metadata_mode(trx::TrxStream::MetadataMode::OnDisk);
-  stream.set_metadata_buffer_max_bytes(64ULL * 1024ULL * 1024ULL);
+  
+  // Scale buffers with TRX_BENCH_BUFFER_MULTIPLIER for slow storage
+  const size_t buffer_multiplier = std::max<size_t>(1, parse_env_size("TRX_BENCH_BUFFER_MULTIPLIER", 1));
+  stream.set_metadata_buffer_max_bytes(64ULL * 1024ULL * 1024ULL * buffer_multiplier);
   stream.set_positions_buffer_max_bytes(buffer_bytes_for_streamlines(streamlines));
   const size_t progress_every = parse_env_size("TRX_BENCH_LOG_PROGRESS_EVERY", 0);
 
