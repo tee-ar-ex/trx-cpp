@@ -14,7 +14,6 @@ LENGTH_LABELS = {
 GROUP_LABELS = {
     0: "no groups",
     1: "bundle groups (80)",
-    2: "connectome groups (4950)",
 }
 COMPRESSION_LABELS = {0: "store (no zip)", 1: "zip deflate"}
 

@@ -1828,9 +1828,8 @@ static void ApplySizeArgs(benchmark::internal::Benchmark *bench) {
 }
 
 static void ApplyStreamArgs(benchmark::internal::Benchmark *bench) {
-  const std::array<int, 3> groups = {static_cast<int>(GroupScenario::None),
-                                     static_cast<int>(GroupScenario::Bundles),
-                                     static_cast<int>(GroupScenario::Connectome)};
+  const std::array<int, 2> groups = {static_cast<int>(GroupScenario::None),
+                                     static_cast<int>(GroupScenario::Bundles)};
   const std::array<int, 2> flags = {0, 1};
   const auto counts_desc = streamlines_for_benchmarks();
   for (const auto count : counts_desc) {
@@ -1845,9 +1844,8 @@ static void ApplyStreamArgs(benchmark::internal::Benchmark *bench) {
 }
 
 static void ApplyQueryArgs(benchmark::internal::Benchmark *bench) {
-  const std::array<int, 3> groups = {static_cast<int>(GroupScenario::None),
-                                     static_cast<int>(GroupScenario::Bundles),
-                                     static_cast<int>(GroupScenario::Connectome)};
+  const std::array<int, 2> groups = {static_cast<int>(GroupScenario::None),
+                                     static_cast<int>(GroupScenario::Bundles)};
   const std::array<int, 2> flags = {0, 1};
   const auto counts_desc = streamlines_for_benchmarks();
   for (const auto count : counts_desc) {
@@ -1877,8 +1875,56 @@ BENCHMARK(BM_TrxQueryAabb_Slabs)
     ->Unit(benchmark::kMillisecond);
 
 int main(int argc, char **argv) {
-  ::benchmark::Initialize(&argc, argv);
-  if (::benchmark::ReportUnrecognizedArguments(argc, argv)) {
+  // Parse custom flags before benchmark::Initialize
+  bool verbose = false;
+  bool show_help = false;
+  
+  // First pass: detect custom flags
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "--verbose" || arg == "-v") {
+      verbose = true;
+    } else if (arg == "--help-custom") {
+      show_help = true;
+    }
+  }
+  
+  if (show_help) {
+    std::cout << "\nCustom benchmark options:\n"
+              << "  --verbose, -v      Enable verbose progress logging (prints every 50k streamlines)\n"
+              << "                     Equivalent to: TRX_BENCH_LOG=1 TRX_BENCH_CHILD_LOG=1 \n"
+              << "                     TRX_BENCH_LOG_PROGRESS_EVERY=50000\n"
+              << "  --help-custom      Show this help message\n"
+              << "\nFor standard benchmark options, use --help\n"
+              << std::endl;
+    return 0;
+  }
+  
+  // Enable verbose logging if requested
+  if (verbose) {
+    setenv("TRX_BENCH_LOG", "1", 0);  // Don't override if already set
+    setenv("TRX_BENCH_CHILD_LOG", "1", 0);
+    if (std::getenv("TRX_BENCH_LOG_PROGRESS_EVERY") == nullptr) {
+      setenv("TRX_BENCH_LOG_PROGRESS_EVERY", "50000", 1);
+    }
+    std::cerr << "[trx-bench] Verbose mode enabled (progress every "
+              << parse_env_size("TRX_BENCH_LOG_PROGRESS_EVERY", 50000) 
+              << " streamlines)\n" << std::endl;
+  }
+  
+  // Second pass: remove custom flags from argv before passing to benchmark::Initialize
+  std::vector<char*> filtered_argv;
+  filtered_argv.push_back(argv[0]);  // Keep program name
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg != "--verbose" && arg != "-v" && arg != "--help-custom") {
+      filtered_argv.push_back(argv[i]);
+    }
+  }
+  int filtered_argc = static_cast<int>(filtered_argv.size());
+  
+  ::benchmark::Initialize(&filtered_argc, filtered_argv.data());
+  if (::benchmark::ReportUnrecognizedArguments(filtered_argc, filtered_argv.data())) {
     return 1;
   }
   try {

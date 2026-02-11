@@ -69,7 +69,11 @@ elseif(TARGET zip::zip)
 else()
     message(FATAL_ERROR "No suitable libzip target (expected libzip::libzip or zip::zip)")
 endif()
-find_package(Eigen3 CONFIG QUIET)
+# Prefer Eigen3_ROOT so -DEigen3_ROOT=/path/to/eigen-3.4 is used over system Eigen
+if(Eigen3_ROOT)
+  list(PREPEND CMAKE_PREFIX_PATH "${Eigen3_ROOT}")
+endif()
+find_package(Eigen3 3.4 CONFIG QUIET)
 if (NOT Eigen3_FOUND)
     find_package(Eigen3 REQUIRED) # try module mode
 endif()
