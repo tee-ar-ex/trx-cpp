@@ -99,15 +99,15 @@ jobs:
         run: |
           lcov --capture --directory build \
             --rc geninfo_unexecuted_blocks=1 \
-            --ignore-errors mismatch,inconsistent,inconsistent,unsupported,format,format \
+            --ignore-errors mismatch,mismatch,inconsistent,inconsistent,unsupported,format,format \
             --output-file coverage.info
           lcov --remove coverage.info "/opt/homebrew/*" "/Applications/Xcode_*.app/*" \
             "/Users/runner/work/trx-cpp/trx-cpp/third_party/*" \
             "/Users/runner/work/trx-cpp/trx-cpp/examples/*" \
             "/Users/runner/work/trx-cpp/trx-cpp/bench/*" \
-            --ignore-errors mismatch,inconsistent,inconsistent,unsupported,format,format,unused \
+            --ignore-errors mismatch,mismatch,inconsistent,inconsistent,unsupported,format,format,unused \
             --output-file coverage.info
-          lcov --summary coverage.info --ignore-errors mismatch,inconsistent,inconsistent,unsupported,format,format
+          lcov --summary coverage.info --ignore-errors mismatch,mismatch,inconsistent,inconsistent,unsupported,format,format
 
       - name: Upload coverage to Codecov (macOS)
         if: runner.os == 'macOS'
