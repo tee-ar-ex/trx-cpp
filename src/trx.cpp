@@ -1320,7 +1320,7 @@ void merge_trx_shards(const MergeTrxShardsOptions &options) {
     if (!out.is_open()) {
       throw std::runtime_error("Failed to open destination for append: " + dst);
     }
-    std::array<char, 1 << 20> buffer{};
+    std::vector<char> buffer(1 << 20);
     while (in) {
       in.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
       const auto n = in.gcount();
