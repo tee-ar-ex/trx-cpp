@@ -292,6 +292,48 @@ TEST(TrxFileTpp, TrxStreamFinalize) {
   fs::remove_all(tmp_dir, ec);
 }
 
+TEST(TrxFileTpp, TrxStreamOnDiskMetadataAllDtypes) {
+  auto tmp_dir = make_temp_test_dir("trx_ondisk_dtypes");
+  const fs::path out_path = tmp_dir / "ondisk.trx";
+
+  TrxStream proto;
+  proto.set_metadata_mode(TrxStream::MetadataMode::OnDisk);
+
+  std::vector<float> sl1 = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+  std::vector<float> sl2 = {2.0f, 0.0f, 0.0f};
+  proto.push_streamline(sl1);
+  proto.push_streamline(sl2);
+
+  proto.push_dps_from_vector("w_f16", "float16", std::vector<float>{0.5f, 1.5f});
+  proto.push_dps_from_vector("w_f32", "float32", std::vector<float>{0.5f, 1.5f});
+  proto.push_dps_from_vector("w_f64", "float64", std::vector<double>{0.5, 1.5});
+
+  proto.push_dpv_from_vector("s_f16", "float16", std::vector<float>{1.0f, 2.0f, 3.0f});
+  proto.push_dpv_from_vector("s_f32", "float32", std::vector<float>{1.0f, 2.0f, 3.0f});
+  proto.push_dpv_from_vector("s_f64", "float64", std::vector<double>{1.0, 2.0, 3.0});
+
+  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);
+
+  auto trx = load_any(out_path.string());
+  EXPECT_EQ(trx.num_streamlines(), 2u);
+  EXPECT_EQ(trx.num_vertices(), 3u);
+
+  for (const auto &key : {"w_f16", "w_f32", "w_f64"}) {
+    auto it = trx.data_per_streamline.find(key);
+    ASSERT_NE(it, trx.data_per_streamline.end()) << "missing dps key: " << key;
+    EXPECT_EQ(it->second.rows, 2);
+  }
+  for (const auto &key : {"s_f16", "s_f32", "s_f64"}) {
+    auto it = trx.data_per_vertex.find(key);
+    ASSERT_NE(it, trx.data_per_vertex.end()) << "missing dpv key: " << key;
+    EXPECT_EQ(it->second.rows, 3);
+  }
+
+  trx.close();
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
+
 TEST(TrxFileTpp, QueryAabbCounts) {
   constexpr int kStreamlineCount = 1000;
   constexpr int kInsideCount = 250;

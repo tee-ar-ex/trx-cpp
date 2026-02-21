@@ -233,6 +233,67 @@ void expect_basic_consistency(const AnyTrxFile &trx) {
   EXPECT_GT(bytes.size, 0U);
 }
 
+fs::path write_test_shard_with_dtype(const fs::path &root,
+                                     const std::string &name,
+                                     const std::vector<std::array<float, 3>> &points,
+                                     const std::vector<uint64_t> &offsets,
+                                     const std::string &positions_dtype) {
+  const fs::path shard_dir = root / name;
+  std::error_code ec;
+  fs::create_directories(shard_dir, ec);
+
+  json::object header_obj;
+  header_obj["DIMENSIONS"] = json::array{1, 1, 1};
+  header_obj["NB_STREAMLINES"] = static_cast<int>(offsets.size() - 1);
+  header_obj["NB_VERTICES"] = static_cast<int>(points.size());
+  header_obj["VOXEL_TO_RASMM"] = json::array{
+      json::array{1.0, 0.0, 0.0, 0.0},
+      json::array{0.0, 1.0, 0.0, 0.0},
+      json::array{0.0, 0.0, 1.0, 0.0},
+      json::array{0.0, 0.0, 0.0, 1.0},
+  };
+  write_header_file(shard_dir, json(header_obj));
+
+  const std::string pos_file = (shard_dir / ("positions.3." + positions_dtype)).string();
+  if (positions_dtype == "float16") {
+    Eigen::Matrix<Eigen::half, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> m(
+        static_cast<Eigen::Index>(points.size()), 3);
+    for (size_t i = 0; i < points.size(); ++i) {
+      m(static_cast<Eigen::Index>(i), 0) = static_cast<Eigen::half>(points[i][0]);
+      m(static_cast<Eigen::Index>(i), 1) = static_cast<Eigen::half>(points[i][1]);
+      m(static_cast<Eigen::Index>(i), 2) = static_cast<Eigen::half>(points[i][2]);
+    }
+    trx::write_binary(pos_file, m);
+  } else if (positions_dtype == "float64") {
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> m(
+        static_cast<Eigen::Index>(points.size()), 3);
+    for (size_t i = 0; i < points.size(); ++i) {
+      m(static_cast<Eigen::Index>(i), 0) = static_cast<double>(points[i][0]);
+      m(static_cast<Eigen::Index>(i), 1) = static_cast<double>(points[i][1]);
+      m(static_cast<Eigen::Index>(i), 2) = static_cast<double>(points[i][2]);
+    }
+    trx::write_binary(pos_file, m);
+  } else {
+    Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> m(
+        static_cast<Eigen::Index>(points.size()), 3);
+    for (size_t i = 0; i < points.size(); ++i) {
+      m(static_cast<Eigen::Index>(i), 0) = points[i][0];
+      m(static_cast<Eigen::Index>(i), 1) = points[i][1];
+      m(static_cast<Eigen::Index>(i), 2) = points[i][2];
+    }
+    trx::write_binary(pos_file, m);
+  }
+
+  Eigen::Matrix<uint64_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> offsets_mat(
+      static_cast<Eigen::Index>(offsets.size()), 1);
+  for (size_t i = 0; i < offsets.size(); ++i) {
+    offsets_mat(static_cast<Eigen::Index>(i), 0) = offsets[i];
+  }
+  trx::write_binary((shard_dir / "offsets.uint64").string(), offsets_mat);
+
+  return shard_dir;
+}
+
 fs::path write_test_shard(const fs::path &root,
                           const std::string &name,
                           const std::vector<std::array<float, 3>> &points,
@@ -999,6 +1060,103 @@ TEST(AnyTrxFile, SaveRespectsExplicitMode) {
   arc_loaded.close();
   trx.close();
 
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, GetDpsAndDpvReturnCorrectArrays) {
+  const fs::path temp_root = make_temp_test_dir("trx_get_dps_dpv");
+  const fs::path shard = write_test_shard(temp_root,
+                                          "s1",
+                                          {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}},
+                                          {0, 2},
+                                          {42.0F},
+                                          {0.1F, 0.2F},
+                                          {0});
+
+  auto trx = load_any(shard.string());
+
+  const TypedArray *dps = trx.get_dps("weight");
+  ASSERT_NE(dps, nullptr);
+  EXPECT_EQ(dps->rows, 1);
+  EXPECT_EQ(dps->cols, 1);
+
+  const TypedArray *dps_missing = trx.get_dps("no_such_field");
+  EXPECT_EQ(dps_missing, nullptr);
+
+  const TypedArray *dpv = trx.get_dpv("signal");
+  ASSERT_NE(dpv, nullptr);
+  EXPECT_EQ(dpv->rows, 2);
+
+  const TypedArray *dpv_missing = trx.get_dpv("no_such_field");
+  EXPECT_EQ(dpv_missing, nullptr);
+
+  trx.close();
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, GetStreamlineFloat32) {
+  const fs::path temp_root = make_temp_test_dir("trx_get_sl_f32");
+  const fs::path shard = write_test_shard_with_dtype(temp_root,
+                                                     "s1",
+                                                     {{1.0F, 2.0F, 3.0F}, {4.0F, 5.0F, 6.0F}},
+                                                     {0, 2},
+                                                     "float32");
+
+  auto trx = load_any(shard.string());
+  ASSERT_EQ(trx.num_streamlines(), 1u);
+
+  auto sl = trx.get_streamline(0);
+  ASSERT_EQ(sl.size(), 2u);
+  EXPECT_NEAR(sl[0][0], 1.0, 1e-5);
+  EXPECT_NEAR(sl[1][2], 6.0, 1e-5);
+
+  EXPECT_THROW(trx.get_streamline(1), std::out_of_range);
+
+  trx.close();
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, GetStreamlineFloat16) {
+  const fs::path temp_root = make_temp_test_dir("trx_get_sl_f16");
+  const fs::path shard = write_test_shard_with_dtype(temp_root,
+                                                     "s1",
+                                                     {{1.0F, 2.0F, 3.0F}, {4.0F, 5.0F, 6.0F}},
+                                                     {0, 2},
+                                                     "float16");
+
+  auto trx = load_any(shard.string());
+  ASSERT_EQ(trx.num_streamlines(), 1u);
+
+  auto sl = trx.get_streamline(0);
+  ASSERT_EQ(sl.size(), 2u);
+  EXPECT_NEAR(sl[0][0], 1.0, 1e-2);
+  EXPECT_NEAR(sl[1][2], 6.0, 1e-2);
+
+  trx.close();
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, GetStreamlineFloat64) {
+  const fs::path temp_root = make_temp_test_dir("trx_get_sl_f64");
+  const fs::path shard = write_test_shard_with_dtype(temp_root,
+                                                     "s1",
+                                                     {{1.0F, 2.0F, 3.0F}, {4.0F, 5.0F, 6.0F}},
+                                                     {0, 2},
+                                                     "float64");
+
+  auto trx = load_any(shard.string());
+  ASSERT_EQ(trx.num_streamlines(), 1u);
+
+  auto sl = trx.get_streamline(0);
+  ASSERT_EQ(sl.size(), 2u);
+  EXPECT_NEAR(sl[0][0], 1.0, 1e-9);
+  EXPECT_NEAR(sl[1][2], 6.0, 1e-9);
+
+  trx.close();
   std::error_code ec;
   fs::remove_all(temp_root, ec);
 }
