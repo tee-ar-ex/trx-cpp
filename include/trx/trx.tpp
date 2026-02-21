@@ -1016,7 +1016,10 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::load_from_direc
   std::map<std::string, std::tuple<long long, long long>> files_pointer_size;
   populate_fps(directory, files_pointer_size);
 
-  return TrxFile<DT>::_create_trx_from_pointer(header, files_pointer_size, "", directory);
+  auto trx = TrxFile<DT>::_create_trx_from_pointer(header, files_pointer_size, "", directory);
+  trx->_uncompressed_folder_handle = directory;
+  trx->_owns_uncompressed_folder = false;
+  return trx;
 }
 
 template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::load(const std::string &path) {
@@ -1135,8 +1138,8 @@ template <typename DT> void TrxFile<DT>::normalize_for_save() {
 template <typename DT> void TrxFile<DT>::save(const std::string &filename, const TrxSaveOptions &options) {
   std::string ext = get_ext(filename);
 
-  if (ext.size() > 0 && (ext != "zip" && ext != "trx") && options.mode == TrxSaveMode::Archive) {
-    throw std::invalid_argument("Unsupported extension." + ext);
+  if (ext.size() > 0 && ext != "zip" && ext != "trx") {
+    throw std::invalid_argument("Unsupported extension: " + ext);
   }
 
   TrxFile<DT> *save_trx = this;

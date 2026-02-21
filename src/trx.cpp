@@ -539,8 +539,8 @@ void AnyTrxFile::save(const std::string &filename, zip_uint32_t compression_stan
 void AnyTrxFile::save(const std::string &filename, const TrxSaveOptions &options) {
   const std::string ext = get_ext(filename);
   const TrxSaveMode save_mode = resolve_save_mode(filename, options.mode);
-  if (save_mode == TrxSaveMode::Archive && ext.size() > 0 && (ext != "zip" && ext != "trx")) {
-    throw std::invalid_argument("Unsupported extension." + ext);
+  if (ext.size() > 0 && ext != "zip" && ext != "trx") {
+    throw std::invalid_argument("Unsupported extension: " + ext);
   }
 
   if (offsets.empty()) {
