@@ -103,6 +103,8 @@ jobs:
             --output-file coverage.info
           lcov --remove coverage.info "/opt/homebrew/*" "/Applications/Xcode_*.app/*" \
             "/Users/runner/work/trx-cpp/trx-cpp/third_party/*" \
+            "/Users/runner/work/trx-cpp/trx-cpp/examples/*" \
+            "/Users/runner/work/trx-cpp/trx-cpp/bench/*" \
             --ignore-errors mismatch,inconsistent,unsupported,format \
             --output-file coverage.info
           lcov --summary coverage.info --ignore-errors mismatch,inconsistent,unsupported,format

@@ -232,6 +232,75 @@ void expect_basic_consistency(const AnyTrxFile &trx) {
   EXPECT_NE(bytes.data, nullptr);
   EXPECT_GT(bytes.size, 0U);
 }
+
+fs::path write_test_shard(const fs::path &root,
+                          const std::string &name,
+                          const std::vector<std::array<float, 3>> &points,
+                          const std::vector<uint64_t> &offsets,
+                          const std::vector<float> &dps_values,
+                          const std::vector<float> &dpv_values,
+                          const std::vector<uint32_t> &group_indices) {
+  const fs::path shard_dir = root / name;
+  std::error_code ec;
+  fs::create_directories(shard_dir, ec);
+  if (ec) {
+    throw std::runtime_error("Failed to create shard directory: " + shard_dir.string());
+  }
+
+  json::object header_obj;
+  header_obj["DIMENSIONS"] = json::array{1, 1, 1};
+  header_obj["NB_STREAMLINES"] = static_cast<int>(offsets.size() - 1);
+  header_obj["NB_VERTICES"] = static_cast<int>(points.size());
+  header_obj["VOXEL_TO_RASMM"] = json::array{
+      json::array{1.0, 0.0, 0.0, 0.0},
+      json::array{0.0, 1.0, 0.0, 0.0},
+      json::array{0.0, 0.0, 1.0, 0.0},
+      json::array{0.0, 0.0, 0.0, 1.0},
+  };
+  write_header_file(shard_dir, json(header_obj));
+
+  Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> positions(
+      static_cast<Eigen::Index>(points.size()), 3);
+  for (size_t i = 0; i < points.size(); ++i) {
+    positions(static_cast<Eigen::Index>(i), 0) = points[i][0];
+    positions(static_cast<Eigen::Index>(i), 1) = points[i][1];
+    positions(static_cast<Eigen::Index>(i), 2) = points[i][2];
+  }
+  trx::write_binary((shard_dir / "positions.3.float32").string(), positions);
+
+  Eigen::Matrix<uint64_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> offsets_mat(
+      static_cast<Eigen::Index>(offsets.size()), 1);
+  for (size_t i = 0; i < offsets.size(); ++i) {
+    offsets_mat(static_cast<Eigen::Index>(i), 0) = offsets[i];
+  }
+  trx::write_binary((shard_dir / "offsets.uint64").string(), offsets_mat);
+
+  fs::create_directories(shard_dir / "dps", ec);
+  Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> dps_mat(
+      static_cast<Eigen::Index>(dps_values.size()), 1);
+  for (size_t i = 0; i < dps_values.size(); ++i) {
+    dps_mat(static_cast<Eigen::Index>(i), 0) = dps_values[i];
+  }
+  trx::write_binary((shard_dir / "dps" / "weight.float32").string(), dps_mat);
+
+  fs::create_directories(shard_dir / "dpv", ec);
+  Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> dpv_mat(
+      static_cast<Eigen::Index>(dpv_values.size()), 1);
+  for (size_t i = 0; i < dpv_values.size(); ++i) {
+    dpv_mat(static_cast<Eigen::Index>(i), 0) = dpv_values[i];
+  }
+  trx::write_binary((shard_dir / "dpv" / "signal.float32").string(), dpv_mat);
+
+  fs::create_directories(shard_dir / "groups", ec);
+  Eigen::Matrix<uint32_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> groups_mat(
+      static_cast<Eigen::Index>(group_indices.size()), 1);
+  for (size_t i = 0; i < group_indices.size(); ++i) {
+    groups_mat(static_cast<Eigen::Index>(i), 0) = group_indices[i];
+  }
+  trx::write_binary((shard_dir / "groups" / "Bundle.uint32").string(), groups_mat);
+
+  return shard_dir;
+}
 } // namespace
 
 TEST(AnyTrxFile, LoadZipAndValidate) {
@@ -638,4 +707,298 @@ TEST(AnyTrxFile, SaveRejectsMissingBackingDirectory) {
 
   std::error_code ec;
   fs::remove_all(temp_dir, ec);
+}
+
+TEST(AnyTrxFile, MergeTrxShardsDirectoryOutput) {
+  const fs::path temp_root = make_temp_test_dir("trx_merge_shards");
+  const fs::path shard1 = write_test_shard(temp_root,
+                                           "shard1",
+                                           {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}},
+                                           {0, 2},
+                                           {10.0F},
+                                           {0.1F, 0.2F},
+                                           {0});
+  const fs::path shard2 = write_test_shard(temp_root,
+                                           "shard2",
+                                           {{2.0F, 0.0F, 0.0F}, {3.0F, 0.0F, 0.0F}, {4.0F, 0.0F, 0.0F}},
+                                           {0, 1, 3},
+                                           {20.0F, 30.0F},
+                                           {0.3F, 0.4F, 0.5F},
+                                           {1});
+
+  const fs::path output_dir = temp_root / "merged";
+  MergeTrxShardsOptions options;
+  options.shard_directories = {shard1.string(), shard2.string()};
+  options.output_path = output_dir.string();
+  options.output_directory = true;
+  merge_trx_shards(options);
+
+  auto merged = load_any(output_dir.string());
+  EXPECT_EQ(merged.num_streamlines(), 3U);
+  EXPECT_EQ(merged.num_vertices(), 5U);
+  ASSERT_EQ(merged.offsets_u64.size(), 4U);
+  EXPECT_EQ(merged.offsets_u64[0], 0U);
+  EXPECT_EQ(merged.offsets_u64[1], 2U);
+  EXPECT_EQ(merged.offsets_u64[2], 3U);
+  EXPECT_EQ(merged.offsets_u64[3], 5U);
+
+  const auto pos = merged.positions.as_matrix<float>();
+  EXPECT_FLOAT_EQ(pos(0, 0), 0.0F);
+  EXPECT_FLOAT_EQ(pos(4, 0), 4.0F);
+
+  auto dps_it = merged.data_per_streamline.find("weight");
+  ASSERT_NE(dps_it, merged.data_per_streamline.end());
+  auto dps = dps_it->second.as_matrix<float>();
+  EXPECT_EQ(dps.rows(), 3);
+  EXPECT_FLOAT_EQ(dps(0, 0), 10.0F);
+  EXPECT_FLOAT_EQ(dps(2, 0), 30.0F);
+
+  auto dpv_it = merged.data_per_vertex.find("signal");
+  ASSERT_NE(dpv_it, merged.data_per_vertex.end());
+  auto dpv = dpv_it->second.as_matrix<float>();
+  EXPECT_EQ(dpv.rows(), 5);
+  EXPECT_FLOAT_EQ(dpv(0, 0), 0.1F);
+  EXPECT_FLOAT_EQ(dpv(4, 0), 0.5F);
+
+  auto group_it = merged.groups.find("Bundle");
+  ASSERT_NE(group_it, merged.groups.end());
+  auto grp = group_it->second.as_matrix<uint32_t>();
+  ASSERT_EQ(grp.rows(), 2);
+  EXPECT_EQ(grp(0, 0), 0U);
+  EXPECT_EQ(grp(1, 0), 2U);
+  merged.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, MergeTrxShardsSchemaMismatchThrows) {
+  const fs::path temp_root = make_temp_test_dir("trx_merge_schema");
+  const fs::path shard1 = write_test_shard(temp_root,
+                                           "shard1",
+                                           {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}},
+                                           {0, 2},
+                                           {10.0F},
+                                           {0.1F, 0.2F},
+                                           {0});
+  const fs::path shard2 = write_test_shard(temp_root,
+                                           "shard2",
+                                           {{2.0F, 0.0F, 0.0F}},
+                                           {0, 1},
+                                           {20.0F},
+                                           {0.3F},
+                                           {0});
+
+  std::error_code ec;
+  fs::remove(shard2 / "dpv" / "signal.float32", ec);
+
+  const fs::path output_dir = temp_root / "merged";
+  MergeTrxShardsOptions options;
+  options.shard_directories = {shard1.string(), shard2.string()};
+  options.output_path = output_dir.string();
+  options.output_directory = true;
+  EXPECT_THROW(merge_trx_shards(options), std::runtime_error);
+
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, PreparePositionsOutputCopiesMetadataAndOffsets) {
+  const fs::path temp_root = make_temp_test_dir("trx_prepare_positions");
+  const fs::path shard1 = write_test_shard(temp_root,
+                                           "shard1",
+                                           {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}},
+                                           {0, 2},
+                                           {10.0F},
+                                           {0.1F, 0.2F},
+                                           {0});
+  auto input = load_any(shard1.string());
+
+  const fs::path output_dir = temp_root / "prepared";
+  PrepareOutputOptions options;
+  options.overwrite_existing = true;
+  const auto info = prepare_positions_output(input, output_dir.string(), options);
+
+  EXPECT_EQ(info.directory, output_dir.string());
+  EXPECT_EQ(info.dtype, "float32");
+  EXPECT_EQ(info.points, 2U);
+  EXPECT_EQ(fs::path(info.positions_path).filename().string(), "positions.3.float32");
+  EXPECT_TRUE(fs::exists(output_dir / "header.json"));
+  EXPECT_TRUE(fs::exists(output_dir / "offsets.uint64"));
+  EXPECT_TRUE(fs::exists(output_dir / "dps" / "weight.float32"));
+  EXPECT_TRUE(fs::exists(output_dir / "dpv" / "signal.float32"));
+  EXPECT_TRUE(fs::exists(output_dir / "groups" / "Bundle.uint32"));
+  EXPECT_FALSE(fs::exists(info.positions_path));
+
+  input.close();
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, PositionsChunkIterationAndMutation) {
+  const fs::path temp_root = make_temp_test_dir("trx_positions_chunk");
+  const fs::path shard1 = write_test_shard(temp_root,
+                                           "shard1",
+                                           {{0.0F, 0.0F, 0.0F}, {1.0F, 2.0F, 3.0F}},
+                                           {0, 2},
+                                           {10.0F},
+                                           {0.1F, 0.2F},
+                                           {0});
+  auto trx = load_any(shard1.string());
+
+  size_t total_points = 0;
+  size_t callbacks = 0;
+  trx.for_each_positions_chunk(12, [&](TrxScalarType dtype, const void *data, size_t point_offset, size_t point_count) {
+    EXPECT_EQ(dtype, TrxScalarType::Float32);
+    EXPECT_NE(data, nullptr);
+    EXPECT_EQ(point_count, 1U);
+    EXPECT_LT(point_offset, 2U);
+    total_points += point_count;
+    callbacks += 1;
+  });
+  EXPECT_EQ(total_points, 2U);
+  EXPECT_EQ(callbacks, 2U);
+
+  trx.for_each_positions_chunk_mutable(12, [&](TrxScalarType dtype, void *data, size_t, size_t point_count) {
+    EXPECT_EQ(dtype, TrxScalarType::Float32);
+    auto *vals = reinterpret_cast<float *>(data);
+    for (size_t i = 0; i < point_count * 3; ++i) {
+      vals[i] += 1.0F;
+    }
+  });
+
+  const auto positions = trx.positions.as_matrix<float>();
+  EXPECT_FLOAT_EQ(positions(0, 0), 1.0F);
+  EXPECT_FLOAT_EQ(positions(1, 0), 2.0F);
+  EXPECT_FLOAT_EQ(positions(1, 1), 3.0F);
+  EXPECT_FLOAT_EQ(positions(1, 2), 4.0F);
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, MergeTrxShardsArchiveOutput) {
+  const fs::path temp_root = make_temp_test_dir("trx_merge_shards_archive");
+  const fs::path shard1 = write_test_shard(temp_root,
+                                           "shard1",
+                                           {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}},
+                                           {0, 2},
+                                           {10.0F},
+                                           {0.1F, 0.2F},
+                                           {0});
+  const fs::path shard2 = write_test_shard(temp_root,
+                                           "shard2",
+                                           {{2.0F, 0.0F, 0.0F}, {3.0F, 0.0F, 0.0F}},
+                                           {0, 2},
+                                           {20.0F},
+                                           {0.3F, 0.4F},
+                                           {0});
+
+  const fs::path output_archive = temp_root / "merged.trx";
+  MergeTrxShardsOptions options;
+  options.shard_directories = {shard1.string(), shard2.string()};
+  options.output_path = output_archive.string();
+  options.output_directory = false;
+  merge_trx_shards(options);
+
+  ASSERT_TRUE(fs::exists(output_archive));
+  auto merged = load_any(output_archive.string());
+  EXPECT_EQ(merged.num_streamlines(), 2U);
+  EXPECT_EQ(merged.num_vertices(), 4U);
+  merged.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, MergeTrxShardsRejectsDpg) {
+  const fs::path temp_root = make_temp_test_dir("trx_merge_shards_dpg");
+  const fs::path shard1 = write_test_shard(temp_root,
+                                           "shard1",
+                                           {{0.0F, 0.0F, 0.0F}},
+                                           {0, 1},
+                                           {10.0F},
+                                           {0.1F},
+                                           {0});
+  const fs::path shard2 = write_test_shard(temp_root,
+                                           "shard2",
+                                           {{1.0F, 0.0F, 0.0F}},
+                                           {0, 1},
+                                           {20.0F},
+                                           {0.2F},
+                                           {0});
+  std::error_code ec;
+  fs::create_directories(shard2 / "dpg" / "Bundle", ec);
+  std::ofstream out((shard2 / "dpg" / "Bundle" / "mean.float32").string(), std::ios::binary | std::ios::trunc);
+  float one = 1.0F;
+  out.write(reinterpret_cast<const char *>(&one), sizeof(float));
+  out.close();
+
+  MergeTrxShardsOptions options;
+  options.shard_directories = {shard1.string(), shard2.string()};
+  options.output_path = (temp_root / "merged").string();
+  options.output_directory = true;
+  EXPECT_THROW(merge_trx_shards(options), std::runtime_error);
+
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, PreparePositionsOutputOverwriteFalseThrows) {
+  const fs::path temp_root = make_temp_test_dir("trx_prepare_positions_overwrite");
+  const fs::path shard1 = write_test_shard(temp_root,
+                                           "shard1",
+                                           {{0.0F, 0.0F, 0.0F}},
+                                           {0, 1},
+                                           {10.0F},
+                                           {0.1F},
+                                           {0});
+  auto input = load_any(shard1.string());
+  const fs::path output_dir = temp_root / "prepared";
+  std::error_code ec;
+  fs::create_directories(output_dir, ec);
+  ASSERT_TRUE(fs::exists(output_dir));
+
+  PrepareOutputOptions options;
+  options.overwrite_existing = false;
+  EXPECT_THROW(prepare_positions_output(input, output_dir.string(), options), std::runtime_error);
+
+  input.close();
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, SaveRespectsExplicitMode) {
+  const fs::path temp_root = make_temp_test_dir("trx_any_save_modes");
+  const fs::path shard1 = write_test_shard(temp_root,
+                                           "shard1",
+                                           {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}},
+                                           {0, 2},
+                                           {10.0F},
+                                           {0.1F, 0.2F},
+                                           {0});
+  auto trx = load_any(shard1.string());
+
+  const fs::path dir_out = temp_root / "save_dir_mode";
+  TrxSaveOptions dir_opts;
+  dir_opts.mode = TrxSaveMode::Directory;
+  trx.save(dir_out.string(), dir_opts);
+  EXPECT_TRUE(fs::is_directory(dir_out));
+  EXPECT_TRUE(fs::exists(dir_out / "header.json"));
+
+  const fs::path archive_out = temp_root / "save_archive_mode.trx";
+  TrxSaveOptions archive_opts;
+  archive_opts.mode = TrxSaveMode::Archive;
+  archive_opts.compression_standard = ZIP_CM_STORE;
+  trx.save(archive_out.string(), archive_opts);
+  EXPECT_TRUE(fs::is_regular_file(archive_out));
+
+  auto dir_loaded = load_any(dir_out.string());
+  auto arc_loaded = load_any(archive_out.string());
+  EXPECT_EQ(dir_loaded.num_streamlines(), trx.num_streamlines());
+  EXPECT_EQ(arc_loaded.num_vertices(), trx.num_vertices());
+  dir_loaded.close();
+  arc_loaded.close();
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
 }

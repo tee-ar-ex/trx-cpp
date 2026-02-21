@@ -34,10 +34,11 @@
 namespace {
 using Eigen::half;
 
+std::string g_reference_trx_path;
+
 constexpr float kMinLengthMm = 20.0f;
 constexpr float kMaxLengthMm = 500.0f;
 constexpr float kStepMm = 2.0f;
-constexpr float kCurvatureSigma = 0.08f;
 constexpr float kSlabThicknessMm = 5.0f;
 constexpr size_t kSlabCount = 20;
 
@@ -53,27 +54,18 @@ struct Fov {
 };
 
 constexpr Fov kFov{-70.0f, 70.0f, -108.0f, 79.0f, -60.0f, 75.0f};
-constexpr float kRandomMinMm = 10.0f;
-constexpr float kRandomMaxMm = 400.0f;
 
 enum class GroupScenario : int { None = 0, Bundles = 1, Connectome = 2 };
-enum class LengthProfile : int { Mixed = 0, Short = 1, Medium = 2, Long = 3 };
 
 constexpr size_t kBundleCount = 80;
-constexpr size_t kConnectomeRegions = 100;
+constexpr std::array<size_t, 3> kConnectomeAtlasSizes = {80, 400, 1000};
+constexpr size_t kConnectomeTotalGroups = 1480;  // sum of atlas sizes
 
 std::string make_temp_path(const std::string &prefix) {
   static std::atomic<uint64_t> counter{0};
   const auto id = counter.fetch_add(1, std::memory_order_relaxed);
   const auto dir = std::filesystem::temp_directory_path();
   return (dir / (prefix + "_" + std::to_string(id) + ".trx")).string();
-}
-
-std::string make_temp_dir_name(const std::string &prefix) {
-  static std::atomic<uint64_t> counter{0};
-  const auto id = counter.fetch_add(1, std::memory_order_relaxed);
-  const auto dir = std::filesystem::temp_directory_path();
-  return (dir / (prefix + "_" + std::to_string(id))).string();
 }
 
 std::string make_work_dir_name(const std::string &prefix) {
@@ -88,55 +80,7 @@ std::string make_work_dir_name(const std::string &prefix) {
   return (dir / (prefix + "_" + std::to_string(pid) + "_" + std::to_string(id))).string();
 }
 
-std::string make_status_path(const std::string &prefix) {
-  static std::atomic<uint64_t> counter{0};
-  const auto id = counter.fetch_add(1, std::memory_order_relaxed);
-  const auto dir = std::filesystem::temp_directory_path();
-  return (dir / (prefix + "_" + std::to_string(id) + ".txt")).string();
-}
-
-std::string make_temp_dir_path(const std::string &prefix) {
-  return trx::make_temp_dir(prefix);
-}
-
 void register_cleanup(const std::string &path);
-std::vector<std::string> list_files(const std::string &dir);
-
-std::string find_file_by_prefix(const std::string &dir, const std::string &prefix) {
-  std::error_code ec;
-  for (const auto &entry : trx::fs::directory_iterator(dir, ec)) {
-    if (ec) {
-      break;
-    }
-    if (!entry.is_regular_file()) {
-      continue;
-    }
-    const auto filename = entry.path().filename().string();
-    if (filename.rfind(prefix, 0) == 0) {
-      return entry.path().string();
-    }
-  }
-  return "";
-}
-
-std::vector<std::string> list_files(const std::string &dir) {
-  std::vector<std::string> files;
-  std::error_code ec;
-  if (!trx::fs::exists(dir, ec)) {
-    return files;
-  }
-  for (const auto &entry : trx::fs::directory_iterator(dir, ec)) {
-    if (ec) {
-      break;
-    }
-    if (!entry.is_regular_file()) {
-      continue;
-    }
-    files.push_back(entry.path().filename().string());
-  }
-  std::sort(files.begin(), files.end());
-  return files;
-}
 
 size_t file_size_bytes(const std::string &path) {
   std::error_code ec;
@@ -160,85 +104,6 @@ size_t file_size_bytes(const std::string &path) {
     return total;
   }
   return static_cast<size_t>(trx::fs::file_size(path, ec));
-}
-
-void wait_for_shard_ok(const std::vector<std::string> &shard_paths,
-                       const std::vector<std::string> &status_paths,
-                       size_t timeout_ms) {
-  const auto start = std::chrono::steady_clock::now();
-  while (true) {
-    bool all_ok = true;
-    for (size_t i = 0; i < shard_paths.size(); ++i) {
-      const auto ok_path = trx::fs::path(shard_paths[i]) / "SHARD_OK";
-      std::error_code ec;
-      if (!trx::fs::exists(ok_path, ec)) {
-        all_ok = false;
-        break;
-      }
-    }
-    if (all_ok) {
-      return;
-    }
-    const auto now = std::chrono::steady_clock::now();
-    const auto elapsed_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
-    if (elapsed_ms > static_cast<long long>(timeout_ms)) {
-      std::string detail = "Timed out waiting for SHARD_OK";
-      for (size_t i = 0; i < status_paths.size(); ++i) {
-        std::ifstream in(status_paths[i]);
-        std::string line;
-        if (in.is_open()) {
-          std::getline(in, line);
-        }
-        if (!line.empty()) {
-          detail += " shard_" + std::to_string(i) + "=" + line;
-        }
-      }
-      throw std::runtime_error(detail);
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  }
-}
-
-std::pair<size_t, size_t> read_header_counts(const std::string &dir) {
-  const auto header_path = trx::fs::path(dir) / "header.json";
-  std::ifstream in;
-  for (int attempt = 0; attempt < 5; ++attempt) {
-    in.open(header_path);
-    if (in.is_open()) {
-      break;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  }
-  if (!in.is_open()) {
-    std::error_code ec;
-    const bool exists = trx::fs::exists(dir, ec);
-    const auto files = list_files(dir);
-    const int open_err = errno;
-    std::string detail = "Failed to open header.json at: " + header_path.string();
-    detail += " exists=" + std::string(exists ? "true" : "false");
-    detail += " errno=" + std::to_string(open_err) + " msg=" + std::string(std::strerror(open_err));
-    if (!files.empty()) {
-      detail += " files=[";
-      for (size_t i = 0; i < files.size(); ++i) {
-        if (i > 0) {
-          detail += ",";
-        }
-        detail += files[i];
-      }
-      detail += "]";
-    }
-    throw std::runtime_error(detail);
-  }
-  std::string contents((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  std::string err;
-  const auto header = json::parse(contents, err);
-  if (!err.empty()) {
-    throw std::runtime_error("Failed to parse header.json: " + err);
-  }
-  const auto nb_streamlines = static_cast<size_t>(header["NB_STREAMLINES"].int_value());
-  const auto nb_vertices = static_cast<size_t>(header["NB_VERTICES"].int_value());
-  return {nb_streamlines, nb_vertices};
 }
 
 double get_max_rss_kb() {
@@ -313,6 +178,9 @@ std::vector<int> group_cases_for_benchmarks() {
   if (!is_core_profile() || include_bundles_in_core_profile()) {
     groups.push_back(static_cast<int>(GroupScenario::Bundles));
   }
+  if (parse_env_bool("TRX_BENCH_INCLUDE_CONNECTOME", !is_core_profile())) {
+    groups.push_back(static_cast<int>(GroupScenario::Connectome));
+  }
   return groups;
 }
 
@@ -321,7 +189,7 @@ size_t group_count_for(GroupScenario scenario) {
   case GroupScenario::Bundles:
     return kBundleCount;
   case GroupScenario::Connectome:
-    return (kConnectomeRegions * (kConnectomeRegions - 1)) / 2;
+    return kConnectomeTotalGroups;
   case GroupScenario::None:
   default:
     return 0;
@@ -375,13 +243,6 @@ void log_bench_end(const std::string &name, const std::string &details) {
   std::cerr << "[trx-bench] end " << name << " " << details << std::endl;
 }
 
-void log_bench_config(const std::string &name, size_t threads, size_t batch_size) {
-  if (!parse_env_bool("TRX_BENCH_LOG", false)) {
-    return;
-  }
-  std::cerr << "[trx-bench] config " << name << " threads=" << threads << " batch=" << batch_size << std::endl;
-}
-
 const std::vector<std::string> &group_names_for(GroupScenario scenario) {
   static const std::vector<std::string> empty;
   static const std::vector<std::string> bundle_names = []() {
@@ -394,15 +255,14 @@ const std::vector<std::string> &group_names_for(GroupScenario scenario) {
   }();
   static const std::vector<std::string> connectome_names = []() {
     std::vector<std::string> names;
-    names.reserve((kConnectomeRegions * (kConnectomeRegions - 1)) / 2);
-    for (size_t i = 1; i <= kConnectomeRegions; ++i) {
-      for (size_t j = i + 1; j <= kConnectomeRegions; ++j) {
-        names.push_back("conn_" + std::to_string(i) + "_" + std::to_string(j));
+    names.reserve(kConnectomeTotalGroups);
+    for (size_t a = 0; a < kConnectomeAtlasSizes.size(); ++a) {
+      for (size_t r = 1; r <= kConnectomeAtlasSizes[a]; ++r) {
+        names.push_back("atlas" + std::to_string(a + 1) + "_region" + std::to_string(r));
       }
     }
     return names;
   }();
-
   switch (scenario) {
   case GroupScenario::Bundles:
     return bundle_names;
@@ -414,161 +274,110 @@ const std::vector<std::string> &group_names_for(GroupScenario scenario) {
   }
 }
 
-float sample_length_mm(std::mt19937 &rng, LengthProfile profile) {
-  auto sample_uniform = [&](float min_val, float max_val) {
-    std::uniform_real_distribution<float> dist(min_val, max_val);
-    return dist(rng);
-  };
-  switch (profile) {
-  case LengthProfile::Short:
-    return sample_uniform(20.0f, 120.0f);
-  case LengthProfile::Medium:
-    return sample_uniform(80.0f, 260.0f);
-  case LengthProfile::Long:
-    return sample_uniform(200.0f, 500.0f);
-  case LengthProfile::Mixed:
-  default:
-    return sample_uniform(kMinLengthMm, kMaxLengthMm);
+std::vector<uint32_t> build_prefix_ids(size_t num_streamlines) {
+  if (num_streamlines > static_cast<size_t>(std::numeric_limits<uint32_t>::max())) {
+    throw std::runtime_error("Too many streamlines for uint32 index space.");
   }
+  std::vector<uint32_t> ids;
+  ids.reserve(num_streamlines);
+  for (size_t i = 0; i < num_streamlines; ++i) {
+    ids.push_back(static_cast<uint32_t>(i));
+  }
+  return ids;
 }
 
-size_t estimate_points_per_streamline(LengthProfile profile) {
-  float mean_length = 0.0f;
-  switch (profile) {
-  case LengthProfile::Short:
-    mean_length = 70.0f;
-    break;
-  case LengthProfile::Medium:
-    mean_length = 170.0f;
-    break;
-  case LengthProfile::Long:
-    mean_length = 350.0f;
-    break;
-  case LengthProfile::Mixed:
-  default:
-    mean_length = 260.0f;
-    break;
-  }
-  return static_cast<size_t>(std::ceil(mean_length / kStepMm)) + 1;
-}
-
-std::array<float, 3> random_unit_vector(std::mt19937 &rng) {
-  std::normal_distribution<float> dist(0.0f, 1.0f);
-  std::array<float, 3> v{dist(rng), dist(rng), dist(rng)};
-  const float norm = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-  if (norm < 1e-6f) {
-    return {1.0f, 0.0f, 0.0f};
-  }
-  v[0] /= norm;
-  v[1] /= norm;
-  v[2] /= norm;
-  return v;
-}
-
-std::vector<std::array<float, 3>> generate_streamline_points(std::mt19937 &rng, LengthProfile profile) {
-  const float length_mm = sample_length_mm(rng, profile);
-  const size_t point_count = std::max<size_t>(2, static_cast<size_t>(std::ceil(length_mm / kStepMm)) + 1);
-  std::vector<std::array<float, 3>> points;
-  points.reserve(point_count);
-
-  std::uniform_real_distribution<float> dist_x(kRandomMinMm, kRandomMaxMm);
-  std::uniform_real_distribution<float> dist_y(kRandomMinMm, kRandomMaxMm);
-  std::uniform_real_distribution<float> dist_z(kRandomMinMm, kRandomMaxMm);
-
-  for (size_t i = 0; i < point_count; ++i) {
-    points.push_back({dist_x(rng), dist_y(rng), dist_z(rng)});
+void assign_groups_to_trx(trx::TrxFile<half> &trx, GroupScenario scenario, size_t streamlines) {
+  const auto group_count = group_count_for(scenario);
+  const auto &group_names = group_names_for(scenario);
+  if (group_count == 0) {
+    return;
   }
 
-  return points;
-}
+  if (scenario == GroupScenario::Connectome) {
+    std::vector<std::vector<uint32_t>> group_indices(kConnectomeTotalGroups);
+    std::mt19937 rng(42);
+    std::uniform_real_distribution<float> coin(0.0f, 1.0f);
 
-std::vector<std::array<float, 3>> generate_streamline_points_seeded(uint32_t seed, LengthProfile profile) {
-  std::mt19937 rng(seed);
-  return generate_streamline_points(rng, profile);
-}
-
-size_t bench_threads() {
-  const size_t requested = parse_env_size("TRX_BENCH_THREADS", 0);
-  if (requested > 0) {
-    return requested;
-  }
-  const unsigned int hc = std::thread::hardware_concurrency();
-  return hc == 0 ? 1U : static_cast<size_t>(hc);
-}
-
-size_t bench_batch_size() {
-  return parse_env_size("TRX_BENCH_BATCH", 1000);
-}
-
-template <typename BatchConsumer>
-void generate_streamlines_parallel(size_t streamlines,
-                                   LengthProfile profile,
-                                   size_t threads,
-                                   size_t batch_size,
-                                   uint32_t base_seed,
-                                   BatchConsumer consumer) {
-  const size_t total_batches = (streamlines + batch_size - 1) / batch_size;
-  std::atomic<size_t> next_batch{0};
-  std::mutex mutex;
-  std::condition_variable cv;
-  std::map<size_t, std::vector<std::vector<std::array<float, 3>>>> completed;
-  std::condition_variable cv_producer;
-  size_t inflight_batches = 0;
-  const size_t max_inflight = std::max<size_t>(1, parse_env_size("TRX_BENCH_QUEUE_MAX", 8));
-
-  auto worker = [&]() {
-    for (;;) {
-      size_t batch_idx;
-      {
-        // Wait for queue space BEFORE grabbing batch index to avoid missed notifications
-        std::unique_lock<std::mutex> lock(mutex);
-        cv_producer.wait(lock, [&]() { return inflight_batches < max_inflight || next_batch.load() >= total_batches; });
-        batch_idx = next_batch.fetch_add(1);
-        if (batch_idx >= total_batches) {
-          return;
+    for (size_t i = 0; i < streamlines; ++i) {
+      size_t group_offset = 0;
+      for (size_t a = 0; a < kConnectomeAtlasSizes.size(); ++a) {
+        const size_t n_regions = kConnectomeAtlasSizes[a];
+        const size_t picks = (coin(rng) < 0.1f) ? 3 : 2;
+        std::unordered_set<size_t> chosen;
+        std::uniform_int_distribution<size_t> region_dist(0, n_regions - 1);
+        while (chosen.size() < picks) {
+          chosen.insert(region_dist(rng));
         }
-        ++inflight_batches;
+        for (size_t r : chosen) {
+          group_indices[group_offset + r].push_back(static_cast<uint32_t>(i));
+        }
+        group_offset += n_regions;
       }
-      const size_t start = batch_idx * batch_size;
-      const size_t count = std::min(batch_size, streamlines - start);
-      std::vector<std::vector<std::array<float, 3>>> batch;
-      batch.reserve(count);
-      for (size_t i = 0; i < count; ++i) {
-        const uint32_t seed = base_seed + static_cast<uint32_t>(start + i);
-        batch.push_back(generate_streamline_points_seeded(seed, profile));
-      }
-      {
-        std::lock_guard<std::mutex> lock(mutex);
-        completed.emplace(batch_idx, std::move(batch));
-      }
-      cv.notify_one();
     }
-  };
-
-  std::vector<std::thread> workers;
-  workers.reserve(threads);
-  for (size_t t = 0; t < threads; ++t) {
-    workers.emplace_back(worker);
-  }
-
-  for (size_t expected = 0; expected < total_batches; ++expected) {
-    std::unique_lock<std::mutex> lock(mutex);
-    cv.wait(lock, [&]() { return completed.find(expected) != completed.end(); });
-    auto batch = std::move(completed[expected]);
-    completed.erase(expected);
-    if (inflight_batches > 0) {
-      --inflight_batches;
+    for (size_t g = 0; g < kConnectomeTotalGroups; ++g) {
+      trx.add_group_from_indices(group_names[g], group_indices[g]);
     }
-    lock.unlock();
-    cv_producer.notify_all();  // Wake all waiting workers, not just one, to avoid deadlock
+  } else {
+    for (size_t g = 0; g < group_count; ++g) {
+      std::vector<uint32_t> group_indices;
+      group_indices.reserve(streamlines / group_count + 1);
+      for (size_t i = g; i < streamlines; i += group_count) {
+        group_indices.push_back(static_cast<uint32_t>(i));
+      }
+      trx.add_group_from_indices(group_names[g], group_indices);
+    }
+  }
+}
 
-    const size_t start = expected * batch_size;
-    consumer(start, batch);
+std::unique_ptr<trx::TrxFile<half>> build_prefix_subset_trx(size_t streamlines,
+                                                            GroupScenario scenario,
+                                                            bool add_dps,
+                                                            bool add_dpv) {
+  if (g_reference_trx_path.empty()) {
+    throw std::runtime_error("Reference TRX path not set.");
+  }
+  auto ref_trx = trx::load<half>(g_reference_trx_path);
+  const size_t ref_count = ref_trx->num_streamlines();
+  if (streamlines > ref_count) {
+    throw std::runtime_error("Requested " + std::to_string(streamlines) +
+                             " streamlines but reference only has " + std::to_string(ref_count));
   }
 
-  for (auto &worker_thread : workers) {
-    worker_thread.join();
+  const auto ids = build_prefix_ids(streamlines);
+  auto out = ref_trx->subset_streamlines(ids, false);
+
+  // Benchmark scenario owns grouping; drop any inherited groups first.
+  out->groups.clear();
+  if (!out->_uncompressed_folder_handle.empty()) {
+    std::error_code ec;
+    std::filesystem::remove_all(std::filesystem::path(out->_uncompressed_folder_handle) / "groups", ec);
   }
+
+  if (!add_dps) {
+    out->data_per_streamline.clear();
+    if (!out->_uncompressed_folder_handle.empty()) {
+      std::error_code ec;
+      std::filesystem::remove_all(std::filesystem::path(out->_uncompressed_folder_handle) / "dps", ec);
+    }
+  } else if (out->data_per_streamline.empty()) {
+    std::vector<float> ones(streamlines, 1.0f);
+    out->add_dps_from_vector("sift_weights", "float32", ones);
+  }
+
+  if (add_dpv) {
+    std::vector<float> dpv(out->num_vertices(), 0.5f);
+    out->add_dpv_from_vector("dpv_random", "float32", dpv);
+  } else {
+    out->data_per_vertex.clear();
+    if (!out->_uncompressed_folder_handle.empty()) {
+      std::error_code ec;
+      std::filesystem::remove_all(std::filesystem::path(out->_uncompressed_folder_handle) / "dpv", ec);
+    }
+  }
+
+  assign_groups_to_trx(*out, scenario, streamlines);
+
+  return out;
 }
 
 struct TrxWriteStats {
@@ -584,7 +393,6 @@ struct RssSample {
 
 struct FileSizeScenario {
   size_t streamlines = 0;
-  LengthProfile profile = LengthProfile::Mixed;
   bool add_dps = false;
   bool add_dpv = false;
   zip_uint32_t compression = ZIP_CM_STORE;
@@ -608,7 +416,6 @@ void append_rss_samples(const FileSizeScenario &scenario, const std::vector<RssS
 
   out << "{"
       << "\"streamlines\":" << scenario.streamlines << ","
-      << "\"length_profile\":" << static_cast<int>(scenario.profile) << ","
       << "\"dps\":" << (scenario.add_dps ? 1 : 0) << ","
       << "\"dpv\":" << (scenario.add_dpv ? 1 : 0) << ","
       << "\"compression\":" << (scenario.compression == ZIP_CM_DEFLATE ? 1 : 0) << ","
@@ -661,23 +468,10 @@ void register_cleanup(const std::string &path) {
 }
 
 TrxWriteStats run_trx_file_size(size_t streamlines,
-                                LengthProfile profile,
                                 bool add_dps,
                                 bool add_dpv,
                                 zip_uint32_t compression) {
-  trx::TrxStream stream("float16");
-  stream.set_metadata_mode(trx::TrxStream::MetadataMode::OnDisk);
-  
-  // Scale metadata buffer with TRX_BENCH_BUFFER_MULTIPLIER for slow storage
-  const size_t buffer_multiplier = std::max<size_t>(1, parse_env_size("TRX_BENCH_BUFFER_MULTIPLIER", 1));
-  stream.set_metadata_buffer_max_bytes(64ULL * 1024ULL * 1024ULL * buffer_multiplier);
-  stream.set_positions_buffer_max_bytes(buffer_bytes_for_streamlines(streamlines));
-
-  const size_t threads = bench_threads();
-  const size_t batch_size = std::max<size_t>(1, bench_batch_size());
-  const uint32_t base_seed = static_cast<uint32_t>(1337 + streamlines + static_cast<size_t>(profile) * 13);
   const size_t progress_every = parse_env_size("TRX_BENCH_LOG_PROGRESS_EVERY", 0);
-  log_bench_config("file_size_generate", threads, batch_size);
 
   const bool collect_rss = std::getenv("TRX_RSS_SAMPLES_PATH") != nullptr;
   const size_t sample_every = parse_env_size("TRX_RSS_SAMPLE_EVERY", 50000);
@@ -695,51 +489,12 @@ TrxWriteStats run_trx_file_size(size_t streamlines,
     samples.push_back({elapsed.count(), get_max_rss_kb(), phase});
   };
 
-  std::vector<float> dps;
-  std::vector<float> dpv;
-  if (add_dps) {
-    dps.reserve(streamlines);
+  auto trx_subset = build_prefix_subset_trx(streamlines, GroupScenario::None, add_dps, add_dpv);
+  if (progress_every > 0) {
+    std::cerr << "[trx-bench] progress file_size streamlines=" << streamlines << " / " << streamlines << std::endl;
   }
-  if (add_dpv) {
-    const size_t estimated_vertices = streamlines * estimate_points_per_streamline(profile);
-    dpv.reserve(estimated_vertices);
-  }
-
-  generate_streamlines_parallel(
-      streamlines,
-      profile,
-      threads,
-      batch_size,
-      base_seed,
-      [&](size_t start, const std::vector<std::vector<std::array<float, 3>>> &batch) {
-        if (parse_env_bool("TRX_BENCH_LOG", false)) {
-          std::cerr << "[trx-bench] batch file_size start=" << start << " count=" << batch.size() << std::endl;
-        }
-        for (size_t i = 0; i < batch.size(); ++i) {
-          const auto &points = batch[i];
-          stream.push_streamline(points);
-          if (add_dps) {
-            dps.push_back(1.0f);
-          }
-          if (add_dpv) {
-            dpv.insert(dpv.end(), points.size(), 0.5f);
-          }
-          const size_t global_idx = start + i + 1;
-          if (progress_every > 0 && (global_idx % progress_every == 0)) {
-            std::cerr << "[trx-bench] progress file_size streamlines=" << global_idx << " / " << streamlines
-                      << std::endl;
-          }
-          if (collect_rss && sample_every > 0 && (global_idx % sample_every == 0)) {
-            record_sample("generate");
-          }
-        }
-      });
-
-  if (add_dps) {
-    stream.push_dps_from_vector("dps_scalar", "float32", dps);
-  }
-  if (add_dpv) {
-    stream.push_dpv_from_vector("dpv_scalar", "float32", dpv);
+  if (collect_rss && sample_every > 0) {
+    record_sample("generate");
   }
 
   const std::string out_path = make_temp_path("trx_size");
@@ -757,9 +512,12 @@ TrxWriteStats run_trx_file_size(size_t streamlines,
     });
   }
 
+  trx::TrxSaveOptions save_opts;
+  save_opts.compression_standard = compression;
   const auto start = std::chrono::steady_clock::now();
-  stream.finalize<half>(out_path, compression);
+  trx_subset->save(out_path, save_opts);
   const auto end = std::chrono::steady_clock::now();
+  trx_subset->close();
 
   if (collect_rss) {
     sampling.store(false, std::memory_order_relaxed);
@@ -780,7 +538,6 @@ TrxWriteStats run_trx_file_size(size_t streamlines,
   if (collect_rss) {
     FileSizeScenario scenario;
     scenario.streamlines = streamlines;
-    scenario.profile = profile;
     scenario.add_dps = add_dps;
     scenario.add_dpv = add_dpv;
     scenario.compression = compression;
@@ -801,378 +558,83 @@ TrxOnDisk build_trx_file_on_disk_single(size_t streamlines,
                                         GroupScenario scenario,
                                         bool add_dps,
                                         bool add_dpv,
-                                        LengthProfile profile,
                                         zip_uint32_t compression,
-                                        const std::string &out_path_override = "",
-                                        bool finalize_to_directory = false) {
-  trx::TrxStream stream("float16");
-  stream.set_metadata_mode(trx::TrxStream::MetadataMode::OnDisk);
-  
-  // Scale buffers with TRX_BENCH_BUFFER_MULTIPLIER for slow storage
-  const size_t buffer_multiplier = std::max<size_t>(1, parse_env_size("TRX_BENCH_BUFFER_MULTIPLIER", 1));
-  stream.set_metadata_buffer_max_bytes(64ULL * 1024ULL * 1024ULL * buffer_multiplier);
-  stream.set_positions_buffer_max_bytes(buffer_bytes_for_streamlines(streamlines));
+                                        const std::string &out_path_override = "") {
   const size_t progress_every = parse_env_size("TRX_BENCH_LOG_PROGRESS_EVERY", 0);
 
-  const auto group_count = group_count_for(scenario);
-  const auto &group_names = group_names_for(scenario);
-  std::vector<std::vector<uint32_t>> groups(group_count);
-
-  const size_t threads = bench_threads();
-  const size_t batch_size = std::max<size_t>(1, bench_batch_size());
-  const uint32_t base_seed = static_cast<uint32_t>(1337 + streamlines + static_cast<size_t>(scenario) * 31);
-  log_bench_config("build_trx_generate", threads, batch_size);
-
-  std::vector<float> dps;
-  std::vector<float> dpv;
-  if (add_dps) {
-    dps.reserve(streamlines);
+  // Fast path: For 10M (full reference) WITHOUT DPV, just copy and add groups
+  // DPV requires 1.3B vertices × 8 bytes (vector + internal copy) = 10 GB extra memory!
+  if (g_reference_trx_path.empty()) {
+    throw std::runtime_error("Reference TRX path not set.");
   }
-  if (add_dpv) {
-    const size_t estimated_vertices = streamlines * estimate_points_per_streamline(profile);
-    dpv.reserve(estimated_vertices);
-  }
-
-  size_t total_vertices = 0;
-  generate_streamlines_parallel(
-      streamlines,
-      profile,
-      threads,
-      batch_size,
-      base_seed,
-      [&](size_t start, const std::vector<std::vector<std::array<float, 3>>> &batch) {
-        if (parse_env_bool("TRX_BENCH_LOG", false)) {
-          std::cerr << "[trx-bench] batch build_trx start=" << start << " count=" << batch.size() << std::endl;
-        }
-        for (size_t i = 0; i < batch.size(); ++i) {
-          const auto &points = batch[i];
-          total_vertices += points.size();
-          stream.push_streamline(points);
-          if (add_dps) {
-            dps.push_back(1.0f);
-          }
-          if (add_dpv) {
-            dpv.insert(dpv.end(), points.size(), 0.5f);
-          }
-          const size_t global_idx = start + i;
-          if (group_count > 0) {
-            groups[global_idx % group_count].push_back(static_cast<uint32_t>(global_idx));
-          }
-        if (progress_every > 0 && ((global_idx + 1) % progress_every == 0)) {
-          if (parse_env_bool("TRX_BENCH_CHILD_LOG", false) || parse_env_bool("TRX_BENCH_LOG", false)) {
-            const char *shard_env = std::getenv("TRX_BENCH_SHARD_INDEX");
-            const std::string shard_prefix = shard_env ? std::string(" shard=") + shard_env : "";
-            std::cerr << "[trx-bench] progress build_trx" << shard_prefix << " streamlines=" << (global_idx + 1)
-                      << " / " << streamlines << std::endl;
-          }
-        }
-        }
-      });
-
-  if (add_dps) {
-    stream.push_dps_from_vector("dps_scalar", "float32", dps);
-  }
-  if (add_dpv) {
-    stream.push_dpv_from_vector("dpv_scalar", "float32", dpv);
-  }
-  if (group_count > 0) {
-    for (size_t g = 0; g < group_count; ++g) {
-      stream.push_group_from_indices(group_names[g], groups[g]);
+  auto ref_trx_check = trx::load<half>(g_reference_trx_path);
+  const size_t ref_count = ref_trx_check->num_streamlines();
+  const bool is_full_reference = (streamlines == ref_count);
+  ref_trx_check.reset();  // Release mmap
+  
+  // Fast path for full reference WITHOUT DPV: work with reference directly
+  // DPV + 10M requires 40-50 GB due to: mmap(7.6) + dpv_vec(4.8) + dpv_mmap(4.8) + save() overhead(20+)
+  if (is_full_reference && !add_dpv) {
+    log_bench_start("build_trx_copy_fast", "streamlines=" + std::to_string(streamlines));
+    
+    // Filesystem copy reference (disk I/O only)
+    const std::string temp_copy = make_temp_path("trx_ref_copy");
+    std::error_code copy_ec;
+    std::filesystem::copy_file(g_reference_trx_path, temp_copy,
+                              std::filesystem::copy_options::overwrite_existing, copy_ec);
+    if (copy_ec) {
+      throw std::runtime_error("Failed to copy reference: " + copy_ec.message());
     }
+    
+    // Load and modify (just groups, no DPV)
+    auto trx = trx::load<half>(temp_copy);
+    
+    // Add groups
+    assign_groups_to_trx(*trx, scenario, streamlines);
+    
+    // Note: DPV for 10M handled by sampling path (skipped by default due to 40-50 GB memory)
+    
+    // Save to output
+    const std::string out_path = out_path_override.empty() ? make_temp_path("trx_input") : out_path_override;
+    trx::TrxSaveOptions save_opts;
+    save_opts.compression_standard = compression;
+    trx->save(out_path, save_opts);
+    const size_t total_vertices = trx->num_vertices();
+    trx->close();
+    
+    std::filesystem::remove(temp_copy, copy_ec);
+    
+    if (out_path_override.empty()) {
+      register_cleanup(out_path);
+    }
+    
+    log_bench_end("build_trx_copy_fast", "streamlines=" + std::to_string(streamlines));
+    return {out_path, streamlines, total_vertices, 0.0, 1};
   }
-
+  
+  // Prefix-subset path: copy first N streamlines into a TrxFile and save.
+  auto trx_subset = build_prefix_subset_trx(streamlines, scenario, add_dps, add_dpv);
+  const size_t total_vertices = trx_subset->num_vertices();
   const std::string out_path = out_path_override.empty() ? make_temp_path("trx_input") : out_path_override;
-  if (finalize_to_directory) {
-    // Use persistent variant to avoid removing pre-created shard directories
-    stream.finalize_directory_persistent(out_path);
-  } else {
-    stream.finalize<half>(out_path, compression);
+  trx::TrxSaveOptions save_opts;
+  save_opts.compression_standard = compression;
+  trx_subset->save(out_path, save_opts);
+  trx_subset->close();
+  if (progress_every > 0 && (parse_env_bool("TRX_BENCH_CHILD_LOG", false) || parse_env_bool("TRX_BENCH_LOG", false))) {
+    std::cerr << "[trx-bench] progress build_trx streamlines=" << streamlines << " / " << streamlines << std::endl;
   }
-  if (out_path_override.empty() && !finalize_to_directory) {
+  if (out_path_override.empty()) {
     register_cleanup(out_path);
   }
   return {out_path, streamlines, total_vertices, 0.0, 1};
-}
-
-void build_trx_shard(const std::string &out_path,
-                     size_t streamlines,
-                     GroupScenario scenario,
-                     bool add_dps,
-                     bool add_dpv,
-                     LengthProfile profile,
-                     zip_uint32_t compression) {
-  (void)build_trx_file_on_disk_single(streamlines,
-                                      scenario,
-                                      add_dps,
-                                      add_dpv,
-                                      profile,
-                                      compression,
-                                      out_path,
-                                      true);
-  
-  // Defensive validation: ensure all required files were written by finalize_directory_persistent
-  std::error_code ec;
-  const auto header_path = trx::fs::path(out_path) / "header.json";
-  if (!trx::fs::exists(header_path, ec)) {
-    throw std::runtime_error("Shard missing header.json after finalize_directory_persistent: " + header_path.string());
-  }
-  const auto positions_path = find_file_by_prefix(out_path, "positions.");
-  if (positions_path.empty()) {
-    throw std::runtime_error("Shard missing positions after finalize_directory_persistent: " + out_path);
-  }
-  const auto offsets_path = find_file_by_prefix(out_path, "offsets.");
-  if (offsets_path.empty()) {
-    throw std::runtime_error("Shard missing offsets after finalize_directory_persistent: " + out_path);
-  }
-  const auto ok_path = trx::fs::path(out_path) / "SHARD_OK";
-  std::ofstream ok(ok_path, std::ios::out | std::ios::trunc);
-  if (ok.is_open()) {
-    ok << "ok\n";
-    ok.flush();
-    ok.close();
-  }
-  
-  // Force filesystem sync to ensure all shard data is visible to parent process
-#if defined(__unix__) || defined(__APPLE__)
-  sync();
-  // Brief sleep to ensure filesystem metadata updates are visible across processes
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-#endif
 }
 
 TrxOnDisk build_trx_file_on_disk(size_t streamlines,
                                  GroupScenario scenario,
                                  bool add_dps,
                                  bool add_dpv,
-                                 LengthProfile profile,
                                  zip_uint32_t compression) {
-  size_t processes = parse_env_size("TRX_BENCH_PROCESSES", 1);
-  const size_t mp_min_streamlines = parse_env_size("TRX_BENCH_MP_MIN_STREAMLINES", 1000000);
-  if (streamlines < mp_min_streamlines) {
-    processes = 1;
-  }
-  if (processes <= 1) {
-    return build_trx_file_on_disk_single(streamlines, scenario, add_dps, add_dpv, profile, compression);
-  }
-#if defined(__unix__) || defined(__APPLE__)
-  g_cleanup_owner_pid = getpid();
-  const std::string shard_root = make_work_dir_name("trx_shards");
-  {
-    std::error_code ec;
-    trx::fs::create_directories(shard_root, ec);
-    if (ec) {
-      throw std::runtime_error("Failed to create shard root: " + shard_root);
-    }
-  }
-  {
-    const std::string marker = shard_root + trx::SEPARATOR + "SHARD_ROOT_CREATED";
-    std::ofstream out(marker, std::ios::out | std::ios::trunc);
-    if (out.is_open()) {
-      out << "ok\n";
-      out.flush();
-      out.close();
-    }
-  }
-  if (parse_env_bool("TRX_BENCH_LOG", false)) {
-    std::cerr << "[trx-bench] shard_root " << shard_root << std::endl;
-  }
-  std::vector<size_t> counts(processes, streamlines / processes);
-  const size_t remainder = streamlines % processes;
-  for (size_t i = 0; i < remainder; ++i) {
-    counts[i] += 1;
-  }
-
-              std::vector<std::string> shard_paths(processes);
-              std::vector<std::string> status_paths(processes);
-              for (size_t i = 0; i < processes; ++i) {
-                shard_paths[i] = shard_root + trx::SEPARATOR + "shard_" + std::to_string(i);
-                status_paths[i] = shard_root + trx::SEPARATOR + "shard_" + std::to_string(i) + ".status";
-                
-                // Pre-create shard directories to validate filesystem writability before forking.
-                // finalize_directory_persistent() will use these existing directories without
-                // removing them, avoiding race conditions in the multiprocess workflow.
-                std::error_code ec;
-                trx::fs::create_directories(shard_paths[i], ec);
-                if (ec) {
-                  throw std::runtime_error("Failed to create shard dir: " + shard_paths[i] + " " + ec.message());
-                }
-                std::ofstream status(status_paths[i], std::ios::out | std::ios::trunc);
-                if (status.is_open()) {
-                  status << "pending\n";
-                }
-              }
-              if (parse_env_bool("TRX_BENCH_LOG", false)) {
-                for (size_t i = 0; i < processes; ++i) {
-                  std::cerr << "[trx-bench] shard_path[" << i << "] " << shard_paths[i] << std::endl;
-                }
-              }
-
-  std::vector<pid_t> pids;
-  pids.reserve(processes);
-  for (size_t i = 0; i < processes; ++i) {
-    const pid_t pid = fork();
-    if (pid == 0) {
-      try {
-        setenv("TRX_BENCH_THREADS", "1", 1);
-        setenv("TRX_BENCH_BATCH", "1000", 1);
-        setenv("TRX_BENCH_LOG", "0", 1);
-        setenv("TRX_BENCH_SHARD_INDEX", std::to_string(i).c_str(), 1);
-        if (parse_env_bool("TRX_BENCH_LOG", false)) {
-          std::cerr << "[trx-bench] shard_child_start path=" << shard_paths[i] << std::endl;
-        }
-        {
-          std::ofstream status(status_paths[i], std::ios::out | std::ios::trunc);
-          if (status.is_open()) {
-            status << "started pid=" << getpid() << "\n";
-            status.flush();
-          }
-        }
-        build_trx_shard(shard_paths[i], counts[i], scenario, add_dps, add_dpv, profile, compression);
-        {
-          std::ofstream status(status_paths[i], std::ios::out | std::ios::trunc);
-          if (status.is_open()) {
-            status << "ok\n";
-            status.flush();
-          }
-        }
-        _exit(0);
-      } catch (const std::exception &ex) {
-        std::ofstream out(status_paths[i], std::ios::out | std::ios::trunc);
-        if (out.is_open()) {
-          out << ex.what() << "\n";
-          out.flush();
-          out.close();
-        }
-        _exit(1);
-      } catch (...) {
-        std::ofstream out(status_paths[i], std::ios::out | std::ios::trunc);
-        if (out.is_open()) {
-          out << "Unknown error\n";
-          out.flush();
-          out.close();
-        }
-        _exit(1);
-      }
-    }
-    if (pid < 0) {
-      throw std::runtime_error("Failed to fork shard process");
-    }
-    pids.push_back(pid);
-  }
-
-  for (size_t i = 0; i < pids.size(); ++i) {
-    const auto pid = pids[i];
-    int status = 0;
-    waitpid(pid, &status, 0);
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-      std::string detail;
-      std::ifstream in(status_paths[i]);
-      if (in.is_open()) {
-        std::getline(in, detail);
-      }
-      if (detail.empty()) {
-        detail = "No status file content";
-      }
-      throw std::runtime_error("Shard process failed: " + detail);
-    }
-  }
-
-  const size_t shard_wait_ms = parse_env_size("TRX_BENCH_SHARD_WAIT_MS", 10000);
-  wait_for_shard_ok(shard_paths, status_paths, shard_wait_ms);
-
-  size_t total_vertices = 0;
-  size_t total_streamlines = 0;
-  std::vector<size_t> shard_vertices(processes, 0);
-  std::vector<size_t> shard_streamlines(processes, 0);
-  for (size_t i = 0; i < processes; ++i) {
-    const auto ok_path = trx::fs::path(shard_paths[i]) / "SHARD_OK";
-    std::error_code ok_ec;
-    if (!trx::fs::exists(ok_path, ok_ec)) {
-      std::string detail;
-      std::ifstream in(status_paths[i]);
-      if (in.is_open()) {
-        std::getline(in, detail);
-      }
-      if (detail.empty()) {
-        detail = "SHARD_OK missing for " + shard_paths[i];
-      }
-      throw std::runtime_error("Shard process failed: " + detail);
-    }
-    std::error_code ec;
-    if (!trx::fs::exists(shard_paths[i], ec) || !trx::fs::is_directory(shard_paths[i], ec)) {
-      const auto root_files = list_files(shard_root);
-      std::string detail = "Shard output directory missing: " + shard_paths[i];
-      if (!root_files.empty()) {
-        detail += " root_files=[";
-        for (size_t j = 0; j < root_files.size(); ++j) {
-          if (j > 0) {
-            detail += ",";
-          }
-          detail += root_files[j];
-        }
-        detail += "]";
-      }
-      throw std::runtime_error(detail);
-    }
-    const auto header_path = trx::fs::path(shard_paths[i]) / "header.json";
-    if (!trx::fs::exists(header_path, ec)) {
-      const auto files = list_files(shard_paths[i]);
-      std::string detail = "Shard missing header.json: " + header_path.string();
-      if (!files.empty()) {
-        detail += " files=[";
-        for (size_t j = 0; j < files.size(); ++j) {
-          if (j > 0) {
-            detail += ",";
-          }
-          detail += files[j];
-        }
-        detail += "]";
-      }
-      const auto root_files = list_files(shard_root);
-      if (!root_files.empty()) {
-        detail += " root_files=[";
-        for (size_t j = 0; j < root_files.size(); ++j) {
-          if (j > 0) {
-            detail += ",";
-          }
-          detail += root_files[j];
-        }
-        detail += "]";
-      }
-      throw std::runtime_error(detail);
-    }
-    const auto counts = read_header_counts(shard_paths[i]);
-    shard_streamlines[i] = counts.first;
-    shard_vertices[i] = counts.second;
-    total_streamlines += counts.first;
-    total_vertices += counts.second;
-  }
-
-              const auto merge_start = std::chrono::steady_clock::now();
-              const std::string out_path = make_temp_path("trx_input");
-
-              trx::MergeTrxShardsOptions merge_opts;
-              merge_opts.shard_directories = shard_paths;
-              merge_opts.output_path = out_path;
-              merge_opts.compression_standard = compression;
-              merge_opts.output_directory = false;
-              merge_opts.overwrite_existing = true;
-              trx::merge_trx_shards(merge_opts);
-
-              register_cleanup(out_path);
-              const auto merge_end = std::chrono::steady_clock::now();
-              const std::chrono::duration<double, std::milli> merge_elapsed = merge_end - merge_start;
-
-              // Final cleanup of shard directories after merge is complete
-              if (!parse_env_bool("TRX_BENCH_KEEP_SHARDS", false)) {
-                std::error_code ec;
-                trx::fs::remove_all(shard_root, ec);
-              }
-              return {out_path, streamlines, total_vertices, merge_elapsed.count(), processes};
-#else
-  (void)processes;
-  return build_trx_file_on_disk_single(streamlines, scenario, add_dps, add_dpv, profile, compression);
-#endif
+  return build_trx_file_on_disk_single(streamlines, scenario, add_dps, add_dpv, compression);
 }
 
 struct QueryDataset {
@@ -1202,7 +664,6 @@ struct ScenarioParams {
   GroupScenario scenario = GroupScenario::None;
   bool add_dps = false;
   bool add_dpv = false;
-  LengthProfile profile = LengthProfile::Mixed;
 };
 
 struct KeyHash {
@@ -1264,18 +725,29 @@ void maybe_write_query_timings(const ScenarioParams &scenario, const std::vector
 
 static void BM_TrxFileSize_Float16(benchmark::State &state) {
   const size_t streamlines = static_cast<size_t>(state.range(0));
-  const auto profile = static_cast<LengthProfile>(state.range(1));
+  const auto scenario = static_cast<GroupScenario>(state.range(1));
   const bool add_dps = state.range(2) != 0;
   const bool add_dpv = state.range(3) != 0;
   const bool use_zip = state.range(4) != 0;
   const auto compression = use_zip ? ZIP_CM_DEFLATE : ZIP_CM_STORE;
   const size_t skip_zip_at = parse_env_size("TRX_BENCH_SKIP_ZIP_AT", 5000000);
+  const size_t skip_dpv_at = parse_env_size("TRX_BENCH_SKIP_DPV_AT", 10000000);
+  const size_t skip_connectome_at = parse_env_size("TRX_BENCH_SKIP_CONNECTOME_AT", 5000000);
   if (use_zip && streamlines >= skip_zip_at) {
     state.SkipWithMessage("zip compression skipped for large streamlines");
     return;
   }
+  if (add_dpv && streamlines >= skip_dpv_at) {
+    state.SkipWithMessage("dpv skipped: requires 40-50 GB memory (set TRX_BENCH_SKIP_DPV_AT=0 to force)");
+    return;
+  }
+  if (scenario == GroupScenario::Connectome && streamlines >= skip_connectome_at) {
+    state.SkipWithMessage("connectome groups skipped for large streamlines (set TRX_BENCH_SKIP_CONNECTOME_AT=0 to force)");
+    return;
+  }
   log_bench_start("BM_TrxFileSize_Float16",
-                  "streamlines=" + std::to_string(streamlines) + " profile=" + std::to_string(state.range(1)) +
+                  "streamlines=" + std::to_string(streamlines) +
+                      " group_case=" + std::to_string(state.range(1)) +
                       " dps=" + std::to_string(static_cast<int>(add_dps)) +
                       " dpv=" + std::to_string(static_cast<int>(add_dpv)) +
                       " compression=" + std::to_string(static_cast<int>(use_zip)));
@@ -1288,7 +760,7 @@ static void BM_TrxFileSize_Float16(benchmark::State &state) {
   for (auto _ : state) {
     const auto start = std::chrono::steady_clock::now();
     const auto on_disk =
-        build_trx_file_on_disk(streamlines, GroupScenario::None, add_dps, add_dpv, profile, compression);
+        build_trx_file_on_disk(streamlines, scenario, add_dps, add_dpv, compression);
     const auto end = std::chrono::steady_clock::now();
     const std::chrono::duration<double, std::milli> elapsed = end - start;
     total_build_ms += elapsed.count();
@@ -1299,7 +771,8 @@ static void BM_TrxFileSize_Float16(benchmark::State &state) {
   }
 
   state.counters["streamlines"] = static_cast<double>(streamlines);
-  state.counters["length_profile"] = static_cast<double>(state.range(1));
+  state.counters["group_case"] = static_cast<double>(state.range(1));
+  state.counters["group_count"] = static_cast<double>(group_count_for(scenario));
   state.counters["dps"] = add_dps ? 1.0 : 0.0;
   state.counters["dpv"] = add_dpv ? 1.0 : 0.0;
   state.counters["compression"] = use_zip ? 1.0 : 0.0;
@@ -1314,7 +787,7 @@ static void BM_TrxFileSize_Float16(benchmark::State &state) {
   state.counters["max_rss_kb"] = get_max_rss_kb();
 
   log_bench_end("BM_TrxFileSize_Float16",
-                "streamlines=" + std::to_string(streamlines) + " profile=" + std::to_string(state.range(1)));
+                "streamlines=" + std::to_string(streamlines));
 }
 
 static void BM_TrxStream_TranslateWrite(benchmark::State &state) {
@@ -1323,7 +796,6 @@ static void BM_TrxStream_TranslateWrite(benchmark::State &state) {
   const bool add_dps = state.range(2) != 0;
   const bool add_dpv = state.range(3) != 0;
   const size_t progress_every = parse_env_size("TRX_BENCH_LOG_PROGRESS_EVERY", 0);
-  log_bench_config("translate_write", bench_threads(), std::max<size_t>(1, bench_batch_size()));
   log_bench_start("BM_TrxStream_TranslateWrite",
                   "streamlines=" + std::to_string(streamlines) + " group_case=" + std::to_string(state.range(1)) +
                       " dps=" + std::to_string(static_cast<int>(add_dps)) +
@@ -1336,7 +808,7 @@ static void BM_TrxStream_TranslateWrite(benchmark::State &state) {
   if (cache.find(key) == cache.end()) {
     state.PauseTiming();
     cache.emplace(key,
-                  build_trx_file_on_disk(streamlines, scenario, add_dps, add_dpv, LengthProfile::Mixed, ZIP_CM_STORE));
+                  build_trx_file_on_disk(streamlines, scenario, add_dps, add_dpv, ZIP_CM_STORE));
     state.ResumeTiming();
   }
 
@@ -1417,7 +889,6 @@ static void BM_TrxStream_TranslateWrite(benchmark::State &state) {
   state.counters["group_count"] = static_cast<double>(group_count_for(scenario));
   state.counters["dps"] = add_dps ? 1.0 : 0.0;
   state.counters["dpv"] = add_dpv ? 1.0 : 0.0;
-  state.counters["length_profile"] = static_cast<double>(static_cast<int>(LengthProfile::Mixed));
   state.counters["positions_dtype"] = 16.0;
   state.counters["max_rss_kb"] = get_max_rss_kb();
 
@@ -1442,7 +913,7 @@ static void BM_TrxQueryAabb_Slabs(benchmark::State &state) {
   if (cache.find(key) == cache.end()) {
     state.PauseTiming();
     QueryDataset dataset;
-    auto on_disk = build_trx_file_on_disk(streamlines, scenario, add_dps, add_dpv, LengthProfile::Mixed, ZIP_CM_STORE);
+    auto on_disk = build_trx_file_on_disk(streamlines, scenario, add_dps, add_dpv, ZIP_CM_STORE);
     dataset.trx = trx::load<half>(on_disk.path);
     dataset.trx->get_or_build_streamline_aabbs();
     build_slabs(dataset.slab_mins, dataset.slab_maxs);
@@ -1486,7 +957,6 @@ static void BM_TrxQueryAabb_Slabs(benchmark::State &state) {
     params.scenario = scenario;
     params.add_dps = add_dps;
     params.add_dpv = add_dpv;
-    params.profile = LengthProfile::Mixed;
     maybe_write_query_timings(params, slab_times_ms);
   }
 
@@ -1505,14 +975,12 @@ static void BM_TrxQueryAabb_Slabs(benchmark::State &state) {
 }
 
 static void ApplySizeArgs(benchmark::internal::Benchmark *bench) {
-  const std::array<int, 3> profiles = {static_cast<int>(LengthProfile::Short),
-                                       static_cast<int>(LengthProfile::Medium),
-                                       static_cast<int>(LengthProfile::Long)};
   const std::array<int, 2> flags = {0, 1};
   const bool core_profile = is_core_profile();
   const size_t dpv_limit = core_dpv_max_streamlines();
   const size_t zip_limit = core_zip_max_streamlines();
   const auto counts_desc = streamlines_for_benchmarks();
+  const auto groups = group_cases_for_benchmarks();
   for (const auto count : counts_desc) {
     const std::vector<int> dpv_flags = (!core_profile || count <= dpv_limit)
                                            ? std::vector<int>{0, 1}
@@ -1520,11 +988,11 @@ static void ApplySizeArgs(benchmark::internal::Benchmark *bench) {
     const std::vector<int> compression_flags = (!core_profile || count <= zip_limit)
                                                    ? std::vector<int>{0, 1}
                                                    : std::vector<int>{0};
-    for (const auto profile : profiles) {
+    for (const auto group_case : groups) {
       for (const auto dps : flags) {
         for (const auto dpv : dpv_flags) {
           for (const auto compression : compression_flags) {
-            bench->Args({static_cast<int64_t>(count), profile, dps, dpv, compression});
+            bench->Args({static_cast<int64_t>(count), group_case, dps, dpv, compression});
           }
         }
       }
@@ -1591,6 +1059,7 @@ int main(int argc, char **argv) {
   // Parse custom flags before benchmark::Initialize
   bool verbose = false;
   bool show_help = false;
+  std::string reference_trx;
   
   // First pass: detect custom flags
   for (int i = 1; i < argc; ++i) {
@@ -1599,19 +1068,42 @@ int main(int argc, char **argv) {
       verbose = true;
     } else if (arg == "--help-custom") {
       show_help = true;
+    } else if (arg == "--reference-trx" && i + 1 < argc) {
+      reference_trx = argv[i + 1];
+      ++i;  // Skip next arg since it's the value
     }
   }
   
   if (show_help) {
     std::cout << "\nCustom benchmark options:\n"
-              << "  --verbose, -v      Enable verbose progress logging (prints every 50k streamlines)\n"
-              << "                     Equivalent to: TRX_BENCH_LOG=1 TRX_BENCH_CHILD_LOG=1 \n"
-              << "                     TRX_BENCH_LOG_PROGRESS_EVERY=50000\n"
-              << "  --help-custom      Show this help message\n"
+              << "  --reference-trx PATH   Path to reference TRX file for sampling (REQUIRED)\n"
+              << "  --verbose, -v          Enable verbose progress logging (prints every 50k streamlines)\n"
+              << "                         Equivalent to: TRX_BENCH_LOG=1 TRX_BENCH_CHILD_LOG=1 \n"
+              << "                         TRX_BENCH_LOG_PROGRESS_EVERY=50000\n"
+              << "  --help-custom          Show this help message\n"
               << "\nFor standard benchmark options, use --help\n"
               << std::endl;
     return 0;
   }
+  
+  // Validate reference TRX path
+  if (reference_trx.empty()) {
+    std::cerr << "Error: --reference-trx flag is required\n"
+              << "Usage: " << argv[0] << " --reference-trx <path_to_trx_file> [benchmark_options]\n"
+              << "Use --help-custom for more information\n" << std::endl;
+    return 1;
+  }
+  
+  // Check if reference file exists
+  std::error_code ec;
+  if (!std::filesystem::exists(reference_trx, ec)) {
+    std::cerr << "Error: Reference TRX file not found: " << reference_trx << std::endl;
+    return 1;
+  }
+  
+  // Set global reference path
+  g_reference_trx_path = reference_trx;
+  std::cerr << "[trx-bench] Using reference TRX: " << g_reference_trx_path << std::endl;
   
   // Enable verbose logging if requested
   if (verbose) {
@@ -1630,9 +1122,13 @@ int main(int argc, char **argv) {
   filtered_argv.push_back(argv[0]);  // Keep program name
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
-    if (arg != "--verbose" && arg != "-v" && arg != "--help-custom") {
-      filtered_argv.push_back(argv[i]);
+    if (arg == "--verbose" || arg == "-v" || arg == "--help-custom") {
+      continue;
+    } else if (arg == "--reference-trx") {
+      ++i;  // Skip the next arg (the path value)
+      continue;
     }
+    filtered_argv.push_back(argv[i]);
   }
   int filtered_argc = static_cast<int>(filtered_argv.size());
   

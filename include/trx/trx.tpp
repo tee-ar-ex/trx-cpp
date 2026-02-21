@@ -1068,44 +1068,109 @@ auto with_trx_reader(const std::string &path, Fn &&fn)
 }
 
 template <typename DT> void TrxFile<DT>::save(const std::string &filename, zip_uint32_t compression_standard) {
+  TrxSaveOptions options;
+  options.compression_standard = compression_standard;
+  save(filename, options);
+}
+
+template <typename DT> void TrxFile<DT>::normalize_for_save() {
+  if (!this->streamlines) {
+    throw std::runtime_error("Cannot normalize TRX without streamline data");
+  }
+  if (this->streamlines->_offsets.size() == 0) {
+    throw std::runtime_error("Cannot normalize TRX without offsets data");
+  }
+
+  const size_t offsets_count = static_cast<size_t>(this->streamlines->_offsets.size());
+  if (offsets_count < 1) {
+    throw std::runtime_error("Invalid offsets array");
+  }
+  const size_t total_streamlines = offsets_count - 1;
+  const uint64_t data_rows = static_cast<uint64_t>(this->streamlines->_data.rows());
+
+  size_t used_streamlines = total_streamlines;
+  for (size_t i = 1; i < offsets_count; ++i) {
+    const uint64_t prev = static_cast<uint64_t>(this->streamlines->_offsets(static_cast<Eigen::Index>(i - 1)));
+    const uint64_t curr = static_cast<uint64_t>(this->streamlines->_offsets(static_cast<Eigen::Index>(i)));
+    if (curr < prev || curr > data_rows) {
+      used_streamlines = i - 1;
+      break;
+    }
+  }
+
+  const uint64_t used_vertices =
+      static_cast<uint64_t>(this->streamlines->_offsets(static_cast<Eigen::Index>(used_streamlines)));
+  if (used_vertices > data_rows) {
+    throw std::runtime_error("TRX offsets exceed positions row count");
+  }
+  if (used_vertices > static_cast<uint64_t>(std::numeric_limits<int>::max()) ||
+      used_streamlines > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    throw std::runtime_error("TRX normalize_for_save exceeds supported int range");
+  }
+
+  if (used_streamlines < total_streamlines || used_vertices < data_rows) {
+    this->resize(static_cast<int>(used_streamlines), static_cast<int>(used_vertices));
+  }
+
+  const size_t normalized_streamlines = static_cast<size_t>(this->streamlines->_offsets.size()) - 1;
+  for (size_t i = 0; i < normalized_streamlines; ++i) {
+    const uint64_t curr = static_cast<uint64_t>(this->streamlines->_offsets(static_cast<Eigen::Index>(i)));
+    const uint64_t next = static_cast<uint64_t>(this->streamlines->_offsets(static_cast<Eigen::Index>(i + 1)));
+    if (next < curr) {
+      throw std::runtime_error("TRX offsets must be monotonically increasing");
+    }
+    const uint64_t diff = next - curr;
+    if (diff > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
+      throw std::runtime_error("TRX streamline length exceeds uint32 range");
+    }
+    this->streamlines->_lengths(static_cast<Eigen::Index>(i)) = static_cast<uint32_t>(diff);
+  }
+
+  const uint64_t sentinel = static_cast<uint64_t>(
+      this->streamlines->_offsets(static_cast<Eigen::Index>(this->streamlines->_offsets.size() - 1)));
+  this->header = _json_set(this->header, "NB_STREAMLINES", static_cast<int>(normalized_streamlines));
+  this->header = _json_set(this->header, "NB_VERTICES", static_cast<int>(sentinel));
+}
+
+template <typename DT> void TrxFile<DT>::save(const std::string &filename, const TrxSaveOptions &options) {
   std::string ext = get_ext(filename);
 
-  if (ext.size() > 0 && (ext != "zip" && ext != "trx")) {
+  if (ext.size() > 0 && (ext != "zip" && ext != "trx") && options.mode == TrxSaveMode::Archive) {
     throw std::invalid_argument("Unsupported extension." + ext);
   }
 
-  auto copy_trx = this->deepcopy();
-  copy_trx->resize();
-  if (!copy_trx->streamlines || copy_trx->streamlines->_offsets.size() == 0) {
+  TrxFile<DT> *save_trx = this;
+
+  if (!save_trx->streamlines || save_trx->streamlines->_offsets.size() == 0) {
     throw std::runtime_error("Cannot save TRX without offsets data");
   }
-  if (copy_trx->header["NB_STREAMLINES"].is_number()) {
-    const auto nb_streamlines = static_cast<size_t>(copy_trx->header["NB_STREAMLINES"].int_value());
-    if (copy_trx->streamlines->_offsets.size() != static_cast<Eigen::Index>(nb_streamlines + 1)) {
+  if (save_trx->header["NB_STREAMLINES"].is_number()) {
+    const auto nb_streamlines = static_cast<size_t>(save_trx->header["NB_STREAMLINES"].int_value());
+    if (save_trx->streamlines->_offsets.size() != static_cast<Eigen::Index>(nb_streamlines + 1)) {
       throw std::runtime_error("TRX offsets size does not match NB_STREAMLINES");
     }
   }
-  if (copy_trx->header["NB_VERTICES"].is_number()) {
-    const auto nb_vertices = static_cast<uint64_t>(copy_trx->header["NB_VERTICES"].int_value());
+  if (save_trx->header["NB_VERTICES"].is_number()) {
+    const auto nb_vertices = static_cast<uint64_t>(save_trx->header["NB_VERTICES"].int_value());
     const auto last =
-        static_cast<uint64_t>(copy_trx->streamlines->_offsets(copy_trx->streamlines->_offsets.size() - 1));
+        static_cast<uint64_t>(save_trx->streamlines->_offsets(save_trx->streamlines->_offsets.size() - 1));
     if (last != nb_vertices) {
       throw std::runtime_error("TRX offsets sentinel does not match NB_VERTICES");
     }
   }
-  for (Eigen::Index i = 1; i < copy_trx->streamlines->_offsets.size(); ++i) {
-    if (copy_trx->streamlines->_offsets(i) < copy_trx->streamlines->_offsets(i - 1)) {
+  for (Eigen::Index i = 1; i < save_trx->streamlines->_offsets.size(); ++i) {
+    if (save_trx->streamlines->_offsets(i) < save_trx->streamlines->_offsets(i - 1)) {
       throw std::runtime_error("TRX offsets must be monotonically increasing");
     }
   }
-  if (copy_trx->streamlines->_data.size() > 0) {
+  if (save_trx->streamlines->_data.size() > 0) {
     const auto last =
-        static_cast<uint64_t>(copy_trx->streamlines->_offsets(copy_trx->streamlines->_offsets.size() - 1));
-    if (last != static_cast<uint64_t>(copy_trx->streamlines->_data.rows())) {
+        static_cast<uint64_t>(save_trx->streamlines->_offsets(save_trx->streamlines->_offsets.size() - 1));
+    if (last != static_cast<uint64_t>(save_trx->streamlines->_data.rows())) {
       throw std::runtime_error("TRX positions row count does not match offsets sentinel");
     }
   }
-  std::string tmp_dir_name = copy_trx->_uncompressed_folder_handle;
+  std::string tmp_dir_name = save_trx->_uncompressed_folder_handle;
 
   if (!tmp_dir_name.empty()) {
     const std::string header_path = tmp_dir_name + SEPARATOR + "header.json";
@@ -1113,41 +1178,40 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, zip_u
     if (!out_json.is_open()) {
       throw std::runtime_error("Failed to write header.json to: " + header_path);
     }
-    out_json << copy_trx->header.dump() << std::endl;
+    out_json << save_trx->header.dump() << std::endl;
     out_json.close();
   }
 
-  if (ext.size() > 0 && (ext == "zip" || ext == "trx")) {
-    auto sync_unmap_seq = [](auto &seq) {
+  const bool write_archive = options.mode == TrxSaveMode::Archive ||
+                             (options.mode == TrxSaveMode::Auto && ext.size() > 0 && (ext == "zip" || ext == "trx"));
+  if (write_archive) {
+    auto sync_unmap_seq = [&](auto &seq) {
       if (!seq) {
         return;
       }
       std::error_code ec;
       seq->mmap_pos.sync(ec);
-      seq->mmap_pos.unmap();
       seq->mmap_off.sync(ec);
-      seq->mmap_off.unmap();
     };
-    auto sync_unmap_mat = [](auto &mat) {
+    auto sync_unmap_mat = [&](auto &mat) {
       if (!mat) {
         return;
       }
       std::error_code ec;
       mat->mmap.sync(ec);
-      mat->mmap.unmap();
     };
 
-    sync_unmap_seq(copy_trx->streamlines);
-    for (auto &kv : copy_trx->groups) {
+    sync_unmap_seq(save_trx->streamlines);
+    for (auto &kv : save_trx->groups) {
       sync_unmap_mat(kv.second);
     }
-    for (auto &kv : copy_trx->data_per_streamline) {
+    for (auto &kv : save_trx->data_per_streamline) {
       sync_unmap_mat(kv.second);
     }
-    for (auto &kv : copy_trx->data_per_vertex) {
+    for (auto &kv : save_trx->data_per_vertex) {
       sync_unmap_seq(kv.second);
     }
-    for (auto &group_kv : copy_trx->data_per_group) {
+    for (auto &group_kv : save_trx->data_per_group) {
       for (auto &kv : group_kv.second) {
         sync_unmap_mat(kv.second);
       }
@@ -1158,7 +1222,7 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, zip_u
     if ((zf = zip_open(filename.c_str(), ZIP_CREATE + ZIP_TRUNCATE, &errorp)) == nullptr) {
       throw std::runtime_error("Could not open archive " + filename + ": " + strerror(errorp));
     } else {
-      zip_from_folder(zf, tmp_dir_name, tmp_dir_name, compression_standard, nullptr);
+      zip_from_folder(zf, tmp_dir_name, tmp_dir_name, options.compression_standard, nullptr);
       if (zip_close(zf) != 0) {
         throw std::runtime_error("Unable to close archive " + filename + ": " + zip_strerror(zf));
       }
@@ -1169,6 +1233,9 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, zip_u
       throw std::runtime_error("Temporary TRX directory does not exist: " + tmp_dir_name);
     }
     if (trx::fs::exists(filename, ec) && trx::fs::is_directory(filename, ec)) {
+      if (!options.overwrite_existing) {
+        throw std::runtime_error("Output directory already exists: " + filename);
+      }
       if (rm_dir(filename) != 0) {
         throw std::runtime_error("Could not remove existing directory " + filename);
       }
@@ -1190,7 +1257,6 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, zip_u
     if (!trx::fs::exists(header_path)) {
       throw std::runtime_error("Missing header.json in output directory: " + header_path.string());
     }
-    copy_trx->close();
   }
 }
 
@@ -1938,6 +2004,45 @@ template <typename DT> void TrxStream::finalize(const std::string &filename, zip
   cleanup_tmp();
 }
 
+inline void TrxStream::finalize(const std::string &filename,
+                                TrxScalarType output_dtype,
+                                zip_uint32_t compression_standard) {
+  switch (output_dtype) {
+  case TrxScalarType::Float16:
+    finalize<half>(filename, compression_standard);
+    break;
+  case TrxScalarType::Float64:
+    finalize<double>(filename, compression_standard);
+    break;
+  case TrxScalarType::Float32:
+  default:
+    finalize<float>(filename, compression_standard);
+    break;
+  }
+}
+
+inline void TrxStream::finalize(const std::string &filename, const TrxSaveOptions &options) {
+  if (options.mode == TrxSaveMode::Directory) {
+    if (finalized_) {
+      throw std::runtime_error("TrxStream already finalized");
+    }
+    if (options.overwrite_existing) {
+      finalize_directory(filename);
+    } else {
+      finalize_directory_persistent(filename);
+    }
+    return;
+  }
+
+  TrxScalarType out_type = TrxScalarType::Float32;
+  if (positions_dtype_ == "float16") {
+    out_type = TrxScalarType::Float16;
+  } else if (positions_dtype_ == "float64") {
+    out_type = TrxScalarType::Float64;
+  }
+  finalize(filename, out_type, options.compression_standard);
+}
+
 inline void TrxStream::finalize_directory_impl(const std::string &directory, bool remove_existing) {
   if (finalized_) {
     throw std::runtime_error("TrxStream already finalized");
@@ -2601,6 +2706,14 @@ std::vector<std::array<Eigen::half, 6>> TrxFile<DT>::build_streamline_aabbs() co
 }
 
 template <typename DT>
+const std::vector<std::array<Eigen::half, 6>> &TrxFile<DT>::get_or_build_streamline_aabbs() const {
+  if (this->aabb_cache_.empty()) {
+    this->build_streamline_aabbs();
+  }
+  return this->aabb_cache_;
+}
+
+template <typename DT>
 std::unique_ptr<TrxFile<DT>> TrxFile<DT>::query_aabb(
     const std::array<float, 3> &min_corner,
     const std::array<float, 3> &max_corner,
@@ -2665,6 +2778,64 @@ std::unique_ptr<TrxFile<DT>> TrxFile<DT>::query_aabb(
 template <typename DT>
 void TrxFile<DT>::invalidate_aabb_cache() const {
   this->aabb_cache_.clear();
+}
+
+template <typename DT>
+const MMappedMatrix<DT> *TrxFile<DT>::get_dps(const std::string &name) const {
+  auto it = this->data_per_streamline.find(name);
+  if (it == this->data_per_streamline.end()) {
+    return nullptr;
+  }
+  return it->second.get();
+}
+
+template <typename DT>
+const ArraySequence<DT> *TrxFile<DT>::get_dpv(const std::string &name) const {
+  auto it = this->data_per_vertex.find(name);
+  if (it == this->data_per_vertex.end()) {
+    return nullptr;
+  }
+  return it->second.get();
+}
+
+template <typename DT>
+std::vector<std::array<DT, 3>> TrxFile<DT>::get_streamline(size_t streamline_index) const {
+  if (!this->streamlines || this->streamlines->_offsets.size() == 0) {
+    throw std::runtime_error("TRX streamlines are not available");
+  }
+  const size_t n_streamlines = static_cast<size_t>(this->streamlines->_offsets.size() - 1);
+  if (streamline_index >= n_streamlines) {
+    throw std::out_of_range("Streamline index out of range");
+  }
+
+  const uint64_t start = static_cast<uint64_t>(this->streamlines->_offsets(static_cast<Eigen::Index>(streamline_index), 0));
+  const uint64_t end =
+      static_cast<uint64_t>(this->streamlines->_offsets(static_cast<Eigen::Index>(streamline_index + 1), 0));
+  std::vector<std::array<DT, 3>> points;
+  if (end <= start) {
+    return points;
+  }
+  points.reserve(static_cast<size_t>(end - start));
+  for (uint64_t i = start; i < end; ++i) {
+    points.push_back({this->streamlines->_data(static_cast<Eigen::Index>(i), 0),
+                      this->streamlines->_data(static_cast<Eigen::Index>(i), 1),
+                      this->streamlines->_data(static_cast<Eigen::Index>(i), 2)});
+  }
+  return points;
+}
+
+template <typename DT>
+template <typename Fn>
+void TrxFile<DT>::for_each_streamline(Fn &&fn) const {
+  if (!this->streamlines || this->streamlines->_offsets.size() == 0) {
+    return;
+  }
+  const size_t n_streamlines = static_cast<size_t>(this->streamlines->_offsets.size() - 1);
+  for (size_t i = 0; i < n_streamlines; ++i) {
+    const uint64_t start = static_cast<uint64_t>(this->streamlines->_offsets(static_cast<Eigen::Index>(i), 0));
+    const uint64_t end = static_cast<uint64_t>(this->streamlines->_offsets(static_cast<Eigen::Index>(i + 1), 0));
+    fn(i, start, end - start);
+  }
 }
 
 template <typename DT>

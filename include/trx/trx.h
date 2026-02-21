@@ -39,6 +39,15 @@ namespace fs = std::filesystem;
 using json = json11::Json;
 
 namespace trx {
+enum class TrxSaveMode { Auto, Archive, Directory };
+
+struct TrxSaveOptions {
+  zip_uint32_t compression_standard = ZIP_CM_STORE;
+  TrxSaveMode mode = TrxSaveMode::Auto;
+  size_t memory_limit_bytes = 0; // Reserved for future save-path tuning.
+  bool overwrite_existing = true;
+};
+
 inline json::object _json_object(const json &value) {
   if (value.is_object()) {
     return value.object_items();
@@ -280,6 +289,14 @@ public:
    * @param compression_standard The compression standard to use, as defined by libzip (default: no compression)
    */
   void save(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+  void save(const std::string &filename, const TrxSaveOptions &options);
+  /**
+   * @brief Normalize in-memory arrays for deterministic save semantics.
+   *
+   * This trims trailing preallocated rows when detected, rewrites lengths from
+   * offsets, and synchronizes header counts with the actual payload.
+   */
+  void normalize_for_save();
 
   void add_dps_from_text(const std::string &name, const std::string &dtype, const std::string &path);
   template <typename T>
@@ -352,6 +369,8 @@ public:
    * Each entry is {min_x, min_y, min_z, max_x, max_y, max_z} in TRX coordinates.
    */
   std::vector<std::array<Eigen::half, 6>> build_streamline_aabbs() const;
+  const std::vector<std::array<Eigen::half, 6>> &get_or_build_streamline_aabbs() const;
+  void invalidate_aabb_cache() const;
 
   /**
    * @brief Extract a subset of streamlines intersecting an axis-aligned box.
@@ -382,6 +401,11 @@ public:
   std::unique_ptr<TrxFile<DT>>
   subset_streamlines(const std::vector<uint32_t> &streamline_ids,
                      bool build_cache_for_result = false) const;
+
+  const MMappedMatrix<DT> *get_dps(const std::string &name) const;
+  const ArraySequence<DT> *get_dpv(const std::string &name) const;
+  std::vector<std::array<DT, 3>> get_streamline(size_t streamline_index) const;
+  template <typename Fn> void for_each_streamline(Fn &&fn) const;
 
   /**
    * @brief Add a data-per-group (DPG) field from a flat vector.
@@ -432,7 +456,6 @@ public:
   void remove_dpg_group(const std::string &group);
 
 private:
-  void invalidate_aabb_cache() const;
   mutable std::vector<std::array<Eigen::half, 6>> aabb_cache_;
   /**
    * @brief Load a TrxFile from a zip archive.
@@ -597,6 +620,11 @@ public:
   size_t num_streamlines() const;
   void close();
   void save(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+  void save(const std::string &filename, const TrxSaveOptions &options);
+
+  const TypedArray *get_dps(const std::string &name) const;
+  const TypedArray *get_dpv(const std::string &name) const;
+  std::vector<std::array<double, 3>> get_streamline(size_t streamline_index) const;
 
   using PositionsChunkCallback =
       std::function<void(TrxScalarType dtype, const void *data, size_t point_offset, size_t point_count)>;
@@ -713,6 +741,10 @@ public:
    * @brief Finalize and write a TRX file.
    */
   template <typename DT> void finalize(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+  void finalize(const std::string &filename,
+                TrxScalarType output_dtype,
+                zip_uint32_t compression_standard = ZIP_CM_STORE);
+  void finalize(const std::string &filename, const TrxSaveOptions &options);
 
   /**
    * @brief Finalize and write a TRX directory (no zip).
@@ -875,6 +907,10 @@ struct PositionsOutputInfo {
   size_t points = 0;
 };
 
+struct PrepareOutputOptions {
+  bool overwrite_existing = true;
+};
+
 /**
  * @brief Prepare an output directory with copied metadata and offsets.
  *
@@ -882,7 +918,19 @@ struct PositionsOutputInfo {
  * metadata (groups, dps, dpv, dpg), and returns where the positions file
  * should be written.
  */
-PositionsOutputInfo prepare_positions_output(const AnyTrxFile &input, const std::string &output_directory);
+PositionsOutputInfo prepare_positions_output(const AnyTrxFile &input,
+                                             const std::string &output_directory,
+                                             const PrepareOutputOptions &options = {});
+
+struct MergeTrxShardsOptions {
+  std::vector<std::string> shard_directories;
+  std::string output_path;
+  zip_uint32_t compression_standard = ZIP_CM_STORE;
+  bool output_directory = false;
+  bool overwrite_existing = true;
+};
+
+void merge_trx_shards(const MergeTrxShardsOptions &options);
 
 /**
  * @brief Detect the positions scalar type for a TRX path.

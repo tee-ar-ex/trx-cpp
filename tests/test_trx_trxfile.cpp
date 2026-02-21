@@ -365,3 +365,43 @@ TEST(TrxFileTpp, ResizeDeleteDpgCloses) {
   std::error_code ec;
   fs::remove_all(data_dir, ec);
 }
+
+TEST(TrxFileTpp, NormalizeForSaveRejectsNonMonotonicOffsets) {
+  const fs::path data_dir = create_float_trx_dir();
+  auto src_reader = load_trx_dir<float>(data_dir);
+  auto *src = src_reader.get();
+
+  ASSERT_GE(src->streamlines->_offsets.size(), 3);
+  src->streamlines->_offsets(1) = 5;
+  src->streamlines->_offsets(2) = 4;
+
+  EXPECT_THROW(src->normalize_for_save(), std::runtime_error);
+
+  src->close();
+
+  std::error_code ec;
+  fs::remove_all(data_dir, ec);
+}
+
+TEST(TrxFileTpp, NormalizeForSaveRecomputesLengthsAndHeader) {
+  const fs::path data_dir = create_float_trx_dir();
+  auto reader = load_trx_dir<float>(data_dir);
+  auto *trx = reader.get();
+
+  ASSERT_EQ(trx->streamlines->_offsets.size(), 3);
+  trx->streamlines->_lengths(0) = 99;
+  trx->streamlines->_lengths(1) = 99;
+  trx->header = _json_set(trx->header, "NB_STREAMLINES", 123);
+  trx->header = _json_set(trx->header, "NB_VERTICES", 456);
+
+  trx->normalize_for_save();
+
+  EXPECT_EQ(trx->streamlines->_lengths(0), 2u);
+  EXPECT_EQ(trx->streamlines->_lengths(1), 2u);
+  EXPECT_EQ(trx->header["NB_STREAMLINES"].int_value(), 2);
+  EXPECT_EQ(trx->header["NB_VERTICES"].int_value(), 4);
+
+  trx->close();
+  std::error_code ec;
+  fs::remove_all(data_dir, ec);
+}

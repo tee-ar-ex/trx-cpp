@@ -13,7 +13,8 @@
 #
 # Expected input files (searched in bench-dir):
 #   - results*.json: Main benchmark results (Google Benchmark JSON format)
-#   - query_timings.jsonl: Per-query timing distributions (JSONL format)
+#   - query_timings.jsonl: Canonical per-query timing distributions (JSONL format)
+#   - query_timings_*.jsonl: Legacy/suite-specific timing files (also supported)
 #   - rss_samples.jsonl: Memory samples over time (JSONL format, optional)
 #
 
@@ -26,16 +27,10 @@ suppressPackageStartupMessages({
 })
 
 # Constants
-LENGTH_LABELS <- c(
-  "0" = "mixed",
-  "1" = "short (20-120mm)",
-  "2" = "medium (80-260mm)",
-  "3" = "long (200-500mm)"
-)
-
 GROUP_LABELS <- c(
   "0" = "no groups",
-  "1" = "bundle groups (80)"
+  "1" = "bundle groups (80)",
+  "2" = "connectome groups (1480)"
 )
 
 COMPRESSION_LABELS <- c(
@@ -189,24 +184,28 @@ plot_file_sizes <- function(df, out_dir) {
   sub_df <- sub_df %>%
     mutate(
       file_mb = file_bytes / 1e6,
-      length_label = recode(as.character(length_profile), !!!LENGTH_LABELS),
       compression_label = recode(as.character(compression), !!!COMPRESSION_LABELS),
+      group_label = recode(
+        as.character(ifelse(is.na(group_case), "0", as.character(group_case))),
+        !!!GROUP_LABELS),
       dp_label = sprintf("dpv=%d, dps=%d", as.integer(dpv), as.integer(dps))
     )
-  
-  p <- ggplot(sub_df, aes(x = streamlines, y = file_mb, 
-                          color = length_label, linetype = dp_label)) +
+
+  n_group_levels <- length(unique(sub_df$group_label))
+  plot_height <- if (n_group_levels > 1) 5 + 3 * n_group_levels else 7
+
+  p <- ggplot(sub_df, aes(x = streamlines, y = file_mb,
+                          color = dp_label)) +
     geom_line(linewidth = 0.8) +
     geom_point(size = 2) +
-    facet_wrap(~compression_label, ncol = 2) +
+    facet_grid(group_label ~ compression_label) +
     scale_x_continuous(labels = label_number(scale = 1e-6, suffix = "M")) +
     scale_y_continuous(labels = label_number()) +
     labs(
       title = "TRX file size vs streamlines (float16 positions)",
       x = "Streamlines",
       y = "File size (MB)",
-      color = "Length profile",
-      linetype = "Data per point"
+      color = "Data per streamline/vertex"
     ) +
     theme_bw() +
     theme(
@@ -214,9 +213,9 @@ plot_file_sizes <- function(df, out_dir) {
       legend.box = "vertical",
       strip.background = element_rect(fill = "grey90")
     )
-  
+
   out_path <- file.path(out_dir, "trx_size_vs_streamlines.png")
-  ggsave(out_path, p, width = 12, height = 7, dpi = 160)
+  ggsave(out_path, p, width = 12, height = plot_height, dpi = 160)
   cat("Saved:", out_path, "\n")
 }
 
@@ -324,14 +323,38 @@ load_query_timings <- function(jsonl_path) {
   bind_rows(rows)
 }
 
+#' Load query timings from canonical and legacy JSONL files
+load_all_query_timings <- function(bench_dir) {
+  canonical <- file.path(bench_dir, "query_timings.jsonl")
+  legacy <- list.files(bench_dir, pattern = "^query_timings.*\\.jsonl$", full.names = TRUE)
+  jsonl_paths <- unique(c(canonical, legacy))
+  jsonl_paths <- jsonl_paths[file.exists(jsonl_paths)]
+
+  if (length(jsonl_paths) == 0) {
+    return(NULL)
+  }
+
+  dfs <- lapply(jsonl_paths, function(path) {
+    df <- load_query_timings(path)
+    if (is.null(df) || nrow(df) == 0) {
+      return(NULL)
+    }
+    df$source_file <- basename(path)
+    df
+  })
+  dfs <- dfs[!sapply(dfs, is.null)]
+  if (length(dfs) == 0) {
+    return(NULL)
+  }
+  bind_rows(dfs)
+}
+
 #' Plot query timing distributions
 plot_query_timings <- function(bench_dir, out_dir, group_case = 0, dpv = 0, dps = 0) {
-  jsonl_path <- file.path(bench_dir, "query_timings.jsonl")
-  
-  df <- load_query_timings(jsonl_path)
+  df <- load_all_query_timings(bench_dir)
   
   if (is.null(df) || nrow(df) == 0) {
-    cat("No query_timings.jsonl found or empty, skipping query timing plot\n")
+    cat("No query_timings*.jsonl found or empty, skipping query timing plot\n")
     return(invisible(NULL))
   }
   
