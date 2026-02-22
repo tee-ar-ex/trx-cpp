@@ -420,7 +420,8 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       }
       trx->data_per_vertex[base]->mmap_pos = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
       trx::detail::remap(trx->data_per_vertex[base]->_data, trx->data_per_vertex[base]->mmap_pos.data(), shape);
-      trx::detail::remap(trx->data_per_vertex[base]->_offsets, trx->streamlines->_offsets.data(), shape);
+      trx::detail::remap(trx->data_per_vertex[base]->_offsets, trx->streamlines->_offsets.data(),
+                         int(trx->streamlines->_offsets.rows()), int(trx->streamlines->_offsets.cols()));
       trx->data_per_vertex[base]->_lengths = trx->streamlines->_lengths;
     }
 
@@ -518,7 +519,7 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::deepcopy() {
     auto it = copy->data_per_vertex.find(kv.first);
     if (it != copy->data_per_vertex.end()) {
       it->second->_data = kv.second->_data;
-      it->second->_offsets = kv.second->_offsets;
+      // _offsets is already correctly bound to copy->streamlines->_offsets by _initialize_empty_trx
       it->second->_lengths = kv.second->_lengths;
     }
   }
