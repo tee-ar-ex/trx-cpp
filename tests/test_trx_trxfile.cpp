@@ -447,3 +447,67 @@ TEST(TrxFileTpp, NormalizeForSaveRecomputesLengthsAndHeader) {
   std::error_code ec;
   fs::remove_all(data_dir, ec);
 }
+
+TEST(TrxFileTpp, LoadFromDirectoryMissingHeader) {
+  // Directory exists and has files in it, but no header.json.
+  // Covers the detailed error-diagnostic branch in load_from_directory (lines 980-1006).
+  auto tmp_dir = make_temp_test_dir("trx_no_header");
+  const fs::path dummy = tmp_dir / "positions.3.float32";
+  std::ofstream f(dummy.string(), std::ios::binary);
+  f.close();
+
+  EXPECT_THROW(TrxFile<float>::load_from_directory(tmp_dir.string()), std::runtime_error);
+
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
+
+TEST(TrxFileTpp, TrxStreamFloat16Unbuffered) {
+  // TrxStream("float16") with default unbuffered mode.
+  // Covers the float16 unbuffered write path in push_streamline (lines 1642-1650)
+  // and the float16 read-back loop in finalize (lines 1958-1966).
+  auto tmp_dir = make_temp_test_dir("trx_f16_unbuf");
+  const fs::path out_path = tmp_dir / "f16.trx";
+
+  TrxStream proto("float16");
+  std::vector<float> sl1 = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+  std::vector<float> sl2 = {2.0f, 0.0f, 0.0f};
+  proto.push_streamline(sl1);
+  proto.push_streamline(sl2);
+  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);
+
+  auto trx = load_any(out_path.string());
+  EXPECT_EQ(trx.num_streamlines(), 2u);
+  EXPECT_EQ(trx.num_vertices(), 3u);
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
+
+TEST(TrxFileTpp, TrxStreamFloat16Buffered) {
+  // TrxStream("float16") with a small position buffer.
+  // Pushing two single-point streamlines fills the buffer (6 half-values >= max 6)
+  // and triggers flush_positions_buffer mid-stream (lines 1592-1603, 1660-1673).
+  // finalize then calls flush_positions_buffer again with an empty buffer,
+  // hitting the early-return path (lines 1592-1593).
+  auto tmp_dir = make_temp_test_dir("trx_f16_buf");
+  const fs::path out_path = tmp_dir / "f16_buf.trx";
+
+  TrxStream proto("float16");
+  // 12 bytes / 2 bytes per half = 6 half entries = 2 xyz triplets → flush after 2 points
+  proto.set_positions_buffer_max_bytes(12);
+  std::vector<float> pt = {1.0f, 2.0f, 3.0f};
+  proto.push_streamline(pt);  // buffer: 3 halves
+  proto.push_streamline(pt);  // buffer: 6 halves >= 6 → flush
+  proto.push_streamline(pt);  // buffer: 3 halves (after flush)
+  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);  // flush remainder, then early-return
+
+  auto trx = load_any(out_path.string());
+  EXPECT_EQ(trx.num_streamlines(), 3u);
+  EXPECT_EQ(trx.num_vertices(), 3u);
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
