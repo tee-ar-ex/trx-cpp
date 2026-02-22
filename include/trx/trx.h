@@ -32,6 +32,9 @@
 #include <mio/mmap.hpp>
 #include <mio/shared_mmap.hpp>
 
+#include <trx/detail/exceptions.h>
+#include <trx/detail/zip_raii.h>
+
 namespace trx {
 namespace fs = std::filesystem;
 }
@@ -205,6 +208,14 @@ inline const std::array<std::string_view, 12> dtypes = {"float16",
                                                         "float64"};
 
 template <typename DT> struct ArraySequence {
+  // Public accessors
+  auto &data() { return _data; }
+  const auto &data() const { return _data; }
+  auto &offsets() { return _offsets; }
+  const auto &offsets() const { return _offsets; }
+  auto &lengths() { return _lengths; }
+  const auto &lengths() const { return _lengths; }
+
   Eigen::Map<Eigen::Matrix<DT, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> _data;
   Eigen::Map<Eigen::Matrix<uint64_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> _offsets;
   Eigen::Matrix<uint32_t, Eigen::Dynamic, 1> _lengths;
@@ -216,6 +227,10 @@ template <typename DT> struct ArraySequence {
 };
 
 template <typename DT> struct MMappedMatrix {
+  // Public accessor
+  auto &matrix() { return _matrix; }
+  const auto &matrix() const { return _matrix; }
+
   Eigen::Map<Eigen::Matrix<DT, Eigen::Dynamic, Eigen::Dynamic>> _matrix;
   mio::shared_mmap_sink mmap;
 
@@ -363,6 +378,10 @@ public:
     return 0;
   }
 
+  /// Returns an empty TrxFile that inherits this file's header metadata but has
+  /// NB_VERTICES and NB_STREAMLINES reset to zero.
+  std::unique_ptr<TrxFile<DT>> make_empty_like() const;
+
   /**
    * @brief Build per-streamline axis-aligned bounding boxes (AABB).
    *
@@ -455,35 +474,18 @@ public:
    */
   void remove_dpg_group(const std::string &group);
 
-private:
-  mutable std::vector<std::array<Eigen::half, 6>> aabb_cache_;
-  /**
-   * @brief Load a TrxFile from a zip archive.
-   *
-   * Internal: prefer TrxReader / with_trx_reader in public API.
-   */
+  /// Load a TrxFile from a zip archive.
   static std::unique_ptr<TrxFile<DT>> load_from_zip(const std::string &path);
 
-  /**
-   * @brief Load a TrxFile from an on-disk directory.
-   *
-   * Internal: prefer TrxReader / with_trx_reader in public API.
-   */
+  /// Load a TrxFile from an on-disk directory.
   static std::unique_ptr<TrxFile<DT>> load_from_directory(const std::string &path);
 
-  /**
-   * @brief Load a TrxFile from either a zip archive or directory.
-   *
-   * Internal: prefer TrxReader / with_trx_reader in public API.
-   */
+  /// Load a TrxFile from either a zip archive or directory.
   static std::unique_ptr<TrxFile<DT>> load(const std::string &path);
-  /**
-   * @brief Get the real size of data (ignoring zeros of preallocation)
-   *
-   * @return std::tuple<int, int> A tuple representing the index of the last streamline and the
-   * total length of all the streamlines
-   */
-  std::tuple<int, int> _get_real_len();
+
+  /// Access the backing directory path.
+  const std::string &uncompressed_folder_handle() const { return _uncompressed_folder_handle; }
+  std::string &uncompressed_folder_handle() { return _uncompressed_folder_handle; }
 
   /**
    * @brief Fill a TrxFile using another and start indexes (preallocation)
@@ -498,6 +500,16 @@ private:
   std::tuple<int, int>
   _copy_fixed_arrays_from(TrxFile<DT> *trx, int strs_start = 0, int pts_start = 0, int nb_strs_to_copy = -1);
   int len();
+
+private:
+  mutable std::vector<std::array<Eigen::half, 6>> aabb_cache_;
+  /**
+   * @brief Get the real size of data (ignoring zeros of preallocation)
+   *
+   * @return std::tuple<int, int> A tuple representing the index of the last streamline and the
+   * total length of all the streamlines
+   */
+  std::tuple<int, int> _get_real_len();
 };
 
 namespace detail {
@@ -638,6 +650,14 @@ public:
   static AnyTrxFile load_from_zip(const std::string &path);
   static AnyTrxFile load_from_directory(const std::string &path);
 
+  /// Access the backing directory path.
+  const std::string &backing_directory() const { return _backing_directory; }
+  std::string &backing_directory() { return _backing_directory; }
+
+  /// Access the uncompressed folder handle.
+  const std::string &uncompressed_folder_handle() const { return _uncompressed_folder_handle; }
+  std::string &uncompressed_folder_handle() { return _uncompressed_folder_handle; }
+
 private:
   std::string _uncompressed_folder_handle;
   bool _owns_uncompressed_folder = false;
@@ -703,24 +723,24 @@ public:
    * InMemory keeps metadata in RAM until finalize (default).
    * OnDisk writes metadata to temp files and copies them at finalize.
    */
-  void set_metadata_mode(MetadataMode mode);
+  TrxStream &set_metadata_mode(MetadataMode mode);
 
   /**
    * @brief Set max in-memory buffer size for metadata writes (bytes).
    *
    * Applies when MetadataMode::OnDisk. Larger buffers reduce write calls.
    */
-  void set_metadata_buffer_max_bytes(std::size_t max_bytes);
+  TrxStream &set_metadata_buffer_max_bytes(std::size_t max_bytes);
 
   /**
    * @brief Set the VOXEL_TO_RASMM affine matrix in the header.
    */
-  void set_voxel_to_rasmm(const Eigen::Matrix4f &affine);
+  TrxStream &set_voxel_to_rasmm(const Eigen::Matrix4f &affine);
 
   /**
    * @brief Set DIMENSIONS in the header.
    */
-  void set_dimensions(const std::array<uint16_t, 3> &dims);
+  TrxStream &set_dimensions(const std::array<uint16_t, 3> &dims);
 
   /**
    * @brief Add per-streamline values (DPS) from an in-memory vector.
@@ -836,11 +856,11 @@ private:
 };
 
 /**
- * TODO: This function might be completely unecessary
+ * @brief Copy header fields from a JSON root (currently unused; candidate for removal).
  *
- * @param[in] root a Json::Value root obtained from reading a header file with JsonCPP
- * @param[out] header a header containing the same elements as the original root
- * */
+ * @param[in] root a Json::Value root obtained from reading a header file
+ * @return header a header containing the same elements as the original root
+ */
 json assignHeader(const json &root);
 
 /**
@@ -1020,9 +1040,8 @@ void allocate_file(const std::string &path, std::size_t size);
  * @param offset offset of the data within the file
  * @return mio::shared_mmap_sink
  */
-// TODO: ADD order??
-// TODO: change tuple to vector to support ND arrays?
-// TODO: remove data type as that's done outside of this function
+// Known limitations: only row-major order supported; shape uses tuple (sufficient for 2D);
+// dtype parameter is used only for byte-size computation.
 mio::shared_mmap_sink _create_memmap(std::string filename,
                                      const std::tuple<int, int> &shape,
                                      const std::string &mode = "r",

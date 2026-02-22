@@ -3,11 +3,40 @@
 
 #include <Eigen/Core>
 
+#include <new>
 #include <string>
 #include <tuple>
 
 namespace trx {
 namespace detail {
+
+// Central helper that performs the ONE placement-new + reinterpret_cast needed
+// to (re)bind an Eigen::Map to a new memory region. All other code should call
+// this instead of scattering placement-new across the codebase.
+//
+// MapType must be an Eigen::Map<Matrix<...>> type.
+template <typename MapType>
+inline void remap(MapType &map, void *data, int rows, int cols) {
+  using Scalar = typename MapType::Scalar;
+  new (&map) MapType(reinterpret_cast<Scalar *>(data), rows, cols); // NOLINT
+}
+
+// Overload for const data pointers (read-only maps).
+template <typename MapType>
+inline void remap(MapType &map, const void *data, int rows, int cols) {
+  using Scalar = typename MapType::Scalar;
+  new (&map) MapType(const_cast<Scalar *>(reinterpret_cast<const Scalar *>(data)), rows, cols); // NOLINT
+}
+
+// Convenience overloads that unpack a (rows, cols) shape tuple.
+template <typename MapType>
+inline void remap(MapType &map, void *data, const std::tuple<int, int> &shape) {
+  remap(map, data, std::get<0>(shape), std::get<1>(shape));
+}
+template <typename MapType>
+inline void remap(MapType &map, const void *data, const std::tuple<int, int> &shape) {
+  remap(map, data, std::get<0>(shape), std::get<1>(shape));
+}
 
 int _sizeof_dtype(const std::string &dtype);
 std::string _get_dtype(const std::string &dtype);

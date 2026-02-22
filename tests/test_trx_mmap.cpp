@@ -351,12 +351,12 @@ TEST(TrxFileMemmap, detect_positions_scalar_type_fallback) {
   ASSERT_TRUE(out.is_open());
   out.close();
 
-  EXPECT_THROW(trx::detect_positions_scalar_type(invalid_dir.string(), TrxScalarType::Float64), std::invalid_argument);
+  EXPECT_THROW(trx::detect_positions_scalar_type(invalid_dir.string(), TrxScalarType::Float64), trx::TrxError);
 }
 
 TEST(TrxFileMemmap, detect_positions_scalar_type_missing_path) {
   const fs::path missing = fs::path(make_temp_test_dir("trx_scalar_missing")) / "nope";
-  EXPECT_THROW(trx::detect_positions_scalar_type(missing.string(), TrxScalarType::Float32), std::runtime_error);
+  EXPECT_THROW(trx::detect_positions_scalar_type(missing.string(), TrxScalarType::Float32), trx::TrxError);
 }
 
 TEST(TrxFileMemmap, open_zip_for_read_generic_fallback) {
@@ -416,36 +416,36 @@ TEST(TrxFileMemmap, __split_ext_with_dimensionality) {
       {
         try {
           output = trx::detail::_split_ext_with_dimensionality(fn3);
-        } catch (const std::invalid_argument &e) {
+        } catch (const trx::TrxError &e) {
           EXPECT_STREQ("Invalid filename", e.what());
           throw;
         }
       },
-      std::invalid_argument);
+      trx::TrxFormatError);
 
   const std::string fn4 = "mean_fa.5.4.int32";
   EXPECT_THROW(
       {
         try {
           output = trx::detail::_split_ext_with_dimensionality(fn4);
-        } catch (const std::invalid_argument &e) {
+        } catch (const trx::TrxError &e) {
           EXPECT_STREQ("Invalid filename", e.what());
           throw;
         }
       },
-      std::invalid_argument);
+      trx::TrxFormatError);
 
   const std::string fn5 = "mean_fa.fa";
   EXPECT_THROW(
       {
         try {
           output = trx::detail::_split_ext_with_dimensionality(fn5);
-        } catch (const std::invalid_argument &e) {
-          EXPECT_STREQ("Unsupported file extension", e.what());
+        } catch (const trx::TrxDTypeError &e) {
+          EXPECT_TRUE(std::string(e.what()).find("Unsupported file extension") != std::string::npos);
           throw;
         }
       },
-      std::invalid_argument);
+      trx::TrxDTypeError);
 }
 
 // Mirrors trx/tests/test_memmap.py::test__compute_lengths.
@@ -711,7 +711,7 @@ TEST(TrxFileMemmap, load_missing_trx_throws) {
   const auto memmap_dir = resolve_memmap_test_data_dir(root);
 
   const fs::path missing_trx = memmap_dir / "dontexist.trx";
-  EXPECT_THROW(trx::TrxReader<half>(missing_trx.string()), std::runtime_error);
+  EXPECT_THROW(trx::TrxReader<half>(missing_trx.string()), trx::TrxError);
 }
 
 // validates C++ TrxFile initialization.
@@ -841,7 +841,7 @@ TEST(TrxFileMemmap, query_aabb_rejects_bad_aabb_size) {
   std::array<float, 3> max_corner{1.0f, 1.0f, 1.0f};
 
   std::vector<std::array<Eigen::half, 6>> bad_aabbs(1);
-  EXPECT_THROW(trx->query_aabb(min_corner, max_corner, &bad_aabbs), std::invalid_argument);
+  EXPECT_THROW(trx->query_aabb(min_corner, max_corner, &bad_aabbs), trx::TrxError);
 
   trx->close();
 }
@@ -888,7 +888,7 @@ TEST(TrxFileMemmap, subset_streamlines_empty) {
 TEST(TrxFileMemmap, subset_streamlines_out_of_range) {
   auto trx = create_small_trx();
   std::vector<uint32_t> ids{99};
-  EXPECT_THROW(trx->subset_streamlines(ids), std::invalid_argument);
+  EXPECT_THROW(trx->subset_streamlines(ids), trx::TrxError);
   trx->close();
 }
 
@@ -926,10 +926,10 @@ TEST(TrxFileMemmap, dpg_api_invalid_inputs) {
   auto trx = create_small_trx();
 
   std::vector<float> values{1.0f, 2.0f, 3.0f};
-  EXPECT_THROW(trx->add_dpg_from_vector("", "dpg", "float32", values), std::invalid_argument);
-  EXPECT_THROW(trx->add_dpg_from_vector("g1", "", "float32", values), std::invalid_argument);
-  EXPECT_THROW(trx->add_dpg_from_vector("g1", "dpg", "int8", values), std::invalid_argument);
-  EXPECT_THROW(trx->add_dpg_from_vector("g1", "dpg", "float32", values, 2, 2), std::invalid_argument);
+  EXPECT_THROW(trx->add_dpg_from_vector("", "dpg", "float32", values), trx::TrxError);
+  EXPECT_THROW(trx->add_dpg_from_vector("g1", "", "float32", values), trx::TrxError);
+  EXPECT_THROW(trx->add_dpg_from_vector("g1", "dpg", "int8", values), trx::TrxError);
+  EXPECT_THROW(trx->add_dpg_from_vector("g1", "dpg", "float32", values, 2, 2), trx::TrxError);
 
   trx->close();
 }
