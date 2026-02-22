@@ -292,6 +292,87 @@ TEST(TrxFileTpp, TrxStreamFinalize) {
   fs::remove_all(tmp_dir, ec);
 }
 
+TEST(TrxFileTpp, TrxStreamOnDiskMetadataAllDtypes) {
+  auto tmp_dir = make_temp_test_dir("trx_ondisk_dtypes");
+  const fs::path out_path = tmp_dir / "ondisk.trx";
+
+  TrxStream proto;
+  proto.set_metadata_mode(TrxStream::MetadataMode::OnDisk);
+
+  std::vector<float> sl1 = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+  std::vector<float> sl2 = {2.0f, 0.0f, 0.0f};
+  proto.push_streamline(sl1);
+  proto.push_streamline(sl2);
+
+  proto.push_dps_from_vector("w_f16", "float16", std::vector<float>{0.5f, 1.5f});
+  proto.push_dps_from_vector("w_f32", "float32", std::vector<float>{0.5f, 1.5f});
+  proto.push_dps_from_vector("w_f64", "float64", std::vector<double>{0.5, 1.5});
+
+  proto.push_dpv_from_vector("s_f16", "float16", std::vector<float>{1.0f, 2.0f, 3.0f});
+  proto.push_dpv_from_vector("s_f32", "float32", std::vector<float>{1.0f, 2.0f, 3.0f});
+  proto.push_dpv_from_vector("s_f64", "float64", std::vector<double>{1.0, 2.0, 3.0});
+
+  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);
+
+  auto trx = load_any(out_path.string());
+  EXPECT_EQ(trx.num_streamlines(), 2u);
+  EXPECT_EQ(trx.num_vertices(), 3u);
+
+  for (const auto &key : {"w_f16", "w_f32", "w_f64"}) {
+    auto it = trx.data_per_streamline.find(key);
+    ASSERT_NE(it, trx.data_per_streamline.end()) << "missing dps key: " << key;
+    EXPECT_EQ(it->second.rows, 2);
+  }
+  for (const auto &key : {"s_f16", "s_f32", "s_f64"}) {
+    auto it = trx.data_per_vertex.find(key);
+    ASSERT_NE(it, trx.data_per_vertex.end()) << "missing dpv key: " << key;
+    EXPECT_EQ(it->second.rows, 3);
+  }
+
+  trx.close();
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
+
+TEST(TrxFileTpp, QueryAabbCounts) {
+  constexpr int kStreamlineCount = 1000;
+  constexpr int kInsideCount = 250;
+  constexpr int kPointsPerStreamline = 5;
+
+  const int nb_vertices = kStreamlineCount * kPointsPerStreamline;
+  trx::TrxFile<float> trx(nb_vertices, kStreamlineCount);
+
+  trx.streamlines->_offsets(0, 0) = 0;
+  for (int i = 0; i < kStreamlineCount; ++i) {
+    trx.streamlines->_lengths(i) = kPointsPerStreamline;
+    trx.streamlines->_offsets(i + 1, 0) = (i + 1) * kPointsPerStreamline;
+  }
+
+  int cursor = 0;
+  for (int i = 0; i < kStreamlineCount; ++i) {
+    const bool inside = i < kInsideCount;
+    for (int p = 0; p < kPointsPerStreamline; ++p, ++cursor) {
+      if (inside) {
+        trx.streamlines->_data(cursor, 0) = -0.8f + 0.05f * static_cast<float>(p);
+        trx.streamlines->_data(cursor, 1) = 0.3f + 0.1f * static_cast<float>(p);
+        trx.streamlines->_data(cursor, 2) = 0.1f + 0.05f * static_cast<float>(p);
+      } else {
+        trx.streamlines->_data(cursor, 0) = 0.0f;
+        trx.streamlines->_data(cursor, 1) = 0.0f;
+        trx.streamlines->_data(cursor, 2) = -1000.0f - static_cast<float>(i);
+      }
+    }
+  }
+
+  const std::array<float, 3> min_corner{ -0.9f, 0.2f, 0.05f };
+  const std::array<float, 3> max_corner{ -0.1f, 1.1f, 0.55f };
+
+  auto subset = trx.query_aabb(min_corner, max_corner);
+  EXPECT_EQ(subset->num_streamlines(), static_cast<size_t>(kInsideCount));
+  EXPECT_EQ(subset->num_vertices(), static_cast<size_t>(kInsideCount * kPointsPerStreamline));
+  subset->close();
+}
+
 // resize() with default arguments is a no-op when sizes already match.
 TEST(TrxFileTpp, ResizeNoChange) {
   const fs::path data_dir = create_float_trx_dir();
@@ -325,4 +406,108 @@ TEST(TrxFileTpp, ResizeDeleteDpgCloses) {
 
   std::error_code ec;
   fs::remove_all(data_dir, ec);
+}
+
+TEST(TrxFileTpp, NormalizeForSaveRejectsNonMonotonicOffsets) {
+  const fs::path data_dir = create_float_trx_dir();
+  auto src_reader = load_trx_dir<float>(data_dir);
+  auto *src = src_reader.get();
+
+  ASSERT_GE(src->streamlines->_offsets.size(), 3);
+  src->streamlines->_offsets(1) = 5;
+  src->streamlines->_offsets(2) = 4;
+
+  EXPECT_THROW(src->normalize_for_save(), std::runtime_error);
+
+  src->close();
+
+  std::error_code ec;
+  fs::remove_all(data_dir, ec);
+}
+
+TEST(TrxFileTpp, NormalizeForSaveRecomputesLengthsAndHeader) {
+  const fs::path data_dir = create_float_trx_dir();
+  auto reader = load_trx_dir<float>(data_dir);
+  auto *trx = reader.get();
+
+  ASSERT_EQ(trx->streamlines->_offsets.size(), 3);
+  trx->streamlines->_lengths(0) = 99;
+  trx->streamlines->_lengths(1) = 99;
+  trx->header = _json_set(trx->header, "NB_STREAMLINES", 123);
+  trx->header = _json_set(trx->header, "NB_VERTICES", 456);
+
+  trx->normalize_for_save();
+
+  EXPECT_EQ(trx->streamlines->_lengths(0), 2u);
+  EXPECT_EQ(trx->streamlines->_lengths(1), 2u);
+  EXPECT_EQ(trx->header["NB_STREAMLINES"].int_value(), 2);
+  EXPECT_EQ(trx->header["NB_VERTICES"].int_value(), 4);
+
+  trx->close();
+  std::error_code ec;
+  fs::remove_all(data_dir, ec);
+}
+
+TEST(TrxFileTpp, LoadFromDirectoryMissingHeader) {
+  // Directory exists and has files in it, but no header.json.
+  // Covers the detailed error-diagnostic branch in load_from_directory (lines 980-1006).
+  auto tmp_dir = make_temp_test_dir("trx_no_header");
+  const fs::path dummy = tmp_dir / "positions.3.float32";
+  std::ofstream f(dummy.string(), std::ios::binary);
+  f.close();
+
+  EXPECT_THROW(TrxFile<float>::load_from_directory(tmp_dir.string()), std::runtime_error);
+
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
+
+TEST(TrxFileTpp, TrxStreamFloat16Unbuffered) {
+  // TrxStream("float16") with default unbuffered mode.
+  // Covers the float16 unbuffered write path in push_streamline (lines 1642-1650)
+  // and the float16 read-back loop in finalize (lines 1958-1966).
+  auto tmp_dir = make_temp_test_dir("trx_f16_unbuf");
+  const fs::path out_path = tmp_dir / "f16.trx";
+
+  TrxStream proto("float16");
+  std::vector<float> sl1 = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+  std::vector<float> sl2 = {2.0f, 0.0f, 0.0f};
+  proto.push_streamline(sl1);
+  proto.push_streamline(sl2);
+  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);
+
+  auto trx = load_any(out_path.string());
+  EXPECT_EQ(trx.num_streamlines(), 2u);
+  EXPECT_EQ(trx.num_vertices(), 3u);
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
+
+TEST(TrxFileTpp, TrxStreamFloat16Buffered) {
+  // TrxStream("float16") with a small position buffer.
+  // Pushing two single-point streamlines fills the buffer (6 half-values >= max 6)
+  // and triggers flush_positions_buffer mid-stream (lines 1592-1603, 1660-1673).
+  // finalize then calls flush_positions_buffer again with an empty buffer,
+  // hitting the early-return path (lines 1592-1593).
+  auto tmp_dir = make_temp_test_dir("trx_f16_buf");
+  const fs::path out_path = tmp_dir / "f16_buf.trx";
+
+  TrxStream proto("float16");
+  // 12 bytes / 2 bytes per half = 6 half entries = 2 xyz triplets → flush after 2 points
+  proto.set_positions_buffer_max_bytes(12);
+  std::vector<float> pt = {1.0f, 2.0f, 3.0f};
+  proto.push_streamline(pt);  // buffer: 3 halves
+  proto.push_streamline(pt);  // buffer: 6 halves >= 6 → flush
+  proto.push_streamline(pt);  // buffer: 3 halves (after flush)
+  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);  // flush remainder, then early-return
+
+  auto trx = load_any(out_path.string());
+  EXPECT_EQ(trx.num_streamlines(), 3u);
+  EXPECT_EQ(trx.num_vertices(), 3u);
+  trx.close();
+
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
 }

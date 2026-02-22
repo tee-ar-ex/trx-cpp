@@ -3,6 +3,7 @@
 **/*.cmake
 **/Makefile
 **/build
+**build-release
 **/bin
 **/load_trx
 **/tests/memmap
@@ -15,6 +16,8 @@ test_package/CMakeUserPresets.json
 syntax.log
 docs/_build/
 docs/api/
-
+.DS_Store
 test_package/build
 test_package/CMakeUserPresets.json
+test-data/*
+bench/results*

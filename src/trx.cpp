@@ -16,12 +16,18 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <sys/stat.h>
 #include <system_error>
 #include <tuple>
 #include <vector>
 #include <zip.h>
 #include <zipconf.h>
+#if defined(_WIN32) || defined(_WIN64)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 #include <mio/shared_mmap.hpp>
 #include <trx/trx.h>
@@ -86,6 +92,45 @@ bool is_path_within(const trx::fs::path &child, const trx::fs::path &parent) {
   }
   const char next = child_str[parent_str.size()];
   return next == '/' || next == '\\';
+}
+
+TrxSaveMode resolve_save_mode(const std::string &filename, TrxSaveMode requested) {
+  if (requested != TrxSaveMode::Auto) {
+    return requested;
+  }
+  const std::string ext = get_ext(filename);
+  if (ext == "zip" || ext == "trx") {
+    return TrxSaveMode::Archive;
+  }
+  return TrxSaveMode::Directory;
+}
+
+std::array<double, 3> read_xyz_as_double(const TypedArray &positions, size_t row_index) {
+  if (positions.cols != 3) {
+    throw std::runtime_error("Positions must have 3 columns.");
+  }
+  if (row_index >= static_cast<size_t>(positions.rows)) {
+    throw std::out_of_range("Position row index out of range");
+  }
+  if (positions.dtype == "float16") {
+    const auto view = positions.as_matrix<Eigen::half>();
+    return {static_cast<double>(view(static_cast<Eigen::Index>(row_index), 0)),
+            static_cast<double>(view(static_cast<Eigen::Index>(row_index), 1)),
+            static_cast<double>(view(static_cast<Eigen::Index>(row_index), 2))};
+  }
+  if (positions.dtype == "float32") {
+    const auto view = positions.as_matrix<float>();
+    return {static_cast<double>(view(static_cast<Eigen::Index>(row_index), 0)),
+            static_cast<double>(view(static_cast<Eigen::Index>(row_index), 1)),
+            static_cast<double>(view(static_cast<Eigen::Index>(row_index), 2))};
+  }
+  if (positions.dtype == "float64") {
+    const auto view = positions.as_matrix<double>();
+    return {view(static_cast<Eigen::Index>(row_index), 0),
+            view(static_cast<Eigen::Index>(row_index), 1),
+            view(static_cast<Eigen::Index>(row_index), 2)};
+  }
+  throw std::runtime_error("Unsupported positions dtype for streamline extraction: " + positions.dtype);
 }
 
 TypedArray make_typed_array(const std::string &filename, int rows, int cols, const std::string &dtype) {
@@ -194,6 +239,40 @@ size_t AnyTrxFile::num_streamlines() const {
   return 0;
 }
 
+const TypedArray *AnyTrxFile::get_dps(const std::string &name) const {
+  auto it = data_per_streamline.find(name);
+  if (it == data_per_streamline.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+const TypedArray *AnyTrxFile::get_dpv(const std::string &name) const {
+  auto it = data_per_vertex.find(name);
+  if (it == data_per_vertex.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+std::vector<std::array<double, 3>> AnyTrxFile::get_streamline(size_t streamline_index) const {
+  if (offsets_u64.empty()) {
+    throw std::runtime_error("TRX offsets are empty.");
+  }
+  const size_t n_streamlines = offsets_u64.size() - 1;
+  if (streamline_index >= n_streamlines) {
+    throw std::out_of_range("Streamline index out of range");
+  }
+  const uint64_t start = offsets_u64[streamline_index];
+  const uint64_t end = offsets_u64[streamline_index + 1];
+  std::vector<std::array<double, 3>> out;
+  out.reserve(static_cast<size_t>(end - start));
+  for (uint64_t i = start; i < end; ++i) {
+    out.push_back(read_xyz_as_double(positions, static_cast<size_t>(i)));
+  }
+  return out;
+}
+
 void AnyTrxFile::close() {
   _cleanup_temporary_directory();
   positions = TypedArray();
@@ -268,9 +347,42 @@ AnyTrxFile AnyTrxFile::load_from_directory(const std::string &path) {
   }
 
   std::string header_name = directory + SEPARATOR + "header.json";
-  std::ifstream header_file(header_name);
+  std::ifstream header_file;
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    header_file.open(header_name);
+    if (header_file.is_open()) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
   if (!header_file.is_open()) {
-    throw std::runtime_error("Failed to open header.json at: " + header_name);
+    std::error_code ec;
+    const bool exists = trx::fs::exists(directory, ec);
+    const int open_err = errno;
+    std::string detail = "Failed to open header.json at: " + header_name;
+    detail += " exists=" + std::string(exists ? "true" : "false");
+    detail += " errno=" + std::to_string(open_err) + " msg=" + std::string(std::strerror(open_err));
+    if (exists) {
+      std::vector<std::string> files;
+      for (const auto &entry : trx::fs::directory_iterator(directory, ec)) {
+        if (ec) {
+          break;
+        }
+        files.push_back(entry.path().filename().string());
+      }
+      if (!files.empty()) {
+        std::sort(files.begin(), files.end());
+        detail += " files=[";
+        for (size_t i = 0; i < files.size(); ++i) {
+          if (i > 0) {
+            detail += ",";
+          }
+          detail += files[i];
+        }
+        detail += "]";
+      }
+    }
+    throw std::runtime_error(detail);
   }
   std::string jstream((std::istreambuf_iterator<char>(header_file)), std::istreambuf_iterator<char>());
   header_file.close();
@@ -419,9 +531,16 @@ AnyTrxFile::_create_from_pointer(json header,
 }
 
 void AnyTrxFile::save(const std::string &filename, zip_uint32_t compression_standard) {
+  TrxSaveOptions options;
+  options.compression_standard = compression_standard;
+  save(filename, options);
+}
+
+void AnyTrxFile::save(const std::string &filename, const TrxSaveOptions &options) {
   const std::string ext = get_ext(filename);
-  if (ext.size() > 0 && (ext != "zip" && ext != "trx")) {
-    throw std::invalid_argument("Unsupported extension." + ext);
+  const TrxSaveMode save_mode = resolve_save_mode(filename, options.mode);
+  if (ext.size() > 0 && ext != "zip" && ext != "trx") {
+    throw std::invalid_argument("Unsupported extension: " + ext);
   }
 
   if (offsets.empty()) {
@@ -461,35 +580,44 @@ void AnyTrxFile::save(const std::string &filename, zip_uint32_t compression_stan
     throw std::runtime_error("TRX file has no backing directory to save from");
   }
 
-  std::string tmp_dir = make_temp_dir("trx_runtime");
-  copy_dir(source_dir, tmp_dir);
-
-  {
-    const trx::fs::path header_path = trx::fs::path(tmp_dir) / "header.json";
-    std::ofstream out_json(header_path);
-    if (!out_json.is_open()) {
-      throw std::runtime_error("Failed to write header.json to: " + header_path.string());
-    }
-    out_json << header.dump() << std::endl;
-  }
-
-  if (ext.size() > 0 && (ext == "zip" || ext == "trx")) {
+  if (save_mode == TrxSaveMode::Archive) {
     int errorp;
     zip_t *zf;
     if ((zf = zip_open(filename.c_str(), ZIP_CREATE + ZIP_TRUNCATE, &errorp)) == nullptr) {
-      rm_dir(tmp_dir);
       throw std::runtime_error("Could not open archive " + filename + ": " + strerror(errorp));
     }
-    zip_from_folder(zf, tmp_dir, tmp_dir, compression_standard);
+
+    const std::string header_payload = header.dump() + "\n";
+    zip_source_t *header_source =
+        zip_source_buffer(zf, header_payload.data(), header_payload.size(), 0 /* do not free */);
+    if (header_source == nullptr) {
+      zip_close(zf);
+      throw std::runtime_error("Failed to create zip source for header.json: " + std::string(zip_strerror(zf)));
+    }
+    const zip_int64_t header_idx = zip_file_add(zf, "header.json", header_source, ZIP_FL_ENC_UTF_8 | ZIP_FL_OVERWRITE);
+    if (header_idx < 0) {
+      zip_source_free(header_source);
+      zip_close(zf);
+      throw std::runtime_error("Failed to add header.json to archive: " + std::string(zip_strerror(zf)));
+    }
+    const zip_int32_t compression = static_cast<zip_int32_t>(options.compression_standard);
+    if (zip_set_file_compression(zf, header_idx, compression, 0) < 0) {
+      zip_close(zf);
+      throw std::runtime_error("Failed to set compression for header.json: " + std::string(zip_strerror(zf)));
+    }
+
+    const std::unordered_set<std::string> skip = {"header.json"};
+    zip_from_folder(zf, source_dir, source_dir, options.compression_standard, &skip);
     if (zip_close(zf) != 0) {
-      rm_dir(tmp_dir);
       throw std::runtime_error("Unable to close archive " + filename + ": " + zip_strerror(zf));
     }
   } else {
     std::error_code ec;
     if (trx::fs::exists(filename, ec) && trx::fs::is_directory(filename, ec)) {
+      if (!options.overwrite_existing) {
+        throw std::runtime_error("Output directory already exists: " + filename);
+      }
       if (rm_dir(filename) != 0) {
-        rm_dir(tmp_dir);
         throw std::runtime_error("Could not remove existing directory " + filename);
       }
     }
@@ -498,24 +626,35 @@ void AnyTrxFile::save(const std::string &filename, zip_uint32_t compression_stan
       std::error_code parent_ec;
       trx::fs::create_directories(dest_path.parent_path(), parent_ec);
       if (parent_ec) {
-        rm_dir(tmp_dir);
         throw std::runtime_error("Could not create output parent directory: " + dest_path.parent_path().string());
       }
     }
-    copy_dir(tmp_dir, filename);
+    std::error_code source_ec;
+    const trx::fs::path source_path = trx::fs::weakly_canonical(trx::fs::path(source_dir), source_ec);
+    std::error_code dest_ec;
+    const trx::fs::path normalized_dest = trx::fs::weakly_canonical(dest_path, dest_ec);
+    const bool same_directory = !source_ec && !dest_ec && source_path == normalized_dest;
+
+    if (!same_directory) {
+      copy_dir(source_dir, filename);
+    }
+
+    const trx::fs::path final_header_path = dest_path / "header.json";
+    std::ofstream out_json(final_header_path, std::ios::out | std::ios::trunc);
+    if (!out_json.is_open()) {
+      throw std::runtime_error("Failed to write header.json to: " + final_header_path.string());
+    }
+    out_json << header.dump() << std::endl;
+    out_json.close();
+
     ec.clear();
     if (!trx::fs::exists(filename, ec) || !trx::fs::is_directory(filename, ec)) {
-      rm_dir(tmp_dir);
       throw std::runtime_error("Failed to create output directory: " + filename);
     }
-    const trx::fs::path header_path = dest_path / "header.json";
-    if (!trx::fs::exists(header_path)) {
-      rm_dir(tmp_dir);
-      throw std::runtime_error("Missing header.json in output directory: " + header_path.string());
+    if (!trx::fs::exists(final_header_path)) {
+      throw std::runtime_error("Missing header.json in output directory: " + final_header_path.string());
     }
   }
-
-  rm_dir(tmp_dir);
 }
 
 void populate_fps(const string &name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size) {
@@ -806,8 +945,15 @@ std::string make_temp_dir(const std::string &prefix) {
 
   static std::mt19937_64 rng(std::random_device{}());
   std::uniform_int_distribution<uint64_t> dist;
+  const uint64_t pid =
+#if defined(_WIN32) || defined(_WIN64)
+      static_cast<uint64_t>(_getpid());
+#else
+      static_cast<uint64_t>(getpid());
+#endif
   for (int attempt = 0; attempt < 100; ++attempt) {
-    const trx::fs::path candidate = base_path / (prefix + "_" + std::to_string(dist(rng)));
+    const trx::fs::path candidate =
+        base_path / (prefix + "_" + std::to_string(pid) + "_" + std::to_string(dist(rng)));
     ec.clear();
     if (trx::fs::create_directory(candidate, ec)) {
       return candidate.string();
@@ -906,7 +1052,8 @@ std::string extract_zip_to_directory(zip_t *zfolder) {
 void zip_from_folder(zip_t *zf,
                      const std::string &root,
                      const std::string &directory,
-                     zip_uint32_t compression_standard) {
+                     zip_uint32_t compression_standard,
+                     const std::unordered_set<std::string> *skip) {
   std::error_code ec;
   for (trx::fs::recursive_directory_iterator it(directory, ec), end; it != end; it.increment(ec)) {
     if (ec) {
@@ -928,6 +1075,10 @@ void zip_from_folder(zip_t *zf,
     if (source == nullptr) {
       throw std::runtime_error(std::string("Error adding file ") + zip_fname + ": " + zip_strerror(zf));
     }
+    if (skip && skip->find(zip_fname) != skip->end()) {
+      zip_source_free(source);
+      continue;
+    }
     const zip_int64_t file_idx = zip_file_add(zf, zip_fname.c_str(), source, ZIP_FL_ENC_UTF_8);
     if (file_idx < 0) {
       zip_source_free(source);
@@ -948,5 +1099,501 @@ std::string rm_root(const std::string &root, const std::string &path) {
     stripped = path.substr(index + root.size() + 1, path.size() - index - root.size() - 1);
   }
   return stripped;
+}
+
+namespace {
+TrxScalarType scalar_type_from_dtype(const std::string &dtype) {
+  if (dtype == "float16") {
+    return TrxScalarType::Float16;
+  }
+  if (dtype == "float32") {
+    return TrxScalarType::Float32;
+  }
+  if (dtype == "float64") {
+    return TrxScalarType::Float64;
+  }
+  return TrxScalarType::Float32;
+}
+
+std::string typed_array_filename(const std::string &base, const TypedArray &arr) {
+  if (arr.cols <= 1) {
+    return base + "." + arr.dtype;
+  }
+  return base + "." + std::to_string(arr.cols) + "." + arr.dtype;
+}
+
+void write_typed_array_file(const std::string &path, const TypedArray &arr) {
+  const auto bytes = arr.to_bytes();
+  std::ofstream out(path, std::ios::binary | std::ios::out | std::ios::trunc);
+  if (!out.is_open()) {
+    throw std::runtime_error("Failed to open output file: " + path);
+  }
+  if (bytes.data && bytes.size > 0) {
+    out.write(reinterpret_cast<const char *>(bytes.data), static_cast<std::streamsize>(bytes.size));
+  }
+  out.flush();
+  out.close();
+}
+} // namespace
+
+void AnyTrxFile::for_each_positions_chunk(size_t chunk_bytes, const PositionsChunkCallback &fn) const {
+  if (positions.empty()) {
+    throw std::runtime_error("TRX positions are empty.");
+  }
+  if (positions.cols != 3) {
+    throw std::runtime_error("Positions must have 3 columns.");
+  }
+  if (!fn) {
+    return;
+  }
+  const size_t elem_size = static_cast<size_t>(detail::_sizeof_dtype(positions.dtype));
+  const size_t bytes_per_point = elem_size * 3;
+  const size_t total_points = static_cast<size_t>(positions.rows);
+  size_t points_per_chunk = 0;
+  if (chunk_bytes == 0) {
+    points_per_chunk = total_points;
+  } else {
+    points_per_chunk = std::max<size_t>(1, chunk_bytes / bytes_per_point);
+  }
+  const auto bytes = positions.to_bytes();
+  const auto *base = bytes.data;
+  const auto dtype = scalar_type_from_dtype(positions.dtype);
+  for (size_t offset = 0; offset < total_points; offset += points_per_chunk) {
+    const size_t count = std::min(points_per_chunk, total_points - offset);
+    const void *ptr = base + offset * bytes_per_point;
+    fn(dtype, ptr, offset, count);
+  }
+}
+
+void AnyTrxFile::for_each_positions_chunk_mutable(size_t chunk_bytes, const PositionsChunkMutableCallback &fn) {
+  if (positions.empty()) {
+    throw std::runtime_error("TRX positions are empty.");
+  }
+  if (positions.cols != 3) {
+    throw std::runtime_error("Positions must have 3 columns.");
+  }
+  if (!fn) {
+    return;
+  }
+  const size_t elem_size = static_cast<size_t>(detail::_sizeof_dtype(positions.dtype));
+  const size_t bytes_per_point = elem_size * 3;
+  const size_t total_points = static_cast<size_t>(positions.rows);
+  size_t points_per_chunk = 0;
+  if (chunk_bytes == 0) {
+    points_per_chunk = total_points;
+  } else {
+    points_per_chunk = std::max<size_t>(1, chunk_bytes / bytes_per_point);
+  }
+  const auto bytes = positions.to_bytes_mutable();
+  auto *base = bytes.data;
+  const auto dtype = scalar_type_from_dtype(positions.dtype);
+  for (size_t offset = 0; offset < total_points; offset += points_per_chunk) {
+    const size_t count = std::min(points_per_chunk, total_points - offset);
+    void *ptr = base + offset * bytes_per_point;
+    fn(dtype, ptr, offset, count);
+  }
+}
+
+PositionsOutputInfo prepare_positions_output(const AnyTrxFile &input,
+                                             const std::string &output_directory,
+                                             const PrepareOutputOptions &options) {
+  if (input.positions.empty() || input.offsets.empty()) {
+    throw std::runtime_error("Input TRX missing positions/offsets.");
+  }
+  if (input.positions.cols != 3) {
+    throw std::runtime_error("Positions must have 3 columns.");
+  }
+
+  std::error_code ec;
+  if (trx::fs::exists(output_directory, ec)) {
+    if (options.overwrite_existing) {
+      trx::fs::remove_all(output_directory, ec);
+    } else {
+      throw std::runtime_error("Output directory already exists: " + output_directory);
+    }
+  }
+  ec.clear();
+  trx::fs::create_directories(output_directory, ec);
+  if (ec) {
+    throw std::runtime_error("Failed to create output directory: " + output_directory);
+  }
+
+  const std::string header_path = output_directory + SEPARATOR + "header.json";
+  {
+    std::ofstream out(header_path, std::ios::out | std::ios::trunc);
+    if (!out.is_open()) {
+      throw std::runtime_error("Failed to write header.json to: " + header_path);
+    }
+    out << input.header.dump() << std::endl;
+  }
+
+  write_typed_array_file(output_directory + SEPARATOR + typed_array_filename("offsets", input.offsets), input.offsets);
+
+  if (!input.groups.empty()) {
+    const std::string groups_dir = output_directory + SEPARATOR + "groups";
+    trx::fs::create_directories(groups_dir, ec);
+    for (const auto &kv : input.groups) {
+      write_typed_array_file(groups_dir + SEPARATOR + typed_array_filename(kv.first, kv.second), kv.second);
+    }
+  }
+
+  if (!input.data_per_streamline.empty()) {
+    const std::string dps_dir = output_directory + SEPARATOR + "dps";
+    trx::fs::create_directories(dps_dir, ec);
+    for (const auto &kv : input.data_per_streamline) {
+      write_typed_array_file(dps_dir + SEPARATOR + typed_array_filename(kv.first, kv.second), kv.second);
+    }
+  }
+
+  if (!input.data_per_vertex.empty()) {
+    const std::string dpv_dir = output_directory + SEPARATOR + "dpv";
+    trx::fs::create_directories(dpv_dir, ec);
+    for (const auto &kv : input.data_per_vertex) {
+      write_typed_array_file(dpv_dir + SEPARATOR + typed_array_filename(kv.first, kv.second), kv.second);
+    }
+  }
+
+  if (!input.data_per_group.empty()) {
+    const std::string dpg_dir = output_directory + SEPARATOR + "dpg";
+    trx::fs::create_directories(dpg_dir, ec);
+    for (const auto &group_kv : input.data_per_group) {
+      const std::string group_dir = dpg_dir + SEPARATOR + group_kv.first;
+      trx::fs::create_directories(group_dir, ec);
+      for (const auto &kv : group_kv.second) {
+        write_typed_array_file(group_dir + SEPARATOR + typed_array_filename(kv.first, kv.second), kv.second);
+      }
+    }
+  }
+
+  PositionsOutputInfo info;
+  info.directory = output_directory;
+  info.dtype = input.positions.dtype;
+  info.points = static_cast<size_t>(input.positions.rows);
+  info.positions_path = output_directory + SEPARATOR + typed_array_filename("positions", input.positions);
+  return info;
+}
+
+void merge_trx_shards(const MergeTrxShardsOptions &options) {
+  if (options.shard_directories.empty()) {
+    throw std::invalid_argument("merge_trx_shards requires at least one shard directory");
+  }
+
+  auto read_header = [](const std::string &dir) {
+    const std::string path = dir + SEPARATOR + "header.json";
+    std::ifstream in(path);
+    if (!in.is_open()) {
+      throw std::runtime_error("Failed to open shard header: " + path);
+    }
+    std::stringstream ss;
+    ss << in.rdbuf();
+    std::string err;
+    json parsed = json::parse(ss.str(), err);
+    if (!err.empty()) {
+      throw std::runtime_error("Failed to parse shard header " + path + ": " + err);
+    }
+    return parsed;
+  };
+
+  auto find_file_with_prefix = [](const std::string &dir, const std::string &prefix) -> std::string {
+    std::error_code ec;
+    for (trx::fs::directory_iterator it(dir, ec), end; it != end; it.increment(ec)) {
+      if (ec) {
+        break;
+      }
+      if (!it->is_regular_file()) {
+        continue;
+      }
+      const std::string name = it->path().filename().string();
+      if (name.rfind(prefix, 0) == 0) {
+        return it->path().string();
+      }
+    }
+    return "";
+  };
+
+  auto append_binary = [](const std::string &dst, const std::string &src) {
+    std::ifstream in(src, std::ios::binary);
+    if (!in.is_open()) {
+      throw std::runtime_error("Failed to open source for append: " + src);
+    }
+    std::ofstream out(dst, std::ios::binary | std::ios::app);
+    if (!out.is_open()) {
+      throw std::runtime_error("Failed to open destination for append: " + dst);
+    }
+    std::vector<char> buffer(1 << 20);
+    while (in) {
+      in.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+      const auto n = in.gcount();
+      if (n > 0) {
+        out.write(buffer.data(), n);
+      }
+    }
+  };
+
+  auto append_offsets_with_base = [](const std::string &dst, const std::string &src, uint64_t base_vertices, bool skip_first) {
+    std::ifstream in(src, std::ios::binary);
+    if (!in.is_open()) {
+      throw std::runtime_error("Failed to open source offsets: " + src);
+    }
+    std::ofstream out(dst, std::ios::binary | std::ios::app);
+    if (!out.is_open()) {
+      throw std::runtime_error("Failed to open destination offsets: " + dst);
+    }
+    constexpr size_t kChunkElems = (8 * 1024 * 1024) / sizeof(uint64_t);
+    std::vector<uint64_t> buffer(kChunkElems);
+    bool first_value_pending = skip_first;
+    while (in) {
+      in.read(reinterpret_cast<char *>(buffer.data()),
+              static_cast<std::streamsize>(buffer.size() * sizeof(uint64_t)));
+      const std::streamsize bytes = in.gcount();
+      if (bytes <= 0) {
+        break;
+      }
+      if (bytes % static_cast<std::streamsize>(sizeof(uint64_t)) != 0) {
+        throw std::runtime_error("Offsets file has invalid byte count: " + src);
+      }
+      const size_t count = static_cast<size_t>(bytes) / sizeof(uint64_t);
+      size_t start_index = 0;
+      if (first_value_pending) {
+        if (count == 0) {
+          continue;
+        }
+        start_index = 1;
+        first_value_pending = false;
+      }
+      for (size_t i = start_index; i < count; ++i) {
+        buffer[i] += base_vertices;
+      }
+      if (count > start_index) {
+        out.write(reinterpret_cast<const char *>(buffer.data() + start_index),
+                  static_cast<std::streamsize>((count - start_index) * sizeof(uint64_t)));
+      }
+    }
+  };
+
+  auto append_group_indices_with_base = [](const std::string &dst, const std::string &src, uint32_t base_streamlines) {
+    std::ifstream in(src, std::ios::binary);
+    if (!in.is_open()) {
+      throw std::runtime_error("Failed to open source group file: " + src);
+    }
+    std::ofstream out(dst, std::ios::binary | std::ios::app);
+    if (!out.is_open()) {
+      throw std::runtime_error("Failed to open destination group file: " + dst);
+    }
+    constexpr size_t kChunkElems = (8 * 1024 * 1024) / sizeof(uint32_t);
+    std::vector<uint32_t> buffer(kChunkElems);
+    while (in) {
+      in.read(reinterpret_cast<char *>(buffer.data()),
+              static_cast<std::streamsize>(buffer.size() * sizeof(uint32_t)));
+      const std::streamsize bytes = in.gcount();
+      if (bytes <= 0) {
+        break;
+      }
+      if (bytes % static_cast<std::streamsize>(sizeof(uint32_t)) != 0) {
+        throw std::runtime_error("Group file has invalid byte count: " + src);
+      }
+      const size_t count = static_cast<size_t>(bytes) / sizeof(uint32_t);
+      for (size_t i = 0; i < count; ++i) {
+        buffer[i] += base_streamlines;
+      }
+      out.write(reinterpret_cast<const char *>(buffer.data()), static_cast<std::streamsize>(count * sizeof(uint32_t)));
+    }
+  };
+
+  auto list_subdir_files = [](const std::string &dir, const std::string &subdir) {
+    std::vector<std::string> files;
+    std::error_code ec;
+    const trx::fs::path path = trx::fs::path(dir) / subdir;
+    if (!trx::fs::exists(path, ec)) {
+      return files;
+    }
+    if (!trx::fs::is_directory(path, ec)) {
+      throw std::runtime_error("Expected directory for subdir: " + path.string());
+    }
+    for (trx::fs::directory_iterator it(path, ec), end; it != end; it.increment(ec)) {
+      if (ec) {
+        throw std::runtime_error("Failed to read directory: " + path.string());
+      }
+      if (!it->is_regular_file()) {
+        continue;
+      }
+      files.push_back(it->path().filename().string());
+    }
+    std::sort(files.begin(), files.end());
+    return files;
+  };
+
+  auto ensure_schema_match = [&](const std::string &subdir, const std::vector<std::string> &schema_files, const std::string &shard) {
+    const auto shard_files = list_subdir_files(shard, subdir);
+    if (shard_files != schema_files) {
+      throw std::runtime_error("Shard schema mismatch for subdir '" + subdir + "': " + shard);
+    }
+  };
+
+  std::error_code ec;
+  for (const auto &dir : options.shard_directories) {
+    if (!trx::fs::exists(dir, ec) || !trx::fs::is_directory(dir, ec)) {
+      throw std::runtime_error("Shard directory does not exist: " + dir);
+    }
+  }
+
+  const std::string output_dir = options.output_directory ? options.output_path : make_temp_dir("trx_merge");
+  if (trx::fs::exists(output_dir, ec)) {
+    if (!options.overwrite_existing) {
+      throw std::runtime_error("Output already exists: " + output_dir);
+    }
+    trx::fs::remove_all(output_dir, ec);
+  }
+  trx::fs::create_directories(output_dir, ec);
+  if (ec) {
+    throw std::runtime_error("Failed to create output directory: " + output_dir);
+  }
+
+  for (const auto &dir : options.shard_directories) {
+    if (trx::fs::exists(dir + SEPARATOR + "dpg", ec)) {
+      throw std::runtime_error("merge_trx_shards currently does not support dpg/ merges");
+    }
+  }
+
+  json merged_header = read_header(options.shard_directories.front());
+  const std::string first_positions = find_file_with_prefix(options.shard_directories.front(), "positions.");
+  const std::string first_offsets = find_file_with_prefix(options.shard_directories.front(), "offsets.");
+  if (first_positions.empty() || first_offsets.empty()) {
+    throw std::runtime_error("Shard missing positions/offsets: " + options.shard_directories.front());
+  }
+  if (get_ext(first_offsets) != "uint64") {
+    throw std::runtime_error("merge_trx_shards currently requires offsets.uint64");
+  }
+
+  const std::string positions_filename = trx::fs::path(first_positions).filename().string();
+  const std::string offsets_filename = trx::fs::path(first_offsets).filename().string();
+  const std::string positions_out = output_dir + SEPARATOR + positions_filename;
+  const std::string offsets_out = output_dir + SEPARATOR + offsets_filename;
+  {
+    std::ofstream clear_positions(positions_out, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!clear_positions.is_open()) {
+      throw std::runtime_error("Failed to create output positions file: " + positions_out);
+    }
+  }
+  {
+    std::ofstream clear_offsets(offsets_out, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!clear_offsets.is_open()) {
+      throw std::runtime_error("Failed to create output offsets file: " + offsets_out);
+    }
+  }
+
+  const auto dps_schema = list_subdir_files(options.shard_directories.front(), "dps");
+  const auto dpv_schema = list_subdir_files(options.shard_directories.front(), "dpv");
+  const auto groups_schema = list_subdir_files(options.shard_directories.front(), "groups");
+  if (!dps_schema.empty()) {
+    trx::fs::create_directories(output_dir + SEPARATOR + "dps", ec);
+  }
+  if (!dpv_schema.empty()) {
+    trx::fs::create_directories(output_dir + SEPARATOR + "dpv", ec);
+  }
+  if (!groups_schema.empty()) {
+    trx::fs::create_directories(output_dir + SEPARATOR + "groups", ec);
+  }
+  for (const auto &name : dps_schema) {
+    std::ofstream clear_file(output_dir + SEPARATOR + "dps" + SEPARATOR + name, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!clear_file.is_open()) {
+      throw std::runtime_error("Failed to create merged dps file: " + name);
+    }
+  }
+  for (const auto &name : dpv_schema) {
+    std::ofstream clear_file(output_dir + SEPARATOR + "dpv" + SEPARATOR + name, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!clear_file.is_open()) {
+      throw std::runtime_error("Failed to create merged dpv file: " + name);
+    }
+  }
+  for (const auto &name : groups_schema) {
+    std::ofstream clear_file(output_dir + SEPARATOR + "groups" + SEPARATOR + name,
+                             std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!clear_file.is_open()) {
+      throw std::runtime_error("Failed to create merged group file: " + name);
+    }
+  }
+
+  uint64_t total_vertices = 0;
+  uint64_t total_streamlines = 0;
+  for (size_t i = 0; i < options.shard_directories.size(); ++i) {
+    const std::string &shard_dir = options.shard_directories[i];
+    ensure_schema_match("dps", dps_schema, shard_dir);
+    ensure_schema_match("dpv", dpv_schema, shard_dir);
+    ensure_schema_match("groups", groups_schema, shard_dir);
+
+    const json shard_header = read_header(shard_dir);
+    const uint64_t shard_vertices = static_cast<uint64_t>(shard_header["NB_VERTICES"].int_value());
+    const uint64_t shard_streamlines = static_cast<uint64_t>(shard_header["NB_STREAMLINES"].int_value());
+
+    const std::string shard_positions = find_file_with_prefix(shard_dir, "positions.");
+    const std::string shard_offsets = find_file_with_prefix(shard_dir, "offsets.");
+    if (shard_positions.empty() || shard_offsets.empty()) {
+      throw std::runtime_error("Shard missing positions/offsets: " + shard_dir);
+    }
+    if (trx::fs::path(shard_positions).filename().string() != positions_filename) {
+      throw std::runtime_error("Shard positions dtype mismatch: " + shard_dir);
+    }
+    if (trx::fs::path(shard_offsets).filename().string() != offsets_filename) {
+      throw std::runtime_error("Shard offsets dtype mismatch: " + shard_dir);
+    }
+
+    append_binary(positions_out, shard_positions);
+    append_offsets_with_base(offsets_out, shard_offsets, total_vertices, i != 0);
+
+    for (const auto &name : dps_schema) {
+      append_binary(output_dir + SEPARATOR + "dps" + SEPARATOR + name, shard_dir + SEPARATOR + "dps" + SEPARATOR + name);
+    }
+    for (const auto &name : dpv_schema) {
+      append_binary(output_dir + SEPARATOR + "dpv" + SEPARATOR + name, shard_dir + SEPARATOR + "dpv" + SEPARATOR + name);
+    }
+    for (const auto &name : groups_schema) {
+      if (total_streamlines > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
+        throw std::runtime_error("Group index offset exceeds uint32 range during merge");
+      }
+      append_group_indices_with_base(
+          output_dir + SEPARATOR + "groups" + SEPARATOR + name,
+          shard_dir + SEPARATOR + "groups" + SEPARATOR + name,
+          static_cast<uint32_t>(total_streamlines));
+    }
+
+    total_vertices += shard_vertices;
+    total_streamlines += shard_streamlines;
+  }
+
+  merged_header = _json_set(merged_header, "NB_VERTICES", static_cast<int>(total_vertices));
+  merged_header = _json_set(merged_header, "NB_STREAMLINES", static_cast<int>(total_streamlines));
+  {
+    const std::string merged_header_path = output_dir + SEPARATOR + "header.json";
+    std::ofstream out(merged_header_path, std::ios::out | std::ios::trunc);
+    if (!out.is_open()) {
+      throw std::runtime_error("Failed to write merged header: " + merged_header_path);
+    }
+    out << merged_header.dump() << std::endl;
+  }
+
+  if (options.output_directory) {
+    return;
+  }
+
+  const trx::fs::path archive_path(options.output_path);
+  if (archive_path.has_parent_path()) {
+    std::error_code parent_ec;
+    trx::fs::create_directories(archive_path.parent_path(), parent_ec);
+    if (parent_ec) {
+      throw std::runtime_error("Could not create archive parent directory: " + archive_path.parent_path().string());
+    }
+  }
+
+  int errorp = 0;
+  zip_t *zf = zip_open(options.output_path.c_str(), ZIP_CREATE + ZIP_TRUNCATE, &errorp);
+  if (zf == nullptr) {
+    throw std::runtime_error("Could not open archive " + options.output_path + ": " + strerror(errorp));
+  }
+  zip_from_folder(zf, output_dir, output_dir, options.compression_standard, nullptr);
+  if (zip_close(zf) != 0) {
+    throw std::runtime_error("Unable to close archive " + options.output_path + ": " + zip_strerror(zf));
+  }
+  rm_dir(output_dir);
 }
 }; // namespace trx

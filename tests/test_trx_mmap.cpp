@@ -181,7 +181,7 @@ TestTrxFixture create_fixture() {
   if (zf == nullptr) {
     throw std::runtime_error("Failed to create trx zip file");
   }
-  trx::zip_from_folder(zf, trx_dir.string(), trx_dir.string(), ZIP_CM_STORE);
+  trx::zip_from_folder(zf, trx_dir.string(), trx_dir.string(), ZIP_CM_STORE, nullptr);
   if (zip_close(zf) != 0) {
     throw std::runtime_error("Failed to close trx zip file");
   }

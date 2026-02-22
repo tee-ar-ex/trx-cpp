@@ -15,6 +15,7 @@ tractography file format.
    overview
    building
    usage
+   benchmarks
    downstream_usage
    linting
 
