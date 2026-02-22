@@ -88,11 +88,9 @@ jobs:
       - name: Test with coverage (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: >
-          & "$env:ProgramFiles\OpenCppCoverage\OpenCppCoverage.exe"
-          --export_type cobertura:coverage.xml
-          --sources ${{ github.workspace }}
-          -- ctest --test-dir build --output-on-failure -C Release
+        run: |
+          $occ = (Get-Command OpenCppCoverage -ErrorAction Stop).Path
+          & $occ --export_type cobertura:coverage.xml --sources ${{ github.workspace }} -- ctest --test-dir build --output-on-failure -C Release
 
       - name: Generate coverage summary (macOS)
         if: runner.os == 'macOS'
