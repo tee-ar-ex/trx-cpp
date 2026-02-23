@@ -35,6 +35,8 @@ namespace {
 using Eigen::half;
 
 std::string g_reference_trx_path;
+bool g_reference_has_dpv = false;
+size_t g_reference_streamline_count = 0;
 
 constexpr float kMinLengthMm = 20.0f;
 constexpr float kMaxLengthMm = 500.0f;
@@ -554,6 +556,48 @@ struct TrxOnDisk {
   size_t shard_processes = 1;
 };
 
+// Parse the per-element column count and byte size encoded in a TRX filename.
+// TRX convention: <name>.<ncols>.<dtype> or <name>.<dtype>
+// e.g. "positions.3.float16" -> {3, 2}, "sift_weights.float32" -> {1, 4}
+static std::pair<size_t, size_t> parse_trx_array_dims(const std::string &filename) {
+  std::vector<std::string> parts;
+  std::istringstream ss(filename);
+  std::string tok;
+  while (std::getline(ss, tok, '.')) {
+    if (!tok.empty()) parts.push_back(tok);
+  }
+  if (parts.size() < 2) return {1, 4};
+  const std::string dtype_str = parts.back();
+  const size_t elem_size = static_cast<size_t>(trx::detail::_sizeof_dtype(dtype_str));
+  if (parts.size() >= 3) {
+    const std::string &maybe_ncols = parts[parts.size() - 2];
+    if (!maybe_ncols.empty() &&
+        std::all_of(maybe_ncols.begin(), maybe_ncols.end(), [](unsigned char c) { return std::isdigit(c); })) {
+      return {static_cast<size_t>(std::stoul(maybe_ncols)), elem_size};
+    }
+  }
+  return {1, elem_size};
+}
+
+#if defined(__unix__) || defined(__APPLE__)
+static void truncate_file_to(const std::string &path, off_t byte_size) {
+  if (::truncate(path.c_str(), byte_size) != 0) {
+    throw std::runtime_error("truncate " + path + ": " + std::strerror(errno));
+  }
+}
+#endif
+
+// Truncate every regular file in dir to row_count rows based on the per-file dtype/ncols.
+static void truncate_array_dir(const std::string &dir_path, size_t row_count) {
+  std::error_code ec;
+  if (!trx::fs::exists(dir_path, ec)) return;
+  for (const auto &entry : trx::fs::directory_iterator(dir_path, ec)) {
+    if (ec || !entry.is_regular_file()) continue;
+    const auto [ncols, elem_size] = parse_trx_array_dims(entry.path().filename().string());
+    truncate_file_to(entry.path().string(), static_cast<off_t>(row_count * ncols * elem_size));
+  }
+}
+
 TrxOnDisk build_trx_file_on_disk_single(size_t streamlines,
                                         GroupScenario scenario,
                                         bool add_dps,
@@ -562,66 +606,144 @@ TrxOnDisk build_trx_file_on_disk_single(size_t streamlines,
                                         const std::string &out_path_override = "") {
   const size_t progress_every = parse_env_size("TRX_BENCH_LOG_PROGRESS_EVERY", 0);
 
-  // Fast path: For 10M (full reference) WITHOUT DPV, just copy and add groups
-  // DPV requires 1.3B vertices × 8 bytes (vector + internal copy) = 10 GB extra memory!
   if (g_reference_trx_path.empty()) {
     throw std::runtime_error("Reference TRX path not set.");
   }
-  auto ref_trx_check = trx::load<half>(g_reference_trx_path);
-  const size_t ref_count = ref_trx_check->num_streamlines();
-  const bool is_full_reference = (streamlines == ref_count);
-  ref_trx_check.reset();  // Release mmap
-  
-  // Fast path for full reference WITHOUT DPV: work with reference directly
-  // DPV + 10M requires 40-50 GB due to: mmap(7.6) + dpv_vec(4.8) + dpv_mmap(4.8) + save() overhead(20+)
-  if (is_full_reference && !add_dpv) {
-    log_bench_start("build_trx_copy_fast", "streamlines=" + std::to_string(streamlines));
-    
-    // Filesystem copy reference (disk I/O only)
-    const std::string temp_copy = make_temp_path("trx_ref_copy");
-    std::error_code copy_ec;
-    std::filesystem::copy_file(g_reference_trx_path, temp_copy,
-                              std::filesystem::copy_options::overwrite_existing, copy_ec);
-    if (copy_ec) {
-      throw std::runtime_error("Failed to copy reference: " + copy_ec.message());
+  const bool is_full_reference = (streamlines == g_reference_streamline_count);
+
+  // Fast path: load the reference (extracts to a fresh unique temp dir each call), optionally
+  // ftruncate the positions/offsets/dps files to a prefix boundary in O(1), then assign
+  // groups and save. Avoids the large intermediate positions write from subset_streamlines().
+  //
+  // Used whenever dpv isn't needed, or when the full reference already has dpv (preserved
+  // through the copy without any vector allocation).
+  // Falls back to build_prefix_subset_trx only for synthetic-dpv at small sizes.
+  if (!add_dpv || (is_full_reference && g_reference_has_dpv)) {
+    log_bench_start("build_trx_prefix_fast", "streamlines=" + std::to_string(streamlines));
+
+    // Load reference into a fresh temp dir; each call gets its own unique extraction.
+    auto ref = trx::load<half>(g_reference_trx_path);
+    const std::string temp_dir = ref->_uncompressed_folder_handle;
+
+    // Locate positions and offsets files while the mmap is still open.
+    std::string pos_path, off_path;
+    {
+      std::error_code ec;
+      for (const auto &entry : trx::fs::directory_iterator(temp_dir, ec)) {
+        if (ec) break;
+        const std::string fn = entry.path().filename().string();
+        if (fn.rfind("positions", 0) == 0) pos_path = entry.path().string();
+        else if (fn.rfind("offsets", 0) == 0) off_path = entry.path().string();
+      }
     }
-    
-    // Load and modify (just groups, no DPV)
-    auto trx = trx::load<half>(temp_copy);
-    
-    // Add groups
+    if (pos_path.empty() || off_path.empty()) {
+      throw std::runtime_error("positions/offsets not found in " + temp_dir);
+    }
+
+    // Read vertex_cutoff directly from the offsets file so the dtype (uint32 vs uint64)
+    // is always respected, regardless of how the Eigen map interprets the mmap width.
+    const auto [off_ncols, off_elem] =
+        parse_trx_array_dims(trx::fs::path(off_path).filename().string());
+    size_t vertex_cutoff = 0;
+    {
+      std::ifstream ofs(off_path, std::ios::binary);
+      ofs.seekg(static_cast<std::streamoff>(streamlines * off_ncols * off_elem));
+      if (off_elem == 4) {
+        uint32_t v = 0;
+        ofs.read(reinterpret_cast<char *>(&v), 4);
+        vertex_cutoff = static_cast<size_t>(v);
+      } else {
+        uint64_t v = 0;
+        ofs.read(reinterpret_cast<char *>(&v), 8);
+        vertex_cutoff = static_cast<size_t>(v);
+      }
+    }
+
+    // Release mmaps without deleting temp_dir — we own it from here.
+    ref->_owns_uncompressed_folder = false;
+    ref.reset();
+
+    if (!is_full_reference) {
+      // Truncate positions and offsets to the prefix boundary.
+      const auto [pos_ncols, pos_elem] =
+          parse_trx_array_dims(trx::fs::path(pos_path).filename().string());
+      truncate_file_to(pos_path, static_cast<off_t>(vertex_cutoff * pos_ncols * pos_elem));
+      truncate_file_to(off_path, static_cast<off_t>((streamlines + 1) * off_ncols * off_elem));
+
+      // Truncate DPS arrays to the prefix streamline count.
+      truncate_array_dir(temp_dir + trx::SEPARATOR + "dps", streamlines);
+
+      // DPV is absent at this point (condition above guarantees !add_dpv for non-full ref).
+      std::error_code ec2;
+      std::filesystem::remove_all(trx::fs::path(temp_dir) / "dpv", ec2);
+
+      // Patch NB_STREAMLINES and NB_VERTICES in header.json.
+      const std::string header_path = temp_dir + trx::SEPARATOR + "header.json";
+      {
+        std::ifstream in(header_path);
+        std::string raw((std::istreambuf_iterator<char>(in)), {});
+        std::string parse_err;
+        json hdr = json::parse(raw, parse_err);
+        if (!parse_err.empty()) throw std::runtime_error("header.json parse error: " + parse_err);
+        hdr = trx::_json_set(hdr, "NB_STREAMLINES", static_cast<int>(streamlines));
+        hdr = trx::_json_set(hdr, "NB_VERTICES", static_cast<int>(vertex_cutoff));
+        std::ofstream out(header_path, std::ios::trunc);
+        out << hdr.dump();
+      }
+    }
+
+    // Strip DPS if not wanted (applies to both full and prefix).
+    if (!add_dps) {
+      std::error_code ec;
+      std::filesystem::remove_all(trx::fs::path(temp_dir) / "dps", ec);
+    }
+
+    // Clear any groups the reference may carry; the benchmark owns grouping.
+    {
+      std::error_code ec;
+      std::filesystem::remove_all(trx::fs::path(temp_dir) / "groups", ec);
+    }
+
+    auto trx = trx::TrxFile<half>::load_from_directory(temp_dir);
+
+    // Add synthetic DPS if requested but the reference didn't have it.
+    if (add_dps && trx->data_per_streamline.empty()) {
+      std::vector<float> ones(streamlines, 1.0f);
+      trx->add_dps_from_vector("sift_weights", "float32", ones);
+    }
+
     assign_groups_to_trx(*trx, scenario, streamlines);
-    
-    // Note: DPV for 10M handled by sampling path (skipped by default due to 40-50 GB memory)
-    
-    // Save to output
-    const std::string out_path = out_path_override.empty() ? make_temp_path("trx_input") : out_path_override;
+
+    const std::string out_path =
+        out_path_override.empty() ? make_temp_path("trx_input") : out_path_override;
     trx::TrxSaveOptions save_opts;
     save_opts.compression_standard = compression;
     trx->save(out_path, save_opts);
     const size_t total_vertices = trx->num_vertices();
     trx->close();
-    
-    std::filesystem::remove(temp_copy, copy_ec);
-    
+    trx::rm_dir(temp_dir);
+
     if (out_path_override.empty()) {
       register_cleanup(out_path);
     }
-    
-    log_bench_end("build_trx_copy_fast", "streamlines=" + std::to_string(streamlines));
+
+    log_bench_end("build_trx_prefix_fast", "streamlines=" + std::to_string(streamlines));
     return {out_path, streamlines, total_vertices, 0.0, 1};
   }
-  
-  // Prefix-subset path: copy first N streamlines into a TrxFile and save.
+
+  // Fallback: prefix-subset path for synthetic dpv at smaller streamline counts.
   auto trx_subset = build_prefix_subset_trx(streamlines, scenario, add_dps, add_dpv);
   const size_t total_vertices = trx_subset->num_vertices();
-  const std::string out_path = out_path_override.empty() ? make_temp_path("trx_input") : out_path_override;
+  const std::string out_path =
+      out_path_override.empty() ? make_temp_path("trx_input") : out_path_override;
   trx::TrxSaveOptions save_opts;
   save_opts.compression_standard = compression;
   trx_subset->save(out_path, save_opts);
   trx_subset->close();
-  if (progress_every > 0 && (parse_env_bool("TRX_BENCH_CHILD_LOG", false) || parse_env_bool("TRX_BENCH_LOG", false))) {
-    std::cerr << "[trx-bench] progress build_trx streamlines=" << streamlines << " / " << streamlines << std::endl;
+  if (progress_every > 0 &&
+      (parse_env_bool("TRX_BENCH_CHILD_LOG", false) || parse_env_bool("TRX_BENCH_LOG", false))) {
+    std::cerr << "[trx-bench] progress build_trx streamlines=" << streamlines << " / "
+              << streamlines << std::endl;
   }
   if (out_path_override.empty()) {
     register_cleanup(out_path);
@@ -732,17 +854,17 @@ static void BM_TrxFileSize_Float16(benchmark::State &state) {
   const auto compression = use_zip ? ZIP_CM_DEFLATE : ZIP_CM_STORE;
   const size_t skip_zip_at = parse_env_size("TRX_BENCH_SKIP_ZIP_AT", 5000000);
   const size_t skip_dpv_at = parse_env_size("TRX_BENCH_SKIP_DPV_AT", 10000000);
-  const size_t skip_connectome_at = parse_env_size("TRX_BENCH_SKIP_CONNECTOME_AT", 5000000);
   if (use_zip && streamlines >= skip_zip_at) {
     state.SkipWithMessage("zip compression skipped for large streamlines");
     return;
   }
-  if (add_dpv && streamlines >= skip_dpv_at) {
+  // Skip synthetic dpv at high streamline counts due to memory cost (~40-50 GB).
+  // Exception: if the reference already has dpv and this is the full-reference count, the
+  // fast path handles it via ftruncate without allocating a dpv vector.
+  const bool fast_path_covers_dpv =
+      (streamlines == g_reference_streamline_count && g_reference_has_dpv);
+  if (add_dpv && streamlines >= skip_dpv_at && !fast_path_covers_dpv) {
     state.SkipWithMessage("dpv skipped: requires 40-50 GB memory (set TRX_BENCH_SKIP_DPV_AT=0 to force)");
-    return;
-  }
-  if (scenario == GroupScenario::Connectome && streamlines >= skip_connectome_at) {
-    state.SkipWithMessage("connectome groups skipped for large streamlines (set TRX_BENCH_SKIP_CONNECTOME_AT=0 to force)");
     return;
   }
   log_bench_start("BM_TrxFileSize_Float16",
@@ -1104,6 +1226,16 @@ int main(int argc, char **argv) {
   // Set global reference path
   g_reference_trx_path = reference_trx;
   std::cerr << "[trx-bench] Using reference TRX: " << g_reference_trx_path << std::endl;
+
+  // Pre-inspect reference to avoid repeated loads and to inform skip decisions
+  {
+    auto ref = trx::load<half>(g_reference_trx_path);
+    g_reference_streamline_count = ref->num_streamlines();
+    g_reference_has_dpv = !ref->data_per_vertex.empty();
+    ref->close();
+    std::cerr << "[trx-bench] Reference: " << g_reference_streamline_count
+              << " streamlines, dpv=" << (g_reference_has_dpv ? "yes" : "no") << std::endl;
+  }
   
   // Enable verbose logging if requested
   if (verbose) {
