@@ -1,22 +1,59 @@
 TRX-cpp Documentation
 =====================
 
+.. image:: https://readthedocs.org/projects/trx-cpp/badge/?version=latest
+   :target: https://trx-cpp.readthedocs.io/en/latest/
+   :alt: Documentation Status
+
 .. image:: https://codecov.io/gh/tee-ar-ex/trx-cpp/branch/main/graph/badge.svg
    :target: https://codecov.io/gh/tee-ar-ex/trx-cpp
    :alt: codecov
 
-TRX-cpp is a C++ library for reading, writing, and memory-mapping the TRX
-tractography file format.
+A C++17 library for reading, writing, and memory-mapping the TRX tractography
+format.
 
 .. toctree::
    :maxdepth: 2
    :caption: Getting Started
 
-   overview
+   introduction
+   quick_start
    building
-   usage
+
+.. toctree::
+   :maxdepth: 2
+   :caption: User Guide
+
+   concepts
+   api_layers
+   reading
+   writing
+   streaming
+   spatial_queries
+   nifti
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Integration Guide
+
+   integration
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Performance
+
    benchmarks
-   downstream_usage
+
+.. toctree::
+   :maxdepth: 2
+   :caption: TRX Format
+
+   spec
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Contributing
+
    linting
 
 .. toctree::
