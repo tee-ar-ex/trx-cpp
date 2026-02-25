@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <system_error>
+#include <random>
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
@@ -397,19 +398,19 @@ public:
    * The box is defined by min/max corners in TRX coordinates.
    * Returns a new TrxFile with positions, DPV/DPS, and groups remapped.
    * Optionally builds the AABB cache for the returned TrxFile.
-   */
-  /**
-   * @brief Extract a subset of streamlines intersecting an axis-aligned box.
    *
-   * The box is defined by min/max corners in TRX coordinates.
-   * Returns a new TrxFile with positions, DPV/DPS, and groups remapped.
-   * Optionally builds the AABB cache for the returned TrxFile.
+   * If max_streamlines > 0 and more streamlines intersect the box than that
+   * limit, a random sample of exactly max_streamlines is returned instead of
+   * the full intersection.  rng_seed controls the random draw so results are
+   * reproducible.  The returned indices are sorted for efficient I/O.
    */
   std::unique_ptr<TrxFile<DT>>
   query_aabb(const std::array<float, 3> &min_corner,
              const std::array<float, 3> &max_corner,
              const std::vector<std::array<Eigen::half, 6>> *precomputed_aabbs = nullptr,
-             bool build_cache_for_result = false) const;
+             bool build_cache_for_result = false,
+             size_t max_streamlines = 0,
+             uint32_t rng_seed = 42) const;
 
   /**
    * @brief Extract a subset of streamlines by index.

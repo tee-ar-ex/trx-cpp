@@ -2500,7 +2500,9 @@ std::unique_ptr<TrxFile<DT>> TrxFile<DT>::query_aabb(
     const std::array<float, 3> &min_corner,
     const std::array<float, 3> &max_corner,
     const std::vector<std::array<Eigen::half, 6>> *precomputed_aabbs,
-    bool build_cache_for_result) const {
+    bool build_cache_for_result,
+    size_t max_streamlines,
+    uint32_t rng_seed) const {
   if (!this->streamlines) {
     return this->make_empty_like();
   }
@@ -2542,6 +2544,14 @@ std::unique_ptr<TrxFile<DT>> TrxFile<DT>::query_aabb(
         box_min_z <= max_z && box_max_z >= min_z) {
       selected.push_back(static_cast<uint32_t>(i));
     }
+  }
+
+  if (max_streamlines > 0 && selected.size() > max_streamlines) {
+    std::mt19937 rng(rng_seed);
+    std::shuffle(selected.begin(), selected.end(), rng);
+    selected.resize(max_streamlines);
+    // Re-sort by index for sequential memory access in subset_streamlines.
+    std::sort(selected.begin(), selected.end());
   }
 
   return this->subset_streamlines(selected, build_cache_for_result);

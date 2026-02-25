@@ -30,6 +30,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#endif
 
 namespace {
 using Eigen::half;
@@ -119,6 +122,34 @@ double get_max_rss_kb() {
 #else
   return static_cast<double>(usage.ru_maxrss);
 #endif
+#else
+  return 0.0;
+#endif
+}
+
+// Returns the current RSS (not the process-wide peak) so each benchmark can
+// track its own peak rather than inheriting the all-time process high-water mark.
+double get_current_rss_kb() {
+#if defined(__APPLE__)
+  struct mach_task_basic_info info;
+  mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+  if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                reinterpret_cast<task_info_t>(&info), &count) != KERN_SUCCESS) {
+    return 0.0;
+  }
+  return static_cast<double>(info.resident_size) / 1024.0;
+#elif defined(__linux__)
+  std::ifstream status("/proc/self/status");
+  std::string line;
+  while (std::getline(status, line)) {
+    if (line.rfind("VmRSS:", 0) == 0) {
+      const auto pos = line.find_first_of("0123456789");
+      if (pos != std::string::npos) {
+        return static_cast<double>(std::stoull(line.substr(pos)));
+      }
+    }
+  }
+  return 0.0;
 #else
   return 0.0;
 #endif
@@ -223,7 +254,7 @@ std::vector<size_t> streamlines_for_benchmarks() {
     return {only};
   }
   const size_t max_val = parse_env_size("TRX_BENCH_MAX_STREAMLINES", 10000000);
-  std::vector<size_t> counts = {10000000, 5000000, 1000000, 500000, 100000};
+  std::vector<size_t> counts = {100000, 500000, 1000000, 5000000, 10000000};
   counts.erase(std::remove_if(counts.begin(), counts.end(), [&](size_t v) { return v > max_val; }), counts.end());
   if (counts.empty()) {
     counts.push_back(max_val);
@@ -367,7 +398,11 @@ std::unique_ptr<trx::TrxFile<half>> build_prefix_subset_trx(size_t streamlines,
   }
 
   if (add_dpv) {
-    std::vector<float> dpv(out->num_vertices(), 0.5f);
+    const size_t n_verts = out->num_vertices();
+    std::vector<float> dpv(n_verts);
+    std::mt19937 rng(12345);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+    for (auto &v : dpv) v = dist(rng);
     out->add_dpv_from_vector("dpv_random", "float32", dpv);
   } else {
     out->data_per_vertex.clear();
@@ -598,27 +633,49 @@ static void truncate_array_dir(const std::string &dir_path, size_t row_count) {
   }
 }
 
+// Write random float32 DPV data directly to temp_dir/dpv/dpv_random.float32 in chunks,
+// avoiding a full n_vertices allocation for large datasets.
+static void write_synthetic_dpv_to_dir(const std::string &temp_dir, size_t n_vertices) {
+  const std::string dpv_dir = temp_dir + trx::SEPARATOR + "dpv";
+  std::error_code ec;
+  std::filesystem::create_directories(dpv_dir, ec);
+  const std::string dpv_path = dpv_dir + trx::SEPARATOR + "dpv_random.float32";
+  std::ofstream f(dpv_path, std::ios::binary | std::ios::trunc);
+  if (!f.is_open()) {
+    throw std::runtime_error("Cannot open DPV output file: " + dpv_path);
+  }
+  constexpr size_t kChunkSize = 1024ULL * 1024ULL;  // 1M floats = 4 MB per chunk
+  std::vector<float> chunk(kChunkSize);
+  std::mt19937 rng(12345);
+  std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+  size_t remaining = n_vertices;
+  while (remaining > 0) {
+    const size_t to_write = std::min(kChunkSize, remaining);
+    for (size_t i = 0; i < to_write; ++i) {
+      chunk[i] = dist(rng);
+    }
+    f.write(reinterpret_cast<const char *>(chunk.data()),
+            static_cast<std::streamsize>(to_write * sizeof(float)));
+    remaining -= to_write;
+  }
+}
+
 TrxOnDisk build_trx_file_on_disk_single(size_t streamlines,
                                         GroupScenario scenario,
                                         bool add_dps,
                                         bool add_dpv,
                                         zip_uint32_t compression,
                                         const std::string &out_path_override = "") {
-  const size_t progress_every = parse_env_size("TRX_BENCH_LOG_PROGRESS_EVERY", 0);
-
   if (g_reference_trx_path.empty()) {
     throw std::runtime_error("Reference TRX path not set.");
   }
   const bool is_full_reference = (streamlines == g_reference_streamline_count);
 
   // Fast path: load the reference (extracts to a fresh unique temp dir each call), optionally
-  // ftruncate the positions/offsets/dps files to a prefix boundary in O(1), then assign
-  // groups and save. Avoids the large intermediate positions write from subset_streamlines().
-  //
-  // Used whenever dpv isn't needed, or when the full reference already has dpv (preserved
-  // through the copy without any vector allocation).
-  // Falls back to build_prefix_subset_trx only for synthetic-dpv at small sizes.
-  if (!add_dpv || (is_full_reference && g_reference_has_dpv)) {
+  // ftruncate the positions/offsets/dps files to a prefix boundary in O(1), write synthetic
+  // DPV if needed (chunked for >1M streamlines, vector for smaller), then assign groups and
+  // save. Avoids the large intermediate positions write from subset_streamlines().
+  {
     log_bench_start("build_trx_prefix_fast", "streamlines=" + std::to_string(streamlines));
 
     // Load reference into a fresh temp dir; each call gets its own unique extraction.
@@ -673,9 +730,15 @@ TrxOnDisk build_trx_file_on_disk_single(size_t streamlines,
       // Truncate DPS arrays to the prefix streamline count.
       truncate_array_dir(temp_dir + trx::SEPARATOR + "dps", streamlines);
 
-      // DPV is absent at this point (condition above guarantees !add_dpv for non-full ref).
-      std::error_code ec2;
-      std::filesystem::remove_all(trx::fs::path(temp_dir) / "dpv", ec2);
+      // Handle DPV for the prefix case.
+      if (add_dpv && g_reference_has_dpv) {
+        // Reference has DPV — truncate its files to the prefix vertex count.
+        truncate_array_dir(temp_dir + trx::SEPARATOR + "dpv", vertex_cutoff);
+      } else {
+        // Either DPV is not wanted, or reference has none (synthetic will be written below).
+        std::error_code ec2;
+        std::filesystem::remove_all(trx::fs::path(temp_dir) / "dpv", ec2);
+      }
 
       // Patch NB_STREAMLINES and NB_VERTICES in header.json.
       const std::string header_path = temp_dir + trx::SEPARATOR + "header.json";
@@ -692,6 +755,12 @@ TrxOnDisk build_trx_file_on_disk_single(size_t streamlines,
       }
     }
 
+    // Remove DPV for the full-reference case when not wanted.
+    if (is_full_reference && !add_dpv) {
+      std::error_code ec;
+      std::filesystem::remove_all(trx::fs::path(temp_dir) / "dpv", ec);
+    }
+
     // Strip DPS if not wanted (applies to both full and prefix).
     if (!add_dps) {
       std::error_code ec;
@@ -704,12 +773,27 @@ TrxOnDisk build_trx_file_on_disk_single(size_t streamlines,
       std::filesystem::remove_all(trx::fs::path(temp_dir) / "groups", ec);
     }
 
+    // Write synthetic DPV in chunks before loading when the reference lacks it and
+    // the vertex count is large (avoids allocating the full buffer at once).
+    if (add_dpv && !g_reference_has_dpv && streamlines > 1000000) {
+      write_synthetic_dpv_to_dir(temp_dir, vertex_cutoff);
+    }
+
     auto trx = trx::TrxFile<half>::load_from_directory(temp_dir);
 
     // Add synthetic DPS if requested but the reference didn't have it.
     if (add_dps && trx->data_per_streamline.empty()) {
       std::vector<float> ones(streamlines, 1.0f);
       trx->add_dps_from_vector("sift_weights", "float32", ones);
+    }
+
+    // Add synthetic DPV via vector for small streamline counts.
+    if (add_dpv && !g_reference_has_dpv && streamlines <= 1000000) {
+      std::vector<float> dpv_data(vertex_cutoff);
+      std::mt19937 rng(12345);
+      std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+      for (auto &v : dpv_data) v = dist(rng);
+      trx->add_dpv_from_vector("dpv_random", "float32", dpv_data);
     }
 
     assign_groups_to_trx(*trx, scenario, streamlines);
@@ -730,25 +814,6 @@ TrxOnDisk build_trx_file_on_disk_single(size_t streamlines,
     log_bench_end("build_trx_prefix_fast", "streamlines=" + std::to_string(streamlines));
     return {out_path, streamlines, total_vertices, 0.0, 1};
   }
-
-  // Fallback: prefix-subset path for synthetic dpv at smaller streamline counts.
-  auto trx_subset = build_prefix_subset_trx(streamlines, scenario, add_dps, add_dpv);
-  const size_t total_vertices = trx_subset->num_vertices();
-  const std::string out_path =
-      out_path_override.empty() ? make_temp_path("trx_input") : out_path_override;
-  trx::TrxSaveOptions save_opts;
-  save_opts.compression_standard = compression;
-  trx_subset->save(out_path, save_opts);
-  trx_subset->close();
-  if (progress_every > 0 &&
-      (parse_env_bool("TRX_BENCH_CHILD_LOG", false) || parse_env_bool("TRX_BENCH_LOG", false))) {
-    std::cerr << "[trx-bench] progress build_trx streamlines=" << streamlines << " / "
-              << streamlines << std::endl;
-  }
-  if (out_path_override.empty()) {
-    register_cleanup(out_path);
-  }
-  return {out_path, streamlines, total_vertices, 0.0, 1};
 }
 
 TrxOnDisk build_trx_file_on_disk(size_t streamlines,
@@ -852,19 +917,18 @@ static void BM_TrxFileSize_Float16(benchmark::State &state) {
   const bool add_dpv = state.range(3) != 0;
   const bool use_zip = state.range(4) != 0;
   const auto compression = use_zip ? ZIP_CM_DEFLATE : ZIP_CM_STORE;
-  const size_t skip_zip_at = parse_env_size("TRX_BENCH_SKIP_ZIP_AT", 5000000);
-  const size_t skip_dpv_at = parse_env_size("TRX_BENCH_SKIP_DPV_AT", 10000000);
-  if (use_zip && streamlines >= skip_zip_at) {
-    state.SkipWithMessage("zip compression skipped for large streamlines");
+  // Skip gracefully when the reference file doesn't have enough streamlines rather than
+  // reading past EOF in the fast path.
+  if (streamlines > g_reference_streamline_count) {
+    state.SkipWithMessage("skipped: streamlines exceeds reference file count");
     return;
   }
-  // Skip synthetic dpv at high streamline counts due to memory cost (~40-50 GB).
-  // Exception: if the reference already has dpv and this is the full-reference count, the
-  // fast path handles it via ftruncate without allocating a dpv vector.
-  const bool fast_path_covers_dpv =
-      (streamlines == g_reference_streamline_count && g_reference_has_dpv);
-  if (add_dpv && streamlines >= skip_dpv_at && !fast_path_covers_dpv) {
-    state.SkipWithMessage("dpv skipped: requires 40-50 GB memory (set TRX_BENCH_SKIP_DPV_AT=0 to force)");
+  const size_t skip_zip_at = parse_env_size("TRX_BENCH_SKIP_ZIP_AT", 5000000);
+  // ZIP deflate on multi-GB files takes O(minutes) per iteration — skip for large counts.
+  // File sizes at these scales can be estimated from the linear trend of smaller compressed
+  // results (ratio is stable across counts for the same data distribution).
+  if (use_zip && streamlines >= skip_zip_at) {
+    state.SkipWithMessage("zip skipped: deflating multi-GB files is impractically slow for benchmarking");
     return;
   }
   log_bench_start("BM_TrxFileSize_Float16",
@@ -879,11 +943,14 @@ static void BM_TrxFileSize_Float16(benchmark::State &state) {
   double total_merge_ms = 0.0;
   double total_build_ms = 0.0;
   double total_merge_processes = 0.0;
+  double max_rss_delta_kb = 0.0;
   for (auto _ : state) {
+    const double rss_iter_start = get_current_rss_kb();
     const auto start = std::chrono::steady_clock::now();
     const auto on_disk =
         build_trx_file_on_disk(streamlines, scenario, add_dps, add_dpv, compression);
     const auto end = std::chrono::steady_clock::now();
+    max_rss_delta_kb = std::max(max_rss_delta_kb, get_current_rss_kb() - rss_iter_start);
     const std::chrono::duration<double, std::milli> elapsed = end - start;
     total_build_ms += elapsed.count();
     total_merge_ms += on_disk.shard_merge_ms;
@@ -899,6 +966,7 @@ static void BM_TrxFileSize_Float16(benchmark::State &state) {
   state.counters["dpv"] = add_dpv ? 1.0 : 0.0;
   state.counters["compression"] = use_zip ? 1.0 : 0.0;
   state.counters["positions_dtype"] = 16.0;
+  state.counters["max_rss_kb"] = max_rss_delta_kb;
   state.counters["write_ms"] = total_write_ms / static_cast<double>(state.iterations());
   state.counters["build_ms"] = total_build_ms / static_cast<double>(state.iterations());
   if (total_merge_ms > 0.0) {
@@ -906,14 +974,58 @@ static void BM_TrxFileSize_Float16(benchmark::State &state) {
     state.counters["shard_processes"] = total_merge_processes / static_cast<double>(state.iterations());
   }
   state.counters["file_bytes"] = total_file_bytes / static_cast<double>(state.iterations());
-  state.counters["max_rss_kb"] = get_max_rss_kb();
 
   log_bench_end("BM_TrxFileSize_Float16",
                 "streamlines=" + std::to_string(streamlines));
 }
 
+// Pack a directory tree into a TRX zip archive using zip_source_file for every
+// file so libzip reads in chunks via the OS page cache rather than mapping the
+// data into the process address space.  Avoids the RSS spike that occurs when
+// TrxFile::save() syncs and re-reads large DPS/DPV mmaps before archiving.
+static void pack_dir_to_zip(const std::string &src_dir,
+                             const std::string &out_path,
+                             zip_uint32_t compression) {
+  int errorp = 0;
+  zip_t *za = zip_open(out_path.c_str(), ZIP_CREATE | ZIP_TRUNCATE, &errorp);
+  if (!za) {
+    throw std::runtime_error("pack_dir_to_zip: could not open " + out_path);
+  }
+  std::error_code ec;
+  for (const auto &entry : std::filesystem::recursive_directory_iterator(src_dir, ec)) {
+    if (ec || entry.is_directory(ec)) {
+      continue;
+    }
+    const std::string abs_path = entry.path().string();
+    std::string rel_path = std::filesystem::relative(entry.path(), src_dir, ec).string();
+    std::replace(rel_path.begin(), rel_path.end(), '\\', '/');
+    zip_source_t *src = zip_source_file(za, abs_path.c_str(), 0, -1);
+    if (!src) {
+      zip_close(za);
+      throw std::runtime_error("pack_dir_to_zip: zip_source_file failed for " + abs_path);
+    }
+    const zip_int64_t idx = zip_file_add(za, rel_path.c_str(), src, ZIP_FL_ENC_UTF_8 | ZIP_FL_OVERWRITE);
+    if (idx < 0) {
+      zip_source_free(src);
+      zip_close(za);
+      throw std::runtime_error("pack_dir_to_zip: zip_file_add failed for " + rel_path);
+    }
+    if (zip_set_file_compression(za, idx, static_cast<zip_int32_t>(compression), 0) < 0) {
+      zip_close(za);
+      throw std::runtime_error("pack_dir_to_zip: zip_set_file_compression failed");
+    }
+  }
+  if (zip_close(za) < 0) {
+    throw std::runtime_error("pack_dir_to_zip: zip_close failed for " + out_path);
+  }
+}
+
 static void BM_TrxStream_TranslateWrite(benchmark::State &state) {
   const size_t streamlines = static_cast<size_t>(state.range(0));
+  if (streamlines > g_reference_streamline_count) {
+    state.SkipWithMessage("skipped: streamlines exceeds reference file count");
+    return;
+  }
   const auto scenario = static_cast<GroupScenario>(state.range(1));
   const bool add_dps = state.range(2) != 0;
   const bool add_dpv = state.range(3) != 0;
@@ -939,26 +1051,83 @@ static void BM_TrxStream_TranslateWrite(benchmark::State &state) {
     state.counters["shard_merge_ms"] = dataset.shard_merge_ms;
     state.counters["shard_processes"] = static_cast<double>(dataset.shard_processes);
   }
+  double max_rss_delta_kb = 0.0;
   for (auto _ : state) {
+    const double rss_iter_start = get_current_rss_kb();
+
+    // Sample RSS on a background thread throughout the iteration so we capture
+    // the true peak (positions mmap + chunk tmp vector both resident during
+    // translation), not just the end-of-iteration value which may be lower
+    // after mmaps have been released.
+    std::atomic<bool> rss_sampling{true};
+    std::atomic<long> peak_rss_kb{static_cast<long>(rss_iter_start)};
+    std::thread rss_sampler([&]() {
+      while (rss_sampling.load(std::memory_order_relaxed)) {
+        const long s = static_cast<long>(get_current_rss_kb());
+        long prev = peak_rss_kb.load(std::memory_order_relaxed);
+        while (s > prev &&
+               !peak_rss_kb.compare_exchange_weak(prev, s,
+                   std::memory_order_relaxed, std::memory_order_relaxed)) {}
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      }
+    });
+
     const auto start = std::chrono::steady_clock::now();
     auto trx = trx::load_any(dataset.path);
+    const std::string input_dir = trx.uncompressed_folder_handle();
     const size_t chunk_bytes = parse_env_size("TRX_BENCH_CHUNK_BYTES", 1024ULL * 1024ULL * 1024ULL);
     const std::string out_dir = make_work_dir_name("trx_translate_chunk");
-    trx::PrepareOutputOptions prep_opts;
-    prep_opts.overwrite_existing = true;
-    const auto out_info = trx::prepare_positions_output(trx, out_dir, prep_opts);
 
-    std::ofstream out_positions(out_info.positions_path, std::ios::binary | std::ios::out | std::ios::trunc);
-    if (!out_positions.is_open()) {
-      throw std::runtime_error("Failed to open output positions file: " + out_info.positions_path);
+    // Determine the positions filename before we clear anything.
+    const std::string pos_fname = trx.positions.cols > 1
+                                      ? "positions." + std::to_string(trx.positions.cols) + "." + trx.positions.dtype
+                                      : "positions." + trx.positions.dtype;
+    const size_t total_points = static_cast<size_t>(trx.positions.rows);
+
+    // Copy all metadata and data arrays from the extracted input directory to
+    // out_dir using filesystem operations (fcopyfile / sendfile under the hood)
+    // so the data never passes through the process's mapped address space.
+    // Skip the positions file — we will write the translated version ourselves.
+    std::error_code ec;
+    std::filesystem::create_directories(out_dir, ec);
+    for (const auto &entry : std::filesystem::directory_iterator(input_dir, ec)) {
+      if (ec || entry.is_directory(ec)) {
+        continue;
+      }
+      if (entry.path().filename().string() == pos_fname) {
+        continue;  // will be replaced with translated positions
+      }
+      std::filesystem::copy_file(entry.path(),
+                                 std::filesystem::path(out_dir) / entry.path().filename(),
+                                 std::filesystem::copy_options::overwrite_existing, ec);
+    }
+    for (const char *sub : {"dps", "dpv", "groups", "dpg"}) {
+      const auto src = std::filesystem::path(input_dir) / sub;
+      if (std::filesystem::exists(src, ec)) {
+        std::filesystem::copy(src, std::filesystem::path(out_dir) / sub,
+                              std::filesystem::copy_options::recursive |
+                                  std::filesystem::copy_options::overwrite_existing,
+                              ec);
+      }
     }
 
+    // Release DPS/DPV mmaps — data is now safely on disk in out_dir.
+    // Only the positions mmap is needed going forward.
+    trx.data_per_vertex.clear();
+    trx.data_per_streamline.clear();
+
+    // Write translated positions.
+    const std::string positions_path = out_dir + trx::SEPARATOR + pos_fname;
+    std::ofstream out_positions(positions_path, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!out_positions.is_open()) {
+      throw std::runtime_error("Failed to open output positions file: " + positions_path);
+    }
     trx.for_each_positions_chunk(chunk_bytes,
                                  [&](trx::TrxScalarType dtype, const void *data, size_t offset, size_t count) {
                                    (void)offset;
                                    if (progress_every > 0 && ((offset + count) % progress_every == 0)) {
                                      std::cerr << "[trx-bench] progress translate points=" << (offset + count)
-                                               << " / " << out_info.points << std::endl;
+                                               << " / " << total_points << std::endl;
                                    }
                                    const size_t total_vals = count * 3;
                                    if (dtype == trx::TrxScalarType::Float16) {
@@ -990,20 +1159,29 @@ static void BM_TrxStream_TranslateWrite(benchmark::State &state) {
     out_positions.flush();
     out_positions.close();
 
+    // Release the input positions and offsets mmaps — all reading is done.
+    // Applies the same early-release pattern used for DPS/DPV above: once
+    // the mmap is cleared the OS can reclaim those pages, so pack_dir_to_zip
+    // does not run while they are still pinned in resident_size.
+    trx.positions = trx::TypedArray{};
+    trx.offsets = trx::TypedArray{};
+
+    // Pack out_dir using zip_source_file so libzip reads files in buffered
+    // chunks rather than mapping them — DPS/DPV stay out of resident_size.
     const std::string out_path = make_temp_path("trx_translate");
-    trx::TrxSaveOptions save_opts;
-    save_opts.mode = trx::TrxSaveMode::Archive;
-    save_opts.compression_standard = ZIP_CM_STORE;
-    save_opts.overwrite_existing = true;
-    trx.save(out_path, save_opts);
+    pack_dir_to_zip(out_dir, out_path, ZIP_CM_STORE);
     trx::rm_dir(out_dir);
     const auto end = std::chrono::steady_clock::now();
     const std::chrono::duration<double> elapsed = end - start;
     state.SetIterationTime(elapsed.count());
 
-    std::error_code ec;
     std::filesystem::remove(out_path, ec);
     benchmark::DoNotOptimize(trx);
+
+    rss_sampling.store(false, std::memory_order_relaxed);
+    rss_sampler.join();
+    const double delta = static_cast<double>(peak_rss_kb.load(std::memory_order_relaxed)) - rss_iter_start;
+    max_rss_delta_kb = std::max(max_rss_delta_kb, delta);
   }
 
   state.counters["streamlines"] = static_cast<double>(streamlines);
@@ -1012,7 +1190,7 @@ static void BM_TrxStream_TranslateWrite(benchmark::State &state) {
   state.counters["dps"] = add_dps ? 1.0 : 0.0;
   state.counters["dpv"] = add_dpv ? 1.0 : 0.0;
   state.counters["positions_dtype"] = 16.0;
-  state.counters["max_rss_kb"] = get_max_rss_kb();
+  state.counters["max_rss_kb"] = max_rss_delta_kb;
 
   log_bench_end("BM_TrxStream_TranslateWrite",
                 "streamlines=" + std::to_string(streamlines) + " group_case=" + std::to_string(state.range(1)));
@@ -1020,13 +1198,20 @@ static void BM_TrxStream_TranslateWrite(benchmark::State &state) {
 
 static void BM_TrxQueryAabb_Slabs(benchmark::State &state) {
   const size_t streamlines = static_cast<size_t>(state.range(0));
+  if (streamlines > g_reference_streamline_count) {
+    state.SkipWithMessage("skipped: streamlines exceeds reference file count");
+    return;
+  }
   const auto scenario = static_cast<GroupScenario>(state.range(1));
   const bool add_dps = state.range(2) != 0;
   const bool add_dpv = state.range(3) != 0;
+  // 0 means "no limit" (return all intersecting streamlines).
+  const size_t max_query_streamlines = parse_env_size("TRX_BENCH_MAX_QUERY_STREAMLINES", 500);
   log_bench_start("BM_TrxQueryAabb_Slabs",
                   "streamlines=" + std::to_string(streamlines) + " group_case=" + std::to_string(state.range(1)) +
                       " dps=" + std::to_string(static_cast<int>(add_dps)) +
-                      " dpv=" + std::to_string(static_cast<int>(add_dpv)));
+                      " dpv=" + std::to_string(static_cast<int>(add_dpv)) +
+                      " max_query_streamlines=" + std::to_string(max_query_streamlines));
 
   using Key = KeyHash::Key;
   static std::unordered_map<Key, QueryDataset, KeyHash> cache;
@@ -1044,7 +1229,9 @@ static void BM_TrxQueryAabb_Slabs(benchmark::State &state) {
   }
 
   auto &dataset = cache.at(key);
+  double max_rss_delta_kb = 0.0;
   for (auto _ : state) {
+    const double rss_iter_start = get_current_rss_kb();
     std::vector<double> slab_times_ms;
     slab_times_ms.reserve(kSlabCount);
 
@@ -1054,7 +1241,11 @@ static void BM_TrxQueryAabb_Slabs(benchmark::State &state) {
       const auto &min_corner = dataset.slab_mins[i];
       const auto &max_corner = dataset.slab_maxs[i];
       const auto q_start = std::chrono::steady_clock::now();
-      auto subset = dataset.trx->query_aabb(min_corner, max_corner);
+      auto subset = dataset.trx->query_aabb(min_corner, max_corner,
+                                            /*precomputed_aabbs=*/nullptr,
+                                            /*build_cache_for_result=*/false,
+                                            max_query_streamlines,
+                                            /*rng_seed=*/static_cast<uint32_t>(i));
       const auto q_end = std::chrono::steady_clock::now();
       const std::chrono::duration<double, std::milli> q_elapsed = q_end - q_start;
       slab_times_ms.push_back(q_elapsed.count());
@@ -1074,6 +1265,8 @@ static void BM_TrxQueryAabb_Slabs(benchmark::State &state) {
     state.counters["query_p50_ms"] = p50;
     state.counters["query_p95_ms"] = p95;
 
+    max_rss_delta_kb = std::max(max_rss_delta_kb, get_current_rss_kb() - rss_iter_start);
+
     ScenarioParams params;
     params.streamlines = streamlines;
     params.scenario = scenario;
@@ -1088,9 +1281,10 @@ static void BM_TrxQueryAabb_Slabs(benchmark::State &state) {
   state.counters["dps"] = add_dps ? 1.0 : 0.0;
   state.counters["dpv"] = add_dpv ? 1.0 : 0.0;
   state.counters["query_count"] = static_cast<double>(kSlabCount);
+  state.counters["max_query_streamlines"] = static_cast<double>(max_query_streamlines);
   state.counters["slab_thickness_mm"] = kSlabThicknessMm;
   state.counters["positions_dtype"] = 16.0;
-  state.counters["max_rss_kb"] = get_max_rss_kb();
+  state.counters["max_rss_kb"] = max_rss_delta_kb;
 
   log_bench_end("BM_TrxQueryAabb_Slabs",
                 "streamlines=" + std::to_string(streamlines) + " group_case=" + std::to_string(state.range(1)));
@@ -1124,17 +1318,12 @@ static void ApplySizeArgs(benchmark::internal::Benchmark *bench) {
 
 static void ApplyStreamArgs(benchmark::internal::Benchmark *bench) {
   const std::array<int, 2> flags = {0, 1};
-  const bool core_profile = is_core_profile();
-  const size_t dpv_limit = core_dpv_max_streamlines();
   const auto groups = group_cases_for_benchmarks();
   const auto counts_desc = streamlines_for_benchmarks();
   for (const auto count : counts_desc) {
-    const std::vector<int> dpv_flags = (!core_profile || count <= dpv_limit)
-                                           ? std::vector<int>{0, 1}
-                                           : std::vector<int>{0};
     for (const auto group_case : groups) {
       for (const auto dps : flags) {
-        for (const auto dpv : dpv_flags) {
+        for (const auto dpv : flags) {
           bench->Args({static_cast<int64_t>(count), group_case, dps, dpv});
         }
       }
