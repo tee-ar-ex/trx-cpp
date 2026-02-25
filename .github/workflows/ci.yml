@@ -36,7 +36,6 @@ jobs:
         shell: pwsh
         run: |
           choco install ninja -y
-          choco install opencppcoverage -y
           New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\vcpkg_cache" | Out-Null
           git clone https://github.com/microsoft/vcpkg "$env:GITHUB_WORKSPACE\vcpkg"
           & "$env:GITHUB_WORKSPACE\vcpkg\bootstrap-vcpkg.bat"
@@ -47,6 +46,15 @@ jobs:
             gtest `
             zlib `
             --triplet x64-windows
+
+      - name: Install OpenCppCoverage (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = "$env:TEMP\OpenCppCoverageSetup.exe"
+          Invoke-WebRequest -Uri "https://github.com/OpenCppCoverage/OpenCppCoverage/releases/download/release-0.9.9.0/OpenCppCoverageSetup-x64-0.9.9.0.exe" -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList "/VERYSILENT" -Wait
+          echo "C:\Program Files\OpenCppCoverage" >> $env:GITHUB_PATH
 
       - name: Setup MSVC environment (Windows)
         if: runner.os == 'Windows'
@@ -89,7 +97,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: >
-          & "$env:ProgramFiles\OpenCppCoverage\OpenCppCoverage.exe"
+          & "C:\Program Files\OpenCppCoverage\OpenCppCoverage.exe"
           --export_type cobertura:coverage.xml
           --sources ${{ github.workspace }}
           -- ctest --test-dir build --output-on-failure -C Release

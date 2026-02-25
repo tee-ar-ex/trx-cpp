@@ -69,19 +69,19 @@ parse_args <- function() {
   list(bench_dir = bench_dir, out_dir = out_dir)
 }
 
-#' Convert benchmark time to milliseconds
-time_to_ms <- function(bench) {
+#' Convert benchmark time to seconds
+time_to_s <- function(bench) {
   value <- bench$real_time
   unit <- bench$time_unit
-  
+
   multiplier <- switch(unit,
-    "ns" = 1e-6,
-    "us" = 1e-3,
-    "ms" = 1,
-    "s" = 1e3,
-    1e-6  # default to nanoseconds
+    "ns" = 1e-9,
+    "us" = 1e-6,
+    "ms" = 1e-3,
+    "s"  = 1,
+    1e-9  # default to nanoseconds
   )
-  
+
   value * multiplier
 }
 
@@ -131,7 +131,7 @@ load_benchmarks <- function(bench_dir) {
       row <- list(
         name = name,
         base = parse_base_name(name),
-        real_time_ms = time_to_ms(bench),
+        real_time_s = time_to_s(bench),
         streamlines = bench$streamlines %||% NA,
         length_profile = bench$length_profile %||% NA,
         compression = bench$compression %||% NA,
@@ -170,17 +170,71 @@ load_benchmarks <- function(bench_dir) {
   df
 }
 
+#' Estimate file sizes for missing streamline counts via linear extrapolation.
+#' Uses a per-(dps, dpv, compression, group_case) linear model fit to measured
+#' data to fill in counts not present in the benchmark results (e.g. 10M).
+estimate_missing_file_sizes <- function(sub_df) {
+  target_sl <- sort(unique(c(sub_df$streamlines, 10000000)))
+
+  combos <- sub_df %>%
+    filter(!is.na(file_bytes)) %>%
+    group_by(dps, dpv, compression, group_case) %>%
+    filter(n() >= 2) %>%
+    summarise(.groups = "drop")
+
+  if (nrow(combos) == 0) return(NULL)
+
+  estimated_rows <- list()
+
+  for (i in seq_len(nrow(combos))) {
+    d   <- combos$dps[i]
+    v   <- combos$dpv[i]
+    comp <- combos$compression[i]
+    gc  <- combos$group_case[i]
+
+    existing <- sub_df %>%
+      filter(dps == d, dpv == v, compression == comp,
+             group_case == gc, !is.na(file_bytes))
+
+    missing_sl <- setdiff(target_sl, existing$streamlines)
+    if (length(missing_sl) == 0) next
+
+    fit  <- lm(file_bytes ~ streamlines, data = existing)
+    pred <- predict(fit, newdata = data.frame(streamlines = as.numeric(missing_sl)))
+
+    template <- existing[1, , drop = FALSE]
+    for (j in seq_along(missing_sl)) {
+      row            <- template
+      row$streamlines <- missing_sl[j]
+      row$file_bytes  <- max(0, pred[j])
+      row$estimated   <- TRUE
+      estimated_rows[[length(estimated_rows) + 1]] <- row
+    }
+  }
+
+  if (length(estimated_rows) == 0) return(NULL)
+  bind_rows(estimated_rows)
+}
+
 #' Plot file sizes
 plot_file_sizes <- function(df, out_dir) {
   sub_df <- df %>%
     filter(base == "BM_TrxFileSize_Float16") %>%
-    filter(!is.na(file_bytes), !is.na(streamlines))
-  
+    filter(!is.na(file_bytes), !is.na(streamlines)) %>%
+    mutate(estimated = FALSE)
+
   if (nrow(sub_df) == 0) {
     cat("No BM_TrxFileSize_Float16 results found, skipping file size plot\n")
     return(invisible(NULL))
   }
-  
+
+  # Extrapolate to missing streamline counts (e.g. 10M not present in benchmark data)
+  est_df <- estimate_missing_file_sizes(sub_df)
+  if (!is.null(est_df)) {
+    cat("Added", nrow(est_df), "estimated file size entries (linear extrapolation)\n")
+    sub_df <- bind_rows(sub_df, est_df)
+  }
+
   sub_df <- sub_df %>%
     mutate(
       file_mb = file_bytes / 1e6,
@@ -188,34 +242,49 @@ plot_file_sizes <- function(df, out_dir) {
       group_label = recode(
         as.character(ifelse(is.na(group_case), "0", as.character(group_case))),
         !!!GROUP_LABELS),
-      dp_label = sprintf("dpv=%d, dps=%d", as.integer(dpv), as.integer(dps))
+      dp_label = sprintf("dpv=%d, dps=%d", as.integer(dpv), as.integer(dps)),
+      measured = ifelse(estimated, "estimated", "measured"),
+      streamlines_f = factor(
+        streamlines,
+        levels = sort(as.numeric(unique(streamlines))),
+        labels = label_number(scale = 1e-6, suffix = "M")(sort(as.numeric(unique(streamlines))))
+      )
     )
 
   n_group_levels <- length(unique(sub_df$group_label))
-  plot_height <- if (n_group_levels > 1) 5 + 3 * n_group_levels else 7
+  plot_height <- if (n_group_levels > 1) 4 + 2 * n_group_levels else 6
 
-  p <- ggplot(sub_df, aes(x = streamlines, y = file_mb,
-                          color = dp_label)) +
-    geom_line(linewidth = 0.8) +
-    geom_point(size = 2) +
-    facet_grid(group_label ~ compression_label) +
-    scale_x_continuous(labels = label_number(scale = 1e-6, suffix = "M")) +
+  p <- ggplot(sub_df, aes(x = streamlines_f, y = file_mb,
+                          fill = dp_label,
+                          linetype = compression_label,
+                          alpha = measured)) +
+    geom_hline(yintercept = 18500, color = "firebrick", linetype = "dashed", linewidth = 0.8) +
+    annotate("text", x = Inf, y = 18500, label = "TCK reference 10M (18.5 GB)",
+             hjust = 1.05, vjust = -0.4, color = "firebrick", size = 3) +
+    geom_col(position = "dodge", color = "grey30", linewidth = 0.5) +
+    facet_wrap(~group_label, ncol = 1) +
     scale_y_continuous(labels = label_number()) +
+    scale_alpha_manual(
+      values = c("measured" = 0.9, "estimated" = 0.45),
+      name = ""
+    ) +
     labs(
       title = "TRX file size vs streamlines (float16 positions)",
       x = "Streamlines",
       y = "File size (MB)",
-      color = "Data per streamline/vertex"
+      fill = "Data per streamline/vertex",
+      linetype = "Compression"
     ) +
     theme_bw() +
     theme(
       legend.position = "bottom",
       legend.box = "vertical",
-      strip.background = element_rect(fill = "grey90")
+      strip.background = element_rect(fill = "grey90"),
+      axis.text.x = element_text(angle = 45, hjust = 1)
     )
 
   out_path <- file.path(out_dir, "trx_size_vs_streamlines.png")
-  ggsave(out_path, p, width = 12, height = plot_height, dpi = 160)
+  ggsave(out_path, p, width = 10, height = plot_height, dpi = 160)
   cat("Saved:", out_path, "\n")
 }
 
@@ -223,64 +292,65 @@ plot_file_sizes <- function(df, out_dir) {
 plot_translate_write <- function(df, out_dir) {
   sub_df <- df %>%
     filter(base == "BM_TrxStream_TranslateWrite") %>%
-    filter(!is.na(real_time_ms), !is.na(streamlines))
-  
+    filter(!is.na(real_time_s), !is.na(streamlines))
+
   if (nrow(sub_df) == 0) {
     cat("No BM_TrxStream_TranslateWrite results found, skipping translate plots\n")
     return(invisible(NULL))
   }
-  
+
   sub_df <- sub_df %>%
     mutate(
       group_label = recode(as.character(group_case), !!!GROUP_LABELS),
       dp_label = sprintf("dpv=%d, dps=%d", as.integer(dpv), as.integer(dps)),
-      rss_mb = max_rss_kb / 1024
+      rss_gb = max_rss_kb / (1024 * 1024),
+      streamlines_f = factor(
+        streamlines,
+        levels = sort(as.numeric(unique(streamlines))),
+        labels = label_number(scale = 1e-6, suffix = "M")(sort(as.numeric(unique(streamlines))))
+      )
     )
-  
+
   # Time plot
-  p_time <- ggplot(sub_df, aes(x = streamlines, y = real_time_ms, 
-                                color = dp_label)) +
-    geom_line(linewidth = 0.8) +
-    geom_point(size = 2) +
+  p_time <- ggplot(sub_df, aes(x = streamlines_f, y = real_time_s, fill = dp_label)) +
+    geom_col(position = "dodge") +
     facet_wrap(~group_label, ncol = 2) +
-    scale_x_continuous(labels = label_number(scale = 1e-6, suffix = "M")) +
     scale_y_continuous(labels = label_number()) +
     labs(
       title = "Translate + stream write throughput",
       x = "Streamlines",
-      y = "Time (ms)",
-      color = "Data per point"
+      y = "Time (s)",
+      fill = "Data per point"
     ) +
     theme_bw() +
     theme(
       legend.position = "bottom",
-      strip.background = element_rect(fill = "grey90")
+      strip.background = element_rect(fill = "grey90"),
+      axis.text.x = element_text(angle = 45, hjust = 1)
     )
-  
+
   out_path <- file.path(out_dir, "trx_translate_write_time.png")
   ggsave(out_path, p_time, width = 12, height = 5, dpi = 160)
   cat("Saved:", out_path, "\n")
-  
+
   # RSS plot
-  p_rss <- ggplot(sub_df, aes(x = streamlines, y = rss_mb, 
-                               color = dp_label)) +
-    geom_line(linewidth = 0.8) +
-    geom_point(size = 2) +
+  p_rss <- ggplot(sub_df, aes(x = streamlines_f, y = rss_gb, fill = dp_label)) +
+    geom_col(position = "dodge") +
     facet_wrap(~group_label, ncol = 2) +
-    scale_x_continuous(labels = label_number(scale = 1e-6, suffix = "M")) +
     scale_y_continuous(labels = label_number()) +
     labs(
       title = "Translate + stream write memory usage",
       x = "Streamlines",
-      y = "Max RSS (MB)",
-      color = "Data per point"
+      y = "Max RSS (GB)",
+      fill = "Data per point"
     ) +
     theme_bw() +
     theme(
       legend.position = "bottom",
-      strip.background = element_rect(fill = "grey90")
+      strip.background = element_rect(fill = "grey90"),
+      axis.text.x = element_text(angle = 45, hjust = 1)
     )
-  
+
   out_path <- file.path(out_dir, "trx_translate_write_rss.png")
   ggsave(out_path, p_rss, width = 12, height = 5, dpi = 160)
   cat("Saved:", out_path, "\n")
@@ -309,7 +379,7 @@ load_query_timings <- function(jsonl_path) {
         dps = obj$dps %||% NA,
         dpv = obj$dpv %||% NA,
         slab_thickness_mm = obj$slab_thickness_mm %||% NA,
-        timings_ms = I(list(unlist(obj$timings_ms)))
+        timings_s = I(list(unlist(obj$timings_ms) / 1000))
       )
     }, error = function(e) NULL)
   })
@@ -350,55 +420,49 @@ load_all_query_timings <- function(bench_dir) {
 }
 
 #' Plot query timing distributions
-plot_query_timings <- function(bench_dir, out_dir, group_case = 0, dpv = 0, dps = 0) {
+plot_query_timings <- function(bench_dir, out_dir) {
   df <- load_all_query_timings(bench_dir)
-  
+
   if (is.null(df) || nrow(df) == 0) {
     cat("No query_timings*.jsonl found or empty, skipping query timing plot\n")
     return(invisible(NULL))
   }
-  
-  # Filter by specified conditions
-  df_filtered <- df %>%
-    filter(
-      group_case == !!group_case,
-      dpv == !!dpv,
-      dps == !!dps
-    )
-  
-  if (nrow(df_filtered) == 0) {
-    cat("No query timings matching filters (group_case=", group_case, 
-        ", dpv=", dpv, ", dps=", dps, "), skipping plot\n", sep = "")
-    return(invisible(NULL))
-  }
-  
-  # Expand timings into long format
-  timing_data <- df_filtered %>%
-    mutate(streamlines_label = format(streamlines, big.mark = ",")) %>%
-    select(streamlines, streamlines_label, timings_ms) %>%
-    unnest(timings_ms) %>%
-    group_by(streamlines, streamlines_label) %>%
-    mutate(query_id = row_number()) %>%
+
+  # Expand timings into long format, keeping all group/dpv/dps combinations
+  timing_data <- df %>%
+    mutate(
+      streamlines_label = factor(
+        label_number(scale = 1e-6, suffix = "M")(streamlines),
+        levels = label_number(scale = 1e-6, suffix = "M")(sort(as.numeric(unique(streamlines))))
+      ),
+      dp_label = sprintf("dpv=%d, dps=%d", as.integer(dpv), as.integer(dps)),
+      group_label = recode(as.character(group_case), !!!GROUP_LABELS)
+    ) %>%
+    select(streamlines, streamlines_label, dp_label, group_label, timings_s) %>%
+    unnest(timings_s) %>%
     ungroup()
-  
-  # Create boxplot
-  group_label <- GROUP_LABELS[as.character(group_case)]
-  
-  p <- ggplot(timing_data, aes(x = streamlines_label, y = timings_ms)) +
+
+  n_groups <- length(unique(timing_data$group_label))
+  n_dp <- length(unique(timing_data$dp_label))
+  plot_height <- max(6, 3 * n_groups)
+  plot_width <- max(10, 4 * n_dp)
+
+  p <- ggplot(timing_data, aes(x = streamlines_label, y = timings_s)) +
     geom_boxplot(fill = "steelblue", alpha = 0.7, outlier.size = 0.5) +
+    facet_grid(group_label ~ dp_label) +
     labs(
-      title = sprintf("Slab query timings (%s, dpv=%d, dps=%d)", 
-                      group_label, dpv, dps),
+      title = "Slab query timings by group and data profile",
       x = "Streamlines",
-      y = "Per-slab query time (ms)"
+      y = "Per-slab query time (s)"
     ) +
     theme_bw() +
     theme(
-      axis.text.x = element_text(angle = 45, hjust = 1)
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      strip.background = element_rect(fill = "grey90")
     )
-  
+
   out_path <- file.path(out_dir, "trx_query_slab_timings.png")
-  ggsave(out_path, p, width = 10, height = 6, dpi = 160)
+  ggsave(out_path, p, width = plot_width, height = plot_height, dpi = 160)
   cat("Saved:", out_path, "\n")
 }
 
@@ -421,7 +485,7 @@ main <- function() {
   # Generate plots
   plot_file_sizes(df, args$out_dir)
   plot_translate_write(df, args$out_dir)
-  plot_query_timings(args$bench_dir, args$out_dir, group_case = 0, dpv = 0, dps = 0)
+  plot_query_timings(args$bench_dir, args$out_dir)
   
   cat("\nDone! Plots saved to:", args$out_dir, "\n")
 }

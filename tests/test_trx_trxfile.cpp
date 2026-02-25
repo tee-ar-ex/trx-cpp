@@ -2,9 +2,7 @@
 #include <memory>
 #include <sstream>
 
-#define private public
 #include <trx/trx.h>
-#undef private
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -417,7 +415,7 @@ TEST(TrxFileTpp, NormalizeForSaveRejectsNonMonotonicOffsets) {
   src->streamlines->_offsets(1) = 5;
   src->streamlines->_offsets(2) = 4;
 
-  EXPECT_THROW(src->normalize_for_save(), std::runtime_error);
+  EXPECT_THROW(src->normalize_for_save(), trx::TrxError);
 
   src->close();
 
@@ -456,7 +454,7 @@ TEST(TrxFileTpp, LoadFromDirectoryMissingHeader) {
   std::ofstream f(dummy.string(), std::ios::binary);
   f.close();
 
-  EXPECT_THROW(TrxFile<float>::load_from_directory(tmp_dir.string()), std::runtime_error);
+  EXPECT_THROW(TrxFile<float>::load_from_directory(tmp_dir.string()), trx::TrxError);
 
   std::error_code ec;
   fs::remove_all(tmp_dir, ec);

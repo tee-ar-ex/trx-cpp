@@ -11,16 +11,15 @@ Required:
 - Eigen3
 
 
-Installing dependencies:
+Installing dependencies
 ------------------------
 
-These examples include installing google test,
-but this is only necessary if you want to build the tests.
-Similarly, ninja is not strictly necessary, but it is recommended.
-zlib is only required if you want to use the NIfTI I/O features.
+The examples below include GoogleTest, which is only required when building
+the tests. Ninja is optional but recommended. zlib is only required for the
+NIfTI I/O features.
 
 On Debian-based systems the zip tools have been split into separate packages
-on recent ubuntu versions.
+on recent Ubuntu versions.
 
 .. code-block:: bash
 
@@ -70,7 +69,7 @@ Key CMake options:
 - ``TRX_BUILD_TESTS``: Build tests (default OFF)
 - ``TRX_BUILD_DOCS``: Build docs with Doxygen/Sphinx (default OFF)
 - ``TRX_ENABLE_CLANG_TIDY``: Run clang-tidy during builds (default OFF)
-- ``TRX_USE_CONAN```: Use Conan setup in ```cmake/ConanSetup.cmake`` (default OFF)
+- ``TRX_USE_CONAN``: Use Conan setup in ``cmake/ConanSetup.cmake`` (default OFF)
 
 To use trx-cpp from another CMake project after installation:
 

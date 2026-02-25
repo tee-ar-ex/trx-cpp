@@ -61,22 +61,22 @@ std::string _get_dtype(const std::string &dtype) {
 }
 
 bool _is_dtype_valid(const std::string &ext) {
-  if (std::find(::trx::dtypes.begin(), ::trx::dtypes.end(), ext) != ::trx::dtypes.end())
+  if (std::find(dtypes.begin(), dtypes.end(), ext) != dtypes.end())
     return true;
   return false;
 }
 
 std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string &filename) {
-  std::string base = ::trx::path_basename(filename);
+  std::string base = path_basename(filename);
 
   const size_t num_splits = std::count(base.begin(), base.end(), '.');
   int dim = 0;
 
   if (num_splits != 1 && num_splits != 2) {
-    throw std::invalid_argument("Invalid filename");
+    throw TrxFormatError("Invalid filename");
   }
 
-  const std::string ext = ::trx::get_ext(base);
+  const std::string ext = get_ext(base);
 
   base = base.substr(0, base.length() - ext.length() - 1);
 
@@ -91,8 +91,7 @@ std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const s
   const bool is_valid = _is_dtype_valid(ext);
 
   if (!is_valid) {
-    // TODO: make formatted string and include provided extension name
-    throw std::invalid_argument("Unsupported file extension");
+    throw TrxDTypeError("Unsupported file extension: " + ext);
   }
 
   std::tuple<std::string, int, std::string> output{base, dim, ext};

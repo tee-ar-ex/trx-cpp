@@ -1,8 +1,6 @@
 #include <filesystem>
 #include <gtest/gtest.h>
-#define private public
 #include <trx/trx.h>
-#undef private
 
 #include <array>
 #include <cstdlib>
@@ -419,7 +417,7 @@ TEST(AnyTrxFile, MissingHeaderCountsThrows) {
   header_obj.erase("NB_VERTICES");
   write_header_file(corrupt_dir, json(header_obj));
 
-  EXPECT_THROW(load_any(corrupt_dir.string()), std::invalid_argument);
+  EXPECT_THROW(load_any(corrupt_dir.string()), trx::TrxFormatError);
 
   std::error_code ec;
   fs::remove_all(temp_root, ec);
@@ -433,7 +431,7 @@ TEST(AnyTrxFile, WrongPositionsDimThrows) {
   const fs::path positions = find_file_with_prefix(corrupt_dir, "positions");
   rename_with_new_dim(positions, 4);
 
-  EXPECT_THROW(load_any(corrupt_dir.string()), std::invalid_argument);
+  EXPECT_THROW(load_any(corrupt_dir.string()), trx::TrxFormatError);
 
   std::error_code ec;
   fs::remove_all(temp_root, ec);
@@ -448,7 +446,7 @@ TEST(AnyTrxFile, UnsupportedPositionsDtypeThrows) {
   const std::string ext = get_ext(positions.string());
   rename_with_new_ext(positions, pick_int_dtype_same_size(ext));
 
-  EXPECT_THROW(load_any(corrupt_dir.string()), std::invalid_argument);
+  EXPECT_THROW(load_any(corrupt_dir.string()), trx::TrxDTypeError);
 
   std::error_code ec;
   fs::remove_all(temp_root, ec);
@@ -462,7 +460,7 @@ TEST(AnyTrxFile, WrongOffsetsDimThrows) {
   const fs::path offsets = find_file_with_prefix(corrupt_dir, "offsets");
   rename_with_new_dim(offsets, 2);
 
-  EXPECT_THROW(load_any(corrupt_dir.string()), std::invalid_argument);
+  EXPECT_THROW(load_any(corrupt_dir.string()), trx::TrxFormatError);
 
   std::error_code ec;
   fs::remove_all(temp_root, ec);
@@ -477,7 +475,7 @@ TEST(AnyTrxFile, UnsupportedOffsetsDtypeThrows) {
   const std::string ext = get_ext(offsets.string());
   rename_with_new_ext(offsets, pick_int_dtype_same_size(ext));
 
-  EXPECT_THROW(load_any(corrupt_dir.string()), std::invalid_argument);
+  EXPECT_THROW(load_any(corrupt_dir.string()), trx::TrxDTypeError);
 
   std::error_code ec;
   fs::remove_all(temp_root, ec);
@@ -499,7 +497,7 @@ TEST(AnyTrxFile, WrongDpsDimThrows) {
   const fs::path dps_file = find_first_file_recursive(dps_dir);
   rename_with_new_dim(dps_file, 2);
 
-  EXPECT_THROW(load_any(corrupt_dir.string()), std::invalid_argument);
+  EXPECT_THROW(load_any(corrupt_dir.string()), trx::TrxFormatError);
 
   std::error_code ec;
   fs::remove_all(temp_root, ec);
@@ -521,7 +519,7 @@ TEST(AnyTrxFile, WrongDpvDimThrows) {
   const fs::path dpv_file = find_first_file_recursive(dpv_dir);
   rename_with_new_dim(dpv_file, 2);
 
-  EXPECT_THROW(load_any(corrupt_dir.string()), std::invalid_argument);
+  EXPECT_THROW(load_any(corrupt_dir.string()), trx::TrxFormatError);
 
   std::error_code ec;
   fs::remove_all(temp_root, ec);
@@ -542,7 +540,7 @@ TEST(AnyTrxFile, WrongDpgDimThrows) {
   const fs::path dpg_file = find_first_file_recursive(dpg_dir);
   rename_with_new_dim(dpg_file, 2);
 
-  EXPECT_THROW(load_any(corrupt_dir.string()), std::invalid_argument);
+  EXPECT_THROW(load_any(corrupt_dir.string()), trx::TrxFormatError);
 
   std::error_code ec;
   fs::remove_all(temp_root, ec);
@@ -564,7 +562,7 @@ TEST(AnyTrxFile, UnsupportedGroupDtypeThrows) {
   const fs::path group_file = find_first_file_recursive(groups_dir);
   rename_with_new_ext(group_file, "int32");
 
-  EXPECT_THROW(load_any(corrupt_dir.string()), std::invalid_argument);
+  EXPECT_THROW(load_any(corrupt_dir.string()), trx::TrxDTypeError);
 
   std::error_code ec;
   fs::remove_all(temp_root, ec);
@@ -583,7 +581,7 @@ TEST(AnyTrxFile, InvalidEntryThrows) {
   out.write(value_bytes.data(), static_cast<std::streamsize>(value_bytes.size()));
   out.close();
 
-  EXPECT_THROW(load_any(corrupt_dir.string()), std::invalid_argument);
+  EXPECT_THROW(load_any(corrupt_dir.string()), trx::TrxFormatError);
 
   std::error_code ec;
   fs::remove_all(temp_root, ec);
@@ -598,7 +596,7 @@ TEST(AnyTrxFile, MissingEssentialDataThrows) {
   std::error_code ec;
   fs::remove(positions, ec);
 
-  EXPECT_THROW(load_any(corrupt_dir.string()), std::invalid_argument);
+  EXPECT_THROW(load_any(corrupt_dir.string()), trx::TrxFormatError);
 
   fs::remove_all(temp_root, ec);
 }
@@ -631,7 +629,7 @@ TEST(AnyTrxFile, OffsetsOverflowThrows) {
   out.write(data_bytes.data(), static_cast<std::streamsize>(data_bytes.size()));
   out.close();
 
-  EXPECT_THROW(load_any(corrupt_dir.string()), std::runtime_error);
+  EXPECT_THROW(load_any(corrupt_dir.string()), trx::TrxFormatError);
 
   std::error_code ec;
   fs::remove_all(temp_root, ec);
@@ -644,7 +642,7 @@ TEST(AnyTrxFile, SaveRejectsUnsupportedExtension) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_badext");
   const fs::path out_path = temp_dir / "bad.txt";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::invalid_argument);
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxDTypeError);
   trx.close();
 
   std::error_code ec;
@@ -659,7 +657,7 @@ TEST(AnyTrxFile, SaveRejectsMissingOffsets) {
   trx.offsets = TypedArray();
   const auto temp_dir = make_temp_test_dir("trx_any_save_no_offsets");
   const fs::path out_path = temp_dir / "missing_offsets.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxFormatError);
   trx.close();
 
   std::error_code ec;
@@ -674,7 +672,7 @@ TEST(AnyTrxFile, SaveRejectsMissingDecodedOffsets) {
   trx.offsets_u64.clear();
   const auto temp_dir = make_temp_test_dir("trx_any_save_no_offsets_u64");
   const fs::path out_path = temp_dir / "missing_offsets_u64.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxFormatError);
   trx.close();
 
   std::error_code ec;
@@ -692,7 +690,7 @@ TEST(AnyTrxFile, SaveRejectsStreamlineCountMismatch) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_bad_streamlines");
   const fs::path out_path = temp_dir / "bad_streamlines.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxFormatError);
   trx.close();
 
   std::error_code ec;
@@ -710,7 +708,7 @@ TEST(AnyTrxFile, SaveRejectsVertexCountMismatch) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_bad_vertices");
   const fs::path out_path = temp_dir / "bad_vertices.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxFormatError);
   trx.close();
 
   std::error_code ec;
@@ -728,7 +726,7 @@ TEST(AnyTrxFile, SaveRejectsNonMonotonicOffsets) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_non_mono");
   const fs::path out_path = temp_dir / "non_mono.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxFormatError);
   trx.close();
 
   std::error_code ec;
@@ -746,7 +744,7 @@ TEST(AnyTrxFile, SaveRejectsPositionsRowMismatch) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_bad_positions");
   const fs::path out_path = temp_dir / "bad_positions.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxFormatError);
   trx.close();
 
   std::error_code ec;
@@ -758,12 +756,12 @@ TEST(AnyTrxFile, SaveRejectsMissingBackingDirectory) {
   const fs::path gs_trx = gs_dir / "gs_fldr.trx";
   auto trx = load_any(gs_trx.string());
 
-  trx._backing_directory.clear();
-  trx._uncompressed_folder_handle.clear();
+  trx.backing_directory().clear();
+  trx.uncompressed_folder_handle().clear();
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_no_backing");
   const fs::path out_path = temp_dir / "no_backing.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), std::runtime_error);
+  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxIOError);
   trx.close();
 
   std::error_code ec;
@@ -858,7 +856,7 @@ TEST(AnyTrxFile, MergeTrxShardsSchemaMismatchThrows) {
   options.shard_directories = {shard1.string(), shard2.string()};
   options.output_path = output_dir.string();
   options.output_directory = true;
-  EXPECT_THROW(merge_trx_shards(options), std::runtime_error);
+  EXPECT_THROW(merge_trx_shards(options), trx::TrxFormatError);
 
   fs::remove_all(temp_root, ec);
 }
@@ -999,7 +997,7 @@ TEST(AnyTrxFile, MergeTrxShardsRejectsDpg) {
   options.shard_directories = {shard1.string(), shard2.string()};
   options.output_path = (temp_root / "merged").string();
   options.output_directory = true;
-  EXPECT_THROW(merge_trx_shards(options), std::runtime_error);
+  EXPECT_THROW(merge_trx_shards(options), trx::TrxArgumentError);
 
   fs::remove_all(temp_root, ec);
 }
@@ -1021,7 +1019,7 @@ TEST(AnyTrxFile, PreparePositionsOutputOverwriteFalseThrows) {
 
   PrepareOutputOptions options;
   options.overwrite_existing = false;
-  EXPECT_THROW(prepare_positions_output(input, output_dir.string(), options), std::runtime_error);
+  EXPECT_THROW(prepare_positions_output(input, output_dir.string(), options), trx::TrxIOError);
 
   input.close();
   fs::remove_all(temp_root, ec);
