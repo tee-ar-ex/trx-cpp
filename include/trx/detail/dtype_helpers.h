@@ -7,6 +7,8 @@
 #include <string>
 #include <tuple>
 
+#include <trx/trx_export.h>
+
 namespace trx {
 namespace detail {
 
@@ -38,10 +40,10 @@ inline void remap(MapType &map, const void *data, const std::tuple<int, int> &sh
   remap(map, data, std::get<0>(shape), std::get<1>(shape));
 }
 
-int _sizeof_dtype(const std::string &dtype);
-std::string _get_dtype(const std::string &dtype);
-bool _is_dtype_valid(const std::string &ext);
-std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string &filename);
+TRX_EXPORT int _sizeof_dtype(const std::string &dtype);
+TRX_EXPORT std::string _get_dtype(const std::string &dtype);
+TRX_EXPORT bool _is_dtype_valid(const std::string &ext);
+TRX_EXPORT std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const std::string &filename);
 
 template <typename DT>
 inline Eigen::Matrix<uint32_t, Eigen::Dynamic, 1> _compute_lengths(const Eigen::MatrixBase<DT> &offsets,

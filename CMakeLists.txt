@@ -100,6 +100,12 @@ add_library(trx
 set_source_files_properties(third_party/json11/json11.cpp PROPERTIES SKIP_LINTING ON)
 add_library(trx-cpp::trx ALIAS trx)
 
+include(GenerateExportHeader)
+generate_export_header(trx
+    EXPORT_FILE_NAME "trx/trx_export.h"
+    EXPORT_MACRO_NAME TRX_EXPORT
+)
+
 target_compile_features(trx PUBLIC cxx_std_17)
 
 if(TRX_USE_CONAN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ConanSetup.cmake")
@@ -127,6 +133,7 @@ TARGET_LINK_LIBRARIES(trx
 target_include_directories(trx
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         $<$<NOT:$<BOOL:${TRX_HAVE_MIO_TARGET}>>:$<BUILD_INTERFACE:${MIO_INCLUDE_DIR}>>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/json11>
@@ -231,6 +238,8 @@ if(TRX_ENABLE_INSTALL)
     install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
     install(DIRECTORY third_party/mio/include/mio DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
     install(FILES third_party/json11/json11.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/trx/trx_export.h"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/trx")
 
     install(EXPORT trx-cppTargets
         FILE trx-cppTargets.cmake

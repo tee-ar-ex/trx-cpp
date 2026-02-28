@@ -35,6 +35,7 @@
 
 #include <trx/detail/exceptions.h>
 #include <trx/detail/zip_raii.h>
+#include <trx/trx_export.h>
 
 namespace trx {
 namespace fs = std::filesystem;
@@ -514,7 +515,7 @@ private:
 };
 
 namespace detail {
-int _sizeof_dtype(const std::string &dtype);
+TRX_EXPORT int _sizeof_dtype(const std::string &dtype);
 } // namespace detail
 
 struct TypedArray {
@@ -608,7 +609,7 @@ private:
 
 enum class TrxScalarType;
 
-class AnyTrxFile {
+class TRX_EXPORT AnyTrxFile {
 public:
   AnyTrxFile() = default;
   ~AnyTrxFile();
@@ -681,7 +682,7 @@ inline AnyTrxFile load_any(const std::string &path) { return AnyTrxFile::load(pa
  * It writes positions to a temporary binary file, tracks lengths, and can
  * add DPS/DPV/group metadata. Call finalize() to produce a standard TRX.
  */
-class TrxStream {
+class TRX_EXPORT TrxStream {
 public:
   explicit TrxStream(std::string positions_dtype = "float32");
   ~TrxStream();
@@ -862,7 +863,7 @@ private:
  * @param[in] root a Json::Value root obtained from reading a header file
  * @return header a header containing the same elements as the original root
  */
-json assignHeader(const json &root);
+TRX_EXPORT json assignHeader(const json &root);
 
 /**
  * This function loads the header json file
@@ -872,7 +873,7 @@ json assignHeader(const json &root);
  * @param[out] header the JSONCpp root of the header. nullptr on error.
  *
  * */
-json load_header(zip_t *zfolder);
+TRX_EXPORT json load_header(zip_t *zfolder);
 
 /**
  * Load the TRX file stored within a Zip archive.
@@ -898,7 +899,7 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> load_from_directory(const st
  * @param path Path to a TRX zip archive or directory.
  * @return std::string dtype (e.g., float16/float32/float64) or empty if unknown.
  */
-std::string detect_positions_dtype(const std::string &path);
+TRX_EXPORT std::string detect_positions_dtype(const std::string &path);
 
 enum class TrxScalarType { Float16, Float32, Float64 };
 
@@ -939,9 +940,9 @@ struct PrepareOutputOptions {
  * metadata (groups, dps, dpv, dpg), and returns where the positions file
  * should be written.
  */
-PositionsOutputInfo prepare_positions_output(const AnyTrxFile &input,
-                                             const std::string &output_directory,
-                                             const PrepareOutputOptions &options = {});
+TRX_EXPORT PositionsOutputInfo prepare_positions_output(const AnyTrxFile &input,
+                                                        const std::string &output_directory,
+                                                        const PrepareOutputOptions &options = {});
 
 struct MergeTrxShardsOptions {
   std::vector<std::string> shard_directories;
@@ -951,7 +952,7 @@ struct MergeTrxShardsOptions {
   bool overwrite_existing = true;
 };
 
-void merge_trx_shards(const MergeTrxShardsOptions &options);
+TRX_EXPORT void merge_trx_shards(const MergeTrxShardsOptions &options);
 
 /**
  * @brief Detect the positions scalar type for a TRX path.
@@ -960,7 +961,7 @@ void merge_trx_shards(const MergeTrxShardsOptions &options);
  * @param fallback Fallback type when dtype is unknown.
  * @return TrxScalarType
  */
-TrxScalarType detect_positions_scalar_type(const std::string &path, TrxScalarType fallback = TrxScalarType::Float32);
+TRX_EXPORT TrxScalarType detect_positions_scalar_type(const std::string &path, TrxScalarType fallback = TrxScalarType::Float32);
 
 /**
  * @brief Return true if the TRX path is a directory.
@@ -968,7 +969,7 @@ TrxScalarType detect_positions_scalar_type(const std::string &path, TrxScalarTyp
  * @param path Path to a TRX zip archive or directory.
  * @return bool
  */
-bool is_trx_directory(const std::string &path);
+TRX_EXPORT bool is_trx_directory(const std::string &path);
 
 /**
  * @brief Load a TRX file from either a zip archive or directory.
@@ -1029,7 +1030,7 @@ void get_reference_info(const std::string &reference,
 template <typename DT> std::ostream &operator<<(std::ostream &out, const TrxFile<DT> &trx);
 // private:
 
-void allocate_file(const std::string &path, std::size_t size);
+TRX_EXPORT void allocate_file(const std::string &path, std::size_t size);
 
 /**
  * @brief Wrapper to support empty array as memmaps
@@ -1043,11 +1044,11 @@ void allocate_file(const std::string &path, std::size_t size);
  */
 // Known limitations: only row-major order supported; shape uses tuple (sufficient for 2D);
 // dtype parameter is used only for byte-size computation.
-mio::shared_mmap_sink _create_memmap(std::string filename,
-                                     const std::tuple<int, int> &shape,
-                                     const std::string &mode = "r",
-                                     const std::string &dtype = "float32",
-                                     long long offset = 0);
+TRX_EXPORT mio::shared_mmap_sink _create_memmap(std::string filename,
+                                                 const std::tuple<int, int> &shape,
+                                                 const std::string &mode = "r",
+                                                 const std::string &dtype = "float32",
+                                                 long long offset = 0);
 
 template <typename DT>
 std::string _generate_filename_from_data(const Eigen::MatrixBase<DT> &arr, const std::string filename);
@@ -1086,23 +1087,23 @@ void ediff1d(Eigen::Matrix<DT, Eigen::Dynamic, 1> &lengths,
  * @param filename The path where the zip file should be created
  * @param compression_standard The compression standard to use, as defined by the ZipFile library
  */
-void zip_from_folder(zip_t *zf,
-                     const std::string &root,
-                     const std::string &directory,
-                     zip_uint32_t compression_standard = ZIP_CM_STORE,
-                     const std::unordered_set<std::string> *skip = nullptr);
+TRX_EXPORT void zip_from_folder(zip_t *zf,
+                                const std::string &root,
+                                const std::string &directory,
+                                zip_uint32_t compression_standard = ZIP_CM_STORE,
+                                const std::unordered_set<std::string> *skip = nullptr);
 
-std::string get_base(const std::string &delimiter, const std::string &str);
-std::string get_ext(const std::string &str);
-void populate_fps(const std::string &name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size);
+TRX_EXPORT std::string get_base(const std::string &delimiter, const std::string &str);
+TRX_EXPORT std::string get_ext(const std::string &str);
+TRX_EXPORT void populate_fps(const std::string &name, std::map<std::string, std::tuple<long long, long long>> &files_pointer_size);
 
-void copy_dir(const std::string &src, const std::string &dst);
-void copy_file(const std::string &src, const std::string &dst);
-int rm_dir(const std::string &d);
-std::string make_temp_dir(const std::string &prefix);
-std::string extract_zip_to_directory(zip_t *zfolder);
+TRX_EXPORT void copy_dir(const std::string &src, const std::string &dst);
+TRX_EXPORT void copy_file(const std::string &src, const std::string &dst);
+TRX_EXPORT int rm_dir(const std::string &d);
+TRX_EXPORT std::string make_temp_dir(const std::string &prefix);
+TRX_EXPORT std::string extract_zip_to_directory(zip_t *zfolder);
 
-std::string rm_root(const std::string &root, const std::string &path);
+TRX_EXPORT std::string rm_root(const std::string &root, const std::string &path);
 #ifndef TRX_TPP_STANDALONE
 #endif
 
