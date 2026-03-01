@@ -526,7 +526,8 @@ TEST(TrxFileMemmap, __sizeof_dtype_values) {
   EXPECT_EQ(trx::detail::_sizeof_dtype("int64"), sizeof(int64_t));
   EXPECT_EQ(trx::detail::_sizeof_dtype("float32"), sizeof(float));
   EXPECT_EQ(trx::detail::_sizeof_dtype("float64"), sizeof(double));
-  EXPECT_EQ(trx::detail::_sizeof_dtype("unknown"), sizeof(uint16_t));
+  EXPECT_EQ(trx::detail::_sizeof_dtype("float16"), sizeof(uint16_t));
+  EXPECT_THROW(trx::detail::_sizeof_dtype("unknown"), trx::TrxDTypeError);
 }
 
 // asserts dtype code mapping.
