@@ -27,7 +27,9 @@ int _sizeof_dtype(const std::string &dtype) {
     return sizeof(float);
   if (dtype == "float64")
     return sizeof(double);
-  return sizeof(std::uint16_t); // default to 16-bit float size
+  if (dtype == "float16")
+    return sizeof(std::uint16_t);
+  throw TrxDTypeError("Unrecognized dtype: " + dtype);
 }
 
 std::string _get_dtype(const std::string &dtype) {
