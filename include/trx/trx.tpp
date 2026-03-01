@@ -2469,9 +2469,16 @@ std::vector<std::array<Eigen::half, 6>> TrxFile<DT>::build_streamline_aabbs() co
   const size_t nb_streamlines = offsets.size() > 0 ? offsets.size() - 1 : 0;
   aabbs.resize(nb_streamlines);
 
+  const uint64_t total_vertices = static_cast<uint64_t>(this->streamlines->_data.rows());
   for (size_t i = 0; i < nb_streamlines; ++i) {
     const uint64_t start = offsets[i];
     const uint64_t end = offsets[i + 1];
+    if (end < start) {
+      throw TrxFormatError("Offsets must be monotonically increasing in build_streamline_aabbs");
+    }
+    if (end > total_vertices) {
+      throw TrxFormatError("Offsets exceed positions row count in build_streamline_aabbs");
+    }
     if (end <= start) {
       aabbs[i] = {Eigen::half(0), Eigen::half(0), Eigen::half(0),
                   Eigen::half(0), Eigen::half(0), Eigen::half(0)};
