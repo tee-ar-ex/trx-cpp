@@ -359,7 +359,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
       std::tuple<int, int> shape = std::make_tuple(static_cast<int>(trx->header["NB_VERTICES"].int_value()), 3);
       trx->streamlines->mmap_pos =
-          trx::_create_memmap(filename, shape, "r+", ext.substr(1, ext.size() - 1), mem_adress);
+          trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
       trx::detail::remap(trx->streamlines->_data, trx->streamlines->mmap_pos.data(), shape);
     }
