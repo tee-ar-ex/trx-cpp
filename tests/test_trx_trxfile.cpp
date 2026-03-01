@@ -101,6 +101,41 @@ fs::path create_float_trx_dir() {
 
   return root;
 }
+
+fs::path create_float_trx_dir_missing_sentinel() {
+  fs::path root = make_temp_test_dir("trx_float_missing_sentinel");
+  fs::path header_path = root / "header.json";
+
+  json::object header_obj;
+  header_obj["DIMENSIONS"] = json::array{1, 1, 1};
+  header_obj["NB_STREAMLINES"] = 2;
+  header_obj["NB_VERTICES"] = 4;
+  header_obj["VOXEL_TO_RASMM"] = json::array{
+      json::array{1.0, 0.0, 0.0, 0.0},
+      json::array{0.0, 1.0, 0.0, 0.0},
+      json::array{0.0, 0.0, 1.0, 0.0},
+      json::array{0.0, 0.0, 0.0, 1.0},
+  };
+  json header(header_obj);
+
+  std::ofstream header_out(header_path.string());
+  if (!header_out.is_open()) {
+    throw std::runtime_error("Failed to write header.json");
+  }
+  header_out << header.dump() << std::endl;
+  header_out.close();
+
+  Matrix<float, Dynamic, Dynamic, RowMajor> positions(4, 3);
+  positions << 0.0f, 0.1f, 0.2f, 1.0f, 1.1f, 1.2f, 2.0f, 2.1f, 2.2f, 3.0f, 3.1f, 3.2f;
+  trx::write_binary((root / "positions.3.float32").string(), positions);
+
+  // Offsets without sentinel (size == NB_STREAMLINES).
+  Matrix<uint32_t, Dynamic, Dynamic, RowMajor> offsets(2, 1);
+  offsets << 0, 2;
+  trx::write_binary((root / "offsets.uint32").string(), offsets);
+
+  return root;
+}
 } // namespace
 
 TEST(TrxFileTpp, DeepcopyEmpty) {
@@ -168,6 +203,23 @@ TEST(TrxFileTpp, DeepcopyWithGroupsDpgDpvDps) {
   trx->close();
   copy->close();
 
+  std::error_code ec;
+  fs::remove_all(data_dir, ec);
+}
+
+TEST(TrxFileTpp, LoadOffsetsMissingSentinel) {
+  const fs::path data_dir = create_float_trx_dir_missing_sentinel();
+
+  auto reader = load_trx_dir<float>(data_dir);
+  auto *trx = reader.get();
+
+  ASSERT_NE(trx->streamlines, nullptr);
+  EXPECT_EQ(trx->streamlines->_offsets.size(), 3);
+  EXPECT_EQ(trx->streamlines->_offsets(2, 0), 4u);
+  EXPECT_EQ(trx->num_streamlines(), 2u);
+  EXPECT_EQ(trx->num_vertices(), 4u);
+
+  trx->close();
   std::error_code ec;
   fs::remove_all(data_dir, ec);
 }

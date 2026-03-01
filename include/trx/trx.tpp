@@ -366,24 +366,42 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
     else if (base == "offsets" && (folder.empty() || folder == ".")) {
       const auto nb_streamlines = static_cast<int64_t>(trx->header["NB_STREAMLINES"].int_value());
+      const auto nb_vertices = static_cast<uint64_t>(trx->header["NB_VERTICES"].int_value());
       const auto expected = nb_streamlines + 1;
-      if (size != expected || dim != 1) {
+      const bool missing_sentinel = (size == nb_streamlines && dim == 1);
+      if ((size != expected && !missing_sentinel) || dim != 1) {
         throw TrxFormatError("Wrong offsets size/dimensionality: size=" + std::to_string(size) +
                                     " expected=" + std::to_string(expected) + " dim=" + std::to_string(dim) +
                                     " filename=" + elem_filename);
       }
 
       const int nb_str = static_cast<int>(trx->header["NB_STREAMLINES"].int_value());
-      std::tuple<int, int> shape = std::make_tuple(nb_str + 1, 1);
-      trx->streamlines->mmap_off = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      const int offsets_rows = missing_sentinel ? (nb_str + 1) : static_cast<int>(size);
+      std::tuple<int, int> shape = std::make_tuple(offsets_rows, 1);
+      trx->streamlines->mmap_off = trx::_create_memmap(filename, std::make_tuple(static_cast<int>(size), 1), "r+",
+                                                       ext, mem_adress);
 
       if (ext == "uint64") {
-        trx::detail::remap(trx->streamlines->_offsets, trx->streamlines->mmap_off.data(), shape);
+        if (missing_sentinel) {
+          trx->streamlines->_offsets_owned.resize(static_cast<size_t>(offsets_rows));
+          auto *src = reinterpret_cast<const uint64_t *>(trx->streamlines->mmap_off.data()); // NOLINT
+          for (int i = 0; i < static_cast<int>(size); ++i) {
+            trx->streamlines->_offsets_owned[static_cast<size_t>(i)] = src[i];
+          }
+          trx->streamlines->_offsets_owned.back() = nb_vertices;
+          trx::detail::remap(trx->streamlines->_offsets, trx->streamlines->_offsets_owned.data(), shape);
+        } else {
+          trx::detail::remap(trx->streamlines->_offsets, trx->streamlines->mmap_off.data(), shape);
+        }
       } else if (ext == "uint32") {
-        trx->streamlines->_offsets_owned.resize(std::get<0>(shape));
+        trx->streamlines->_offsets_owned.resize(static_cast<size_t>(offsets_rows));
         auto *src = reinterpret_cast<const uint32_t *>(trx->streamlines->mmap_off.data()); // NOLINT
-        for (int i = 0; i < std::get<0>(shape); ++i)
+        for (int i = 0; i < static_cast<int>(size); ++i) {
           trx->streamlines->_offsets_owned[static_cast<size_t>(i)] = static_cast<uint64_t>(src[i]);
+        }
+        if (missing_sentinel) {
+          trx->streamlines->_offsets_owned.back() = nb_vertices;
+        }
         trx::detail::remap(trx->streamlines->_offsets, trx->streamlines->_offsets_owned.data(), shape);
       } else {
         throw TrxDTypeError("Unsupported offsets datatype: " + ext);
