@@ -101,7 +101,7 @@ the helper script to run all groups and generate plots:
    cmake --build build-release --target bench_trx_realdata
 
    # Run all benchmark groups (filesize, translate+write, query) in sequence.
-   ./bench/run_benchmarks.sh --reference /path/to/reference.trx
+   ./bench/run_benchmarks.sh
 
    # Generate plots into docs/_static/benchmarks.
    Rscript bench/plot_bench.R --bench-dir bench --out-dir docs/_static/benchmarks
