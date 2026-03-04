@@ -1518,4 +1518,76 @@ void merge_trx_shards(const MergeTrxShardsOptions &options) {
   zf.commit(options.output_path);
   rm_dir(output_dir);
 }
+
+void append_groups_to_zip(const std::string &path,
+                          const std::map<std::string, std::vector<uint32_t>> &groups,
+                          zip_uint32_t compression) {
+  if (groups.empty()) {
+    return;
+  }
+  int errorp = 0;
+  detail::ZipArchive zf(zip_open(path.c_str(), 0, &errorp));
+  if (!zf) {
+    throw TrxIOError("Cannot open TRX zip for group append: " + path);
+  }
+  // Ensure the groups/ directory entry exists (harmless if already present).
+  zip_dir_add(zf.get(), "groups", ZIP_FL_ENC_UTF_8);
+  for (const auto &kv : groups) {
+    const std::string &name = kv.first;
+    const std::vector<uint32_t> &indices = kv.second;
+    const std::string entry = "groups/" + name + ".uint32";
+    const std::size_t nbytes = indices.size() * sizeof(uint32_t);
+    // Allocate a buffer libzip will own (freed by libzip when free=1).
+    void *buf = std::malloc(nbytes > 0 ? nbytes : 1);
+    if (!buf) {
+      throw TrxIOError("Failed to allocate buffer for group: " + name);
+    }
+    if (nbytes > 0) {
+      std::memcpy(buf, indices.data(), nbytes);
+    }
+    zip_source_t *src = zip_source_buffer(zf.get(), buf, nbytes, 1 /*libzip frees buf*/);
+    if (!src) {
+      std::free(buf);
+      throw TrxIOError("zip_source_buffer failed for group: " + name);
+    }
+    const zip_int64_t idx =
+        zip_file_add(zf.get(), entry.c_str(), src, ZIP_FL_ENC_UTF_8 | ZIP_FL_OVERWRITE);
+    if (idx < 0) {
+      // libzip consumes src even on failure; do not free.
+      throw TrxIOError("zip_file_add failed for group entry: " + entry + ": " +
+                       zip_strerror(zf.get()));
+    }
+    if (zip_set_file_compression(zf.get(), idx, static_cast<zip_int32_t>(compression), 0) < 0) {
+      throw TrxIOError("zip_set_file_compression failed for: " + entry);
+    }
+  }
+  zf.commit(path);
+}
+
+void append_groups_to_directory(const std::string &directory,
+                                const std::map<std::string, std::vector<uint32_t>> &groups) {
+  if (groups.empty()) {
+    return;
+  }
+  std::error_code ec;
+  const std::string groups_dir = directory + SEPARATOR + "groups";
+  trx::fs::create_directories(groups_dir, ec);
+  if (ec) {
+    throw TrxIOError("Failed to create groups directory: " + groups_dir + ": " + ec.message());
+  }
+  for (const auto &kv : groups) {
+    const std::string &name = kv.first;
+    const std::vector<uint32_t> &indices = kv.second;
+    const std::string out_path = groups_dir + SEPARATOR + name + ".uint32";
+    std::ofstream out(out_path, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!out.is_open()) {
+      throw TrxIOError("Failed to open group file for write: " + out_path);
+    }
+    if (!indices.empty()) {
+      out.write(reinterpret_cast<const char *>(indices.data()),
+                static_cast<std::streamsize>(indices.size() * sizeof(uint32_t)));
+    }
+  }
+}
+
 }; // namespace trx
