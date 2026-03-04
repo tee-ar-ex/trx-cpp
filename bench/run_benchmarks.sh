@@ -28,7 +28,8 @@ PROJECT_ROOT="$(dirname "$BENCH_DIR")"
 OUT_DIR="$BENCH_DIR"
 RUN_SYNTHETIC=false
 RUN_REALDATA=true
-REFERENCE_TRX="$PROJECT_ROOT/test-data/10milHCP_dps-sift2.trx"
+REFERENCE_TRX=""
+REFERENCE_TRX_USER_SET=false
 VERBOSE_FLAG=""
 BUILD_DIR="$PROJECT_ROOT/build-release"
 PROFILE="core"
@@ -60,6 +61,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --reference)
       REFERENCE_TRX="$2"
+      REFERENCE_TRX_USER_SET=true
       shift 2
       ;;
     --out-dir)
@@ -85,6 +87,26 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+resolve_reference_trx() {
+  local cache_file="$BUILD_DIR/CMakeCache.txt"
+  local fallback_path="$BUILD_DIR/_trx_bench_data/10milHCP_dps-sift2.trx"
+  local cmake_path=""
+
+  if [[ -f "$cache_file" ]]; then
+    cmake_path="$(awk -F= '/^TRX_BENCH_REFERENCE_TRX:/{print $2; exit}' "$cache_file")"
+  fi
+
+  if [[ -n "$cmake_path" ]]; then
+    echo "$cmake_path"
+  else
+    echo "$fallback_path"
+  fi
+}
+
+if [[ "$REFERENCE_TRX_USER_SET" != "true" ]]; then
+  REFERENCE_TRX="$(resolve_reference_trx)"
+fi
 
 if [[ "$PROFILE" != "core" && "$PROFILE" != "full" ]]; then
   echo "Error: --profile must be 'core' or 'full' (got '$PROFILE')"
@@ -193,7 +215,7 @@ if [[ "$RUN_REALDATA" == "true" ]]; then
   
   if [[ ! -f "$REFERENCE_TRX" ]]; then
     echo "Error: Reference TRX file not found: $REFERENCE_TRX"
-    echo "Use --reference to specify the path"
+    echo "Configure with TRX_DOWNLOAD_BENCH_DATA=ON, or use --reference to specify the path."
     exit 1
   fi
   
