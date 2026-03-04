@@ -1103,6 +1103,37 @@ std::string make_temp_dir(const std::string &prefix);
 std::string extract_zip_to_directory(zip_t *zfolder);
 
 std::string rm_root(const std::string &root, const std::string &path);
+
+/**
+ * @brief Append named groups to an existing TRX zip archive.
+ *
+ * Opens the archive without truncating it, writes one "groups/{name}.uint32"
+ * entry per group, then commits the archive. The header.json is not modified
+ * because group discovery at load time is performed by directory scan.
+ *
+ * @param path       Path to an existing TRX zip file (.trx).
+ * @param groups     Map from group name to sorted vector of uint32 streamline indices.
+ * @param compression Compression method for new entries (default: ZIP_CM_STORE).
+ * @throws TrxIOError on any zip failure.
+ */
+void append_groups_to_zip(const std::string &path,
+                          const std::map<std::string, std::vector<uint32_t>> &groups,
+                          zip_uint32_t compression = ZIP_CM_STORE);
+
+/**
+ * @brief Append named groups to an existing TRX directory.
+ *
+ * Creates the groups/ subdirectory if absent, then writes one
+ * "{name}.uint32" binary file per group. Existing files with the same name
+ * are overwritten.
+ *
+ * @param directory  Path to an existing TRX directory.
+ * @param groups     Map from group name to sorted vector of uint32 streamline indices.
+ * @throws TrxIOError on any I/O failure.
+ */
+void append_groups_to_directory(const std::string &directory,
+                                const std::map<std::string, std::vector<uint32_t>> &groups);
+
 #ifndef TRX_TPP_STANDALONE
 #endif
 
