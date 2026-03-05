@@ -7,6 +7,7 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
+#include <map>
 #include <random>
 #include <string>
 #include <vector>
@@ -405,6 +406,81 @@ TEST(AnyTrxFile, SaveUpdatesHeader) {
   auto reloaded = load_any(out_path.string());
   EXPECT_EQ(reloaded.header["COMMENT"].string_value(), "saved by anytrxfile test");
   reloaded.close();
+}
+
+TEST(AnyTrxFile, AppendGroupsToDirectoryAddsAndOverwrites) {
+  const fs::path temp_root = make_temp_test_dir("trx_append_groups_dir");
+  const fs::path shard = write_test_shard(temp_root,
+                                          "shard",
+                                          {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, {2.0F, 0.0F, 0.0F}},
+                                          {0, 1, 3},
+                                          {10.0F, 20.0F},
+                                          {0.1F, 0.2F, 0.3F},
+                                          {0});
+
+  const std::map<std::string, std::vector<uint32_t>> appended_groups = {
+      {"Bundle", {1}},
+      {"NewBundle", {0, 1}},
+  };
+  append_groups_to_directory(shard.string(), appended_groups);
+
+  auto loaded = load_any(shard.string());
+  auto bundle_it = loaded.groups.find("Bundle");
+  ASSERT_NE(bundle_it, loaded.groups.end());
+  auto bundle = bundle_it->second.as_matrix<uint32_t>();
+  ASSERT_EQ(bundle.rows(), 1);
+  EXPECT_EQ(bundle(0, 0), 1U);
+
+  auto new_bundle_it = loaded.groups.find("NewBundle");
+  ASSERT_NE(new_bundle_it, loaded.groups.end());
+  auto new_bundle = new_bundle_it->second.as_matrix<uint32_t>();
+  ASSERT_EQ(new_bundle.rows(), 2);
+  EXPECT_EQ(new_bundle(0, 0), 0U);
+  EXPECT_EQ(new_bundle(1, 0), 1U);
+  loaded.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, AppendGroupsToZipAddsAndOverwrites) {
+  const fs::path temp_root = make_temp_test_dir("trx_append_groups_zip");
+  const fs::path shard = write_test_shard(temp_root,
+                                          "shard",
+                                          {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, {2.0F, 0.0F, 0.0F}},
+                                          {0, 1, 3},
+                                          {10.0F, 20.0F},
+                                          {0.1F, 0.2F, 0.3F},
+                                          {0});
+
+  const fs::path archive = temp_root / "base.trx";
+  auto source = load_any(shard.string());
+  source.save(archive.string(), ZIP_CM_STORE);
+  source.close();
+
+  const std::map<std::string, std::vector<uint32_t>> appended_groups = {
+      {"Bundle", {1}},
+      {"NewBundle", {0, 1}},
+  };
+  append_groups_to_zip(archive.string(), appended_groups, ZIP_CM_STORE);
+
+  auto loaded = load_any(archive.string());
+  auto bundle_it = loaded.groups.find("Bundle");
+  ASSERT_NE(bundle_it, loaded.groups.end());
+  auto bundle = bundle_it->second.as_matrix<uint32_t>();
+  ASSERT_EQ(bundle.rows(), 1);
+  EXPECT_EQ(bundle(0, 0), 1U);
+
+  auto new_bundle_it = loaded.groups.find("NewBundle");
+  ASSERT_NE(new_bundle_it, loaded.groups.end());
+  auto new_bundle = new_bundle_it->second.as_matrix<uint32_t>();
+  ASSERT_EQ(new_bundle.rows(), 2);
+  EXPECT_EQ(new_bundle(0, 0), 0U);
+  EXPECT_EQ(new_bundle(1, 0), 1U);
+  loaded.close();
+
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
 }
 
 TEST(AnyTrxFile, MissingHeaderCountsThrows) {

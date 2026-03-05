@@ -24,6 +24,7 @@
 #include <system_error>
 #include <random>
 #include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -44,6 +45,17 @@ using json = json11::Json;
 
 namespace trx {
 enum class TrxSaveMode { Auto, Archive, Directory };
+
+enum class ConnectivityMeasure {
+  StreamlineCount,
+  DpsSum
+};
+
+struct ConnectivityMatrixResult {
+  std::vector<std::string> group_names;
+  std::vector<uint64_t> streamline_count_upper;
+  std::vector<double> value_upper;
+};
 
 struct TrxSaveOptions {
   zip_uint32_t compression_standard = ZIP_CM_STORE;
@@ -426,6 +438,19 @@ public:
   const ArraySequence<DT> *get_dpv(const std::string &name) const;
   std::vector<std::array<DT, 3>> get_streamline(size_t streamline_index) const;
   template <typename Fn> void for_each_streamline(Fn &&fn) const;
+
+  /**
+   * @brief Compute symmetric group-by-group connectivity in packed upper-triangle form.
+   *
+   * Connectivity can be computed either as raw streamline counts or as a weighted
+   * sum using a named 1D DPS field.
+   *
+   * @param measure ConnectivityMeasure::StreamlineCount or ConnectivityMeasure::DpsSum.
+   * @param dps_field_name Required when measure is DpsSum.
+   * @return ConnectivityMatrixResult packed as upper triangle (i<=j).
+   */
+  ConnectivityMatrixResult compute_group_connectivity(ConnectivityMeasure measure = ConnectivityMeasure::StreamlineCount,
+                                                      const std::string &dps_field_name = "") const;
 
   /**
    * @brief Add a data-per-group (DPG) field from a flat vector.
@@ -1027,6 +1052,99 @@ void get_reference_info(const std::string &reference,
                         const Eigen::RowVectorXi &dimensions);
 
 template <typename DT> std::ostream &operator<<(std::ostream &out, const TrxFile<DT> &trx);
+
+template <typename DT>
+inline ConnectivityMatrixResult
+TrxFile<DT>::compute_group_connectivity(ConnectivityMeasure measure, const std::string &dps_field_name) const {
+  const size_t num_streamlines_total = this->num_streamlines();
+  ConnectivityMatrixResult result;
+  result.group_names.reserve(this->groups.size());
+  for (const auto &kv : this->groups) {
+    result.group_names.push_back(kv.first);
+  }
+
+  const size_t G = result.group_names.size();
+  const size_t packed_size = (G * (G + 1)) / 2;
+  result.streamline_count_upper.assign(packed_size, 0);
+  result.value_upper.assign(packed_size, 0.0);
+  if (G == 0 || num_streamlines_total == 0) {
+    return result;
+  }
+
+  if (measure == ConnectivityMeasure::DpsSum && dps_field_name.empty()) {
+    throw TrxArgumentError("compute_group_connectivity: dps_field_name is required for DpsSum mode.");
+  }
+
+  const MMappedMatrix<DT> *dps = nullptr;
+  if (measure == ConnectivityMeasure::DpsSum) {
+    dps = this->get_dps(dps_field_name);
+    if (dps == nullptr) {
+      throw TrxFormatError("compute_group_connectivity: DPS field not found: " + dps_field_name);
+    }
+    if (static_cast<size_t>(dps->_matrix.rows()) != num_streamlines_total || dps->_matrix.cols() != 1) {
+      throw TrxFormatError("compute_group_connectivity: DPS field must be 1D with length NB_STREAMLINES.");
+    }
+  }
+
+  auto packed_index = [G](size_t i, size_t j) -> size_t {
+    // Row-major upper triangle packing for i<=j.
+    return i * G - (i * (i - 1)) / 2 + (j - i);
+  };
+
+  std::unordered_map<std::string, size_t> group_to_id;
+  group_to_id.reserve(G);
+  for (size_t gid = 0; gid < G; ++gid) {
+    group_to_id[result.group_names[gid]] = gid;
+  }
+
+  std::vector<std::vector<uint32_t>> streamline_to_groups(num_streamlines_total);
+  for (const auto &kv : this->groups) {
+    const auto it_gid = group_to_id.find(kv.first);
+    if (it_gid == group_to_id.end() || kv.second == nullptr) {
+      continue;
+    }
+    const size_t gid = it_gid->second;
+    const auto &mat = kv.second->_matrix;
+    const size_t n_ids = static_cast<size_t>(mat.size());
+    for (size_t n = 0; n < n_ids; ++n) {
+      const uint32_t sid = mat.data()[n];
+      if (static_cast<size_t>(sid) < num_streamlines_total) {
+        streamline_to_groups[static_cast<size_t>(sid)].push_back(static_cast<uint32_t>(gid));
+      }
+    }
+  }
+
+  for (size_t sid = 0; sid < num_streamlines_total; ++sid) {
+    auto &memberships = streamline_to_groups[sid];
+    if (memberships.empty()) {
+      continue;
+    }
+    std::sort(memberships.begin(), memberships.end());
+    memberships.erase(std::unique(memberships.begin(), memberships.end()), memberships.end());
+
+    const double w =
+        (measure == ConnectivityMeasure::DpsSum) ? static_cast<double>(dps->_matrix(static_cast<Eigen::Index>(sid), 0))
+                                                 : 1.0;
+
+    for (size_t a = 0; a < memberships.size(); ++a) {
+      const size_t i = memberships[a];
+      for (size_t b = a; b < memberships.size(); ++b) {
+        const size_t j = memberships[b];
+        const size_t idx = packed_index(i, j);
+        result.streamline_count_upper[idx] += 1;
+        result.value_upper[idx] += w;
+      }
+    }
+  }
+
+  if (measure == ConnectivityMeasure::StreamlineCount) {
+    for (size_t idx = 0; idx < packed_size; ++idx) {
+      result.value_upper[idx] = static_cast<double>(result.streamline_count_upper[idx]);
+    }
+  }
+
+  return result;
+}
 // private:
 
 void allocate_file(const std::string &path, std::size_t size);
