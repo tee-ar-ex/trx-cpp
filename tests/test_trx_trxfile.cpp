@@ -136,6 +136,31 @@ fs::path create_float_trx_dir_missing_sentinel() {
 
   return root;
 }
+
+fs::path create_connectivity_fixture_trx() {
+  fs::path root = make_temp_test_dir("trx_connectivity_fixture");
+  const fs::path out_path = root / "connectivity.trx";
+
+  TrxStream stream;
+  for (int i = 0; i < 5; ++i) {
+    stream.push_streamline(std::vector<float>{0.0f, 0.0f, 0.0f});
+  }
+
+  // Streamline memberships:
+  // s0 -> A
+  // s1 -> B
+  // s2 -> C
+  // s3 -> A,B
+  // s4 -> B,C
+  // Include a duplicate index in A to verify de-duplication per streamline.
+  stream.push_group_from_indices("A", {0, 3, 3});
+  stream.push_group_from_indices("B", {1, 3, 4});
+  stream.push_group_from_indices("C", {2, 4});
+  stream.push_dps_from_vector("weight", "float32", std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f});
+  stream.finalize<float>(out_path.string(), ZIP_CM_STORE);
+
+  return out_path;
+}
 } // namespace
 
 TEST(TrxFileTpp, DeepcopyEmpty) {
@@ -421,6 +446,59 @@ TEST(TrxFileTpp, QueryAabbCounts) {
   EXPECT_EQ(subset->num_streamlines(), static_cast<size_t>(kInsideCount));
   EXPECT_EQ(subset->num_vertices(), static_cast<size_t>(kInsideCount * kPointsPerStreamline));
   subset->close();
+}
+
+TEST(TrxFileTpp, ComputeGroupConnectivityFromSyntheticFileStreamlineCount) {
+  const fs::path trx_path = create_connectivity_fixture_trx();
+  auto reader = trx::TrxReader<float>(trx_path.string());
+  auto *trx = reader.get();
+
+  const auto result = trx->compute_group_connectivity(ConnectivityMeasure::StreamlineCount);
+  ASSERT_EQ(result.group_names.size(), 3u);
+  EXPECT_EQ(result.group_names[0], "A");
+  EXPECT_EQ(result.group_names[1], "B");
+  EXPECT_EQ(result.group_names[2], "C");
+
+  // Packed upper triangle for groups [A, B, C]:
+  // [AA, AB, AC, BB, BC, CC]
+  const std::vector<uint64_t> expected_counts = {2, 1, 0, 3, 1, 2};
+  const std::vector<double> expected_values = {2.0, 1.0, 0.0, 3.0, 1.0, 2.0};
+  EXPECT_EQ(result.streamline_count_upper, expected_counts);
+  EXPECT_EQ(result.value_upper.size(), expected_values.size());
+  for (size_t i = 0; i < expected_values.size(); ++i) {
+    EXPECT_DOUBLE_EQ(result.value_upper[i], expected_values[i]);
+  }
+
+  trx->close();
+  std::error_code ec;
+  fs::remove_all(trx_path.parent_path(), ec);
+}
+
+TEST(TrxFileTpp, ComputeGroupConnectivityFromSyntheticFileDpsWeighted) {
+  const fs::path trx_path = create_connectivity_fixture_trx();
+  auto reader = trx::TrxReader<float>(trx_path.string());
+  auto *trx = reader.get();
+
+  const auto result = trx->compute_group_connectivity(ConnectivityMeasure::DpsSum, "weight");
+  ASSERT_EQ(result.group_names.size(), 3u);
+  EXPECT_EQ(result.group_names[0], "A");
+  EXPECT_EQ(result.group_names[1], "B");
+  EXPECT_EQ(result.group_names[2], "C");
+
+  // Same connectivity pattern as the count test, weighted by DPS:
+  // weights [1,2,3,4,5] for streamlines [s0..s4]
+  // Packed [AA, AB, AC, BB, BC, CC] -> [5, 4, 0, 11, 5, 8]
+  const std::vector<uint64_t> expected_counts = {2, 1, 0, 3, 1, 2};
+  const std::vector<double> expected_values = {5.0, 4.0, 0.0, 11.0, 5.0, 8.0};
+  EXPECT_EQ(result.streamline_count_upper, expected_counts);
+  EXPECT_EQ(result.value_upper.size(), expected_values.size());
+  for (size_t i = 0; i < expected_values.size(); ++i) {
+    EXPECT_DOUBLE_EQ(result.value_upper[i], expected_values[i]);
+  }
+
+  trx->close();
+  std::error_code ec;
+  fs::remove_all(trx_path.parent_path(), ec);
 }
 
 // resize() with default arguments is a no-op when sizes already match.
