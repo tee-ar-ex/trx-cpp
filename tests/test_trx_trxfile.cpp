@@ -7,9 +7,14 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 
+#include <cerrno>
+#include <cstring>
 #include <fstream>
 #include <random>
 #include <set>
+#if !defined(_WIN32) && !defined(_WIN64)
+#include <sys/resource.h>
+#endif
 
 using namespace Eigen;
 using namespace trx;
@@ -161,6 +166,231 @@ fs::path create_connectivity_fixture_trx() {
 
   return out_path;
 }
+
+fs::path create_many_groups_fixture_trx(size_t group_count, size_t streamline_count = 16) {
+  fs::path root = make_temp_test_dir("trx_many_groups_fixture");
+  const fs::path out_path = root / "many_groups.trx";
+
+  TrxStream stream;
+  for (size_t i = 0; i < streamline_count; ++i) {
+    stream.push_streamline(std::vector<float>{0.0f, 0.0f, 0.0f});
+  }
+
+  for (size_t g = 0; g < group_count; ++g) {
+    const std::string name = "G" + std::to_string(g);
+    const uint32_t sid = static_cast<uint32_t>(g % streamline_count);
+    stream.push_group_from_indices(name, {sid});
+  }
+  stream.finalize<float>(out_path.string(), ZIP_CM_STORE);
+
+  return out_path;
+}
+
+fs::path create_connectivity_bad_dps_fixture_dir() {
+  fs::path root = make_temp_test_dir("trx_connectivity_bad_dps_fixture");
+  fs::path header_path = root / "header.json";
+
+  json::object header_obj;
+  header_obj["DIMENSIONS"] = json::array{1, 1, 1};
+  header_obj["NB_STREAMLINES"] = 2;
+  header_obj["NB_VERTICES"] = 2;
+  header_obj["VOXEL_TO_RASMM"] = json::array{
+      json::array{1.0, 0.0, 0.0, 0.0},
+      json::array{0.0, 1.0, 0.0, 0.0},
+      json::array{0.0, 0.0, 1.0, 0.0},
+      json::array{0.0, 0.0, 0.0, 1.0},
+  };
+  json header(header_obj);
+
+  std::ofstream header_out(header_path.string());
+  if (!header_out.is_open()) {
+    throw std::runtime_error("Failed to write header.json");
+  }
+  header_out << header.dump() << std::endl;
+  header_out.close();
+
+  Matrix<float, Dynamic, Dynamic, RowMajor> positions(2, 3);
+  positions << 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f;
+  trx::write_binary((root / "positions.3.float32").string(), positions);
+
+  Matrix<uint32_t, Dynamic, Dynamic, RowMajor> offsets(3, 1);
+  offsets << 0, 1, 2;
+  trx::write_binary((root / "offsets.uint32").string(), offsets);
+
+  fs::path groups_dir = root / "groups";
+  std::error_code ec;
+  fs::create_directories(groups_dir, ec);
+  Matrix<uint32_t, Dynamic, Dynamic, RowMajor> group_vals(2, 1);
+  group_vals << 0, 1;
+  trx::write_binary((groups_dir / "A.uint32").string(), group_vals);
+
+  fs::path dps_dir = root / "dps";
+  fs::create_directories(dps_dir, ec);
+  Matrix<float, Dynamic, Dynamic, RowMajor> dps(2, 2);
+  dps << 1.0f, 2.0f, 3.0f, 4.0f;
+  trx::write_binary((dps_dir / "weights2d.2.float32").string(), dps);
+
+  return root;
+}
+
+fs::path create_connectivity_no_groups_fixture_trx(size_t streamline_count = 3) {
+  fs::path root = make_temp_test_dir("trx_connectivity_nogroups");
+  const fs::path out_path = root / "nogroups.trx";
+
+  TrxStream stream;
+  for (size_t i = 0; i < streamline_count; ++i) {
+    stream.push_streamline(std::vector<float>{0.0f, 0.0f, 0.0f});
+  }
+  stream.finalize<float>(out_path.string(), ZIP_CM_STORE);
+  return out_path;
+}
+
+fs::path create_connectivity_empty_group_fixture_dir() {
+  fs::path root = make_temp_test_dir("trx_connectivity_empty_group");
+  fs::path header_path = root / "header.json";
+
+  json::object header_obj;
+  header_obj["DIMENSIONS"] = json::array{1, 1, 1};
+  header_obj["NB_STREAMLINES"] = 3;
+  header_obj["NB_VERTICES"] = 3;
+  header_obj["VOXEL_TO_RASMM"] = json::array{
+      json::array{1.0, 0.0, 0.0, 0.0},
+      json::array{0.0, 1.0, 0.0, 0.0},
+      json::array{0.0, 0.0, 1.0, 0.0},
+      json::array{0.0, 0.0, 0.0, 1.0},
+  };
+  json header(header_obj);
+
+  std::ofstream header_out(header_path.string());
+  if (!header_out.is_open()) {
+    throw std::runtime_error("Failed to write header.json");
+  }
+  header_out << header.dump() << std::endl;
+  header_out.close();
+
+  Matrix<float, Dynamic, Dynamic, RowMajor> positions(3, 3);
+  positions << 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 2.0f, 2.0f, 2.0f;
+  trx::write_binary((root / "positions.3.float32").string(), positions);
+
+  Matrix<uint32_t, Dynamic, Dynamic, RowMajor> offsets(4, 1);
+  offsets << 0, 1, 2, 3;
+  trx::write_binary((root / "offsets.uint32").string(), offsets);
+
+  std::error_code ec;
+  const fs::path groups_dir = root / "groups";
+  fs::create_directories(groups_dir, ec);
+  // Empty file -> valid empty group membership list.
+  std::ofstream((groups_dir / "Empty.uint32").string(), std::ios::binary | std::ios::trunc).close();
+
+  return root;
+}
+
+fs::path create_connectivity_out_of_range_group_fixture_dir() {
+  fs::path root = make_temp_test_dir("trx_connectivity_out_of_range");
+  fs::path header_path = root / "header.json";
+
+  json::object header_obj;
+  header_obj["DIMENSIONS"] = json::array{1, 1, 1};
+  header_obj["NB_STREAMLINES"] = 3;
+  header_obj["NB_VERTICES"] = 3;
+  header_obj["VOXEL_TO_RASMM"] = json::array{
+      json::array{1.0, 0.0, 0.0, 0.0},
+      json::array{0.0, 1.0, 0.0, 0.0},
+      json::array{0.0, 0.0, 1.0, 0.0},
+      json::array{0.0, 0.0, 0.0, 1.0},
+  };
+  json header(header_obj);
+
+  std::ofstream header_out(header_path.string());
+  if (!header_out.is_open()) {
+    throw std::runtime_error("Failed to write header.json");
+  }
+  header_out << header.dump() << std::endl;
+  header_out.close();
+
+  Matrix<float, Dynamic, Dynamic, RowMajor> positions(3, 3);
+  positions << 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 2.0f, 2.0f, 2.0f;
+  trx::write_binary((root / "positions.3.float32").string(), positions);
+
+  Matrix<uint32_t, Dynamic, Dynamic, RowMajor> offsets(4, 1);
+  offsets << 0, 1, 2, 3;
+  trx::write_binary((root / "offsets.uint32").string(), offsets);
+
+  std::error_code ec;
+  const fs::path groups_dir = root / "groups";
+  fs::create_directories(groups_dir, ec);
+  Matrix<uint32_t, Dynamic, Dynamic, RowMajor> group_vals(3, 1);
+  // Index 99 is out-of-range and should be ignored by connectivity builder.
+  group_vals << 0, 2, 99;
+  trx::write_binary((groups_dir / "A.uint32").string(), group_vals);
+
+  return root;
+}
+
+fs::path create_connectivity_large_lazy_group_fixture_dir(size_t streamline_count = 100000,
+                                                          size_t duplicate_factor = 5) {
+  fs::path root = make_temp_test_dir("trx_connectivity_large_lazy_group");
+  fs::path header_path = root / "header.json";
+
+  json::object header_obj;
+  header_obj["DIMENSIONS"] = json::array{1, 1, 1};
+  header_obj["NB_STREAMLINES"] = static_cast<int>(streamline_count);
+  header_obj["NB_VERTICES"] = static_cast<int>(streamline_count);
+  header_obj["VOXEL_TO_RASMM"] = json::array{
+      json::array{1.0, 0.0, 0.0, 0.0},
+      json::array{0.0, 1.0, 0.0, 0.0},
+      json::array{0.0, 0.0, 1.0, 0.0},
+      json::array{0.0, 0.0, 0.0, 1.0},
+  };
+  json header(header_obj);
+
+  std::ofstream header_out(header_path.string());
+  if (!header_out.is_open()) {
+    throw std::runtime_error("Failed to write header.json");
+  }
+  header_out << header.dump() << std::endl;
+  header_out.close();
+
+  Matrix<float, Dynamic, Dynamic, RowMajor> positions(static_cast<Eigen::Index>(streamline_count), 3);
+  for (size_t i = 0; i < streamline_count; ++i) {
+    const auto row = static_cast<Eigen::Index>(i);
+    positions(row, 0) = static_cast<float>(i);
+    positions(row, 1) = 0.0f;
+    positions(row, 2) = 0.0f;
+  }
+  trx::write_binary((root / "positions.3.float32").string(), positions);
+
+  Matrix<uint32_t, Dynamic, Dynamic, RowMajor> offsets(static_cast<Eigen::Index>(streamline_count + 1), 1);
+  for (size_t i = 0; i <= streamline_count; ++i) {
+    offsets(static_cast<Eigen::Index>(i), 0) = static_cast<uint32_t>(i);
+  }
+  trx::write_binary((root / "offsets.uint32").string(), offsets);
+
+  std::error_code ec;
+  const fs::path groups_dir = root / "groups";
+  fs::create_directories(groups_dir, ec);
+  const size_t n_ids = streamline_count * duplicate_factor;
+  Matrix<uint32_t, Dynamic, Dynamic, RowMajor> group_vals(static_cast<Eigen::Index>(n_ids), 1);
+  for (size_t i = 0; i < n_ids; ++i) {
+    group_vals(static_cast<Eigen::Index>(i), 0) = static_cast<uint32_t>(i % streamline_count);
+  }
+  trx::write_binary((groups_dir / "All.uint32").string(), group_vals);
+
+  return root;
+}
+
+#if !defined(_WIN32) && !defined(_WIN64)
+struct NoFileLimitRestoreGuard {
+  rlimit old_limit{};
+  bool active = false;
+
+  ~NoFileLimitRestoreGuard() {
+    if (active) {
+      static_cast<void>(setrlimit(RLIMIT_NOFILE, &old_limit));
+    }
+  }
+};
+#endif
 } // namespace
 
 TEST(TrxFileTpp, DeepcopyEmpty) {
@@ -207,9 +437,13 @@ TEST(TrxFileTpp, DeepcopyWithGroupsDpgDpvDps) {
   for (const auto &kv : trx->groups) {
     auto it = copy->groups.find(kv.first);
     ASSERT_NE(it, copy->groups.end());
-    EXPECT_EQ(it->second->_matrix.rows(), kv.second->_matrix.rows());
-    EXPECT_EQ(it->second->_matrix.cols(), kv.second->_matrix.cols());
-    EXPECT_EQ(it->second->_matrix, kv.second->_matrix);
+    const auto *src_group = trx->get_group_members(kv.first);
+    const auto *copy_group = copy->get_group_members(kv.first);
+    ASSERT_NE(src_group, nullptr);
+    ASSERT_NE(copy_group, nullptr);
+    EXPECT_EQ(copy_group->_matrix.rows(), src_group->_matrix.rows());
+    EXPECT_EQ(copy_group->_matrix.cols(), src_group->_matrix.cols());
+    EXPECT_EQ(copy_group->_matrix, src_group->_matrix);
   }
 
   EXPECT_EQ(copy->data_per_group.size(), trx->data_per_group.size());
@@ -243,6 +477,41 @@ TEST(TrxFileTpp, LoadOffsetsMissingSentinel) {
   EXPECT_EQ(trx->streamlines->_offsets(2, 0), 4u);
   EXPECT_EQ(trx->num_streamlines(), 2u);
   EXPECT_EQ(trx->num_vertices(), 4u);
+
+  trx->close();
+  std::error_code ec;
+  fs::remove_all(data_dir, ec);
+}
+
+TEST(TrxFileTpp, MetadataArraysAreUnmappedAfterLoad) {
+  const fs::path data_dir = create_float_trx_dir();
+  auto reader = load_trx_dir<float>(data_dir);
+  auto *trx = reader.get();
+
+  for (const auto &kv : trx->groups) {
+    EXPECT_EQ(kv.second, nullptr);
+    const auto *group = trx->get_group_members(kv.first);
+    ASSERT_NE(group, nullptr);
+    EXPECT_EQ(group->mmap.file_handle(), mio::invalid_handle);
+    EXPECT_FALSE(group->_matrix_owned.empty());
+  }
+  for (const auto &kv : trx->data_per_streamline) {
+    ASSERT_NE(kv.second, nullptr);
+    EXPECT_EQ(kv.second->mmap.file_handle(), mio::invalid_handle);
+    EXPECT_FALSE(kv.second->_matrix_owned.empty());
+  }
+  for (const auto &kv : trx->data_per_vertex) {
+    ASSERT_NE(kv.second, nullptr);
+    EXPECT_NE(kv.second->mmap_pos.file_handle(), mio::invalid_handle);
+    EXPECT_TRUE(kv.second->_data_owned.empty());
+  }
+  for (const auto &group_kv : trx->data_per_group) {
+    for (const auto &field_kv : group_kv.second) {
+      ASSERT_NE(field_kv.second, nullptr);
+      EXPECT_EQ(field_kv.second->mmap.file_handle(), mio::invalid_handle);
+      EXPECT_FALSE(field_kv.second->_matrix_owned.empty());
+    }
+  }
 
   trx->close();
   std::error_code ec;
@@ -500,6 +769,160 @@ TEST(TrxFileTpp, ComputeGroupConnectivityFromSyntheticFileDpsWeighted) {
   std::error_code ec;
   fs::remove_all(trx_path.parent_path(), ec);
 }
+
+TEST(TrxFileTpp, ComputeGroupConnectivityDpsSumRequiresFieldName) {
+  const fs::path trx_path = create_connectivity_fixture_trx();
+  auto reader = trx::TrxReader<float>(trx_path.string());
+  auto *trx = reader.get();
+
+  EXPECT_THROW(static_cast<void>(trx->compute_group_connectivity(ConnectivityMeasure::DpsSum, "")),
+               trx::TrxArgumentError);
+
+  trx->close();
+  std::error_code ec;
+  fs::remove_all(trx_path.parent_path(), ec);
+}
+
+TEST(TrxFileTpp, ComputeGroupConnectivityDpsSumRejectsNonScalarDps) {
+  const fs::path data_dir = create_connectivity_bad_dps_fixture_dir();
+  auto reader = load_trx_dir<float>(data_dir);
+  auto *trx = reader.get();
+  EXPECT_THROW(static_cast<void>(trx->compute_group_connectivity(ConnectivityMeasure::DpsSum, "weights2d")),
+               trx::TrxFormatError);
+
+  trx->close();
+  std::error_code ec;
+  fs::remove_all(data_dir, ec);
+}
+
+TEST(TrxFileTpp, ComputeGroupConnectivityNoGroupsAndNoMemberships) {
+  {
+    const fs::path trx_path = create_connectivity_no_groups_fixture_trx(3);
+    auto reader = trx::TrxReader<float>(trx_path.string());
+    auto *trx = reader.get();
+
+    const auto result = trx->compute_group_connectivity(ConnectivityMeasure::StreamlineCount);
+    EXPECT_TRUE(result.group_names.empty());
+    EXPECT_TRUE(result.streamline_count_upper.empty());
+    EXPECT_TRUE(result.value_upper.empty());
+
+    trx->close();
+    std::error_code ec;
+    fs::remove_all(trx_path.parent_path(), ec);
+  }
+
+  {
+    const fs::path data_dir = create_connectivity_empty_group_fixture_dir();
+    auto reader = load_trx_dir<float>(data_dir);
+    auto *trx = reader.get();
+
+    const auto result = trx->compute_group_connectivity(ConnectivityMeasure::StreamlineCount);
+    ASSERT_EQ(result.group_names.size(), 1u);
+    EXPECT_EQ(result.group_names[0], "Empty");
+    ASSERT_EQ(result.streamline_count_upper.size(), 1u);
+    ASSERT_EQ(result.value_upper.size(), 1u);
+    EXPECT_EQ(result.streamline_count_upper[0], 0u);
+    EXPECT_DOUBLE_EQ(result.value_upper[0], 0.0);
+
+    trx->close();
+    std::error_code ec;
+    fs::remove_all(data_dir, ec);
+  }
+}
+
+TEST(TrxFileTpp, ComputeGroupConnectivityIgnoresOutOfRangeGroupIds) {
+  const fs::path data_dir = create_connectivity_out_of_range_group_fixture_dir();
+  auto reader = load_trx_dir<float>(data_dir);
+  auto *trx = reader.get();
+
+  const auto result = trx->compute_group_connectivity(ConnectivityMeasure::StreamlineCount);
+  ASSERT_EQ(result.group_names.size(), 1u);
+  EXPECT_EQ(result.group_names[0], "A");
+  ASSERT_EQ(result.streamline_count_upper.size(), 1u);
+  ASSERT_EQ(result.value_upper.size(), 1u);
+  // Only ids {0,2} are valid for NB_STREAMLINES=3; id 99 is ignored.
+  EXPECT_EQ(result.streamline_count_upper[0], 2u);
+  EXPECT_DOUBLE_EQ(result.value_upper[0], 2.0);
+
+  trx->close();
+  std::error_code ec;
+  fs::remove_all(data_dir, ec);
+}
+
+TEST(TrxFileTpp, ComputeGroupConnectivityLargeLazyGroupFallbackPath) {
+  constexpr size_t kStreamlines = 100000;
+  constexpr size_t kDuplicateFactor = 5;
+
+  const fs::path data_dir = create_connectivity_large_lazy_group_fixture_dir(kStreamlines, kDuplicateFactor);
+  auto reader = load_trx_dir<float>(data_dir);
+  auto *trx = reader.get();
+
+  auto it = trx->groups.find("All");
+  ASSERT_NE(it, trx->groups.end());
+  ASSERT_EQ(it->second, nullptr) << "Expected lazy group backing before compute.";
+
+  const auto result = trx->compute_group_connectivity(ConnectivityMeasure::StreamlineCount);
+  ASSERT_EQ(result.group_names.size(), 1u);
+  EXPECT_EQ(result.group_names[0], "All");
+  ASSERT_EQ(result.streamline_count_upper.size(), 1u);
+  ASSERT_EQ(result.value_upper.size(), 1u);
+  // Duplicate ids must be de-duplicated per-streamline before pair accumulation.
+  EXPECT_EQ(result.streamline_count_upper[0], kStreamlines);
+  EXPECT_DOUBLE_EQ(result.value_upper[0], static_cast<double>(kStreamlines));
+
+  // compute_group_connectivity should be able to consume lazy group backing directly.
+  EXPECT_EQ(trx->groups["All"], nullptr);
+
+  trx->close();
+  std::error_code ec;
+  fs::remove_all(data_dir, ec);
+}
+
+#if !defined(_WIN32) && !defined(_WIN64)
+TEST(TrxFileTpp, LazyLoadManyGroupsUnderTightFileDescriptorLimit) {
+  const fs::path trx_path = create_many_groups_fixture_trx(400, 32);
+  auto reader = trx::TrxReader<float>(trx_path.string());
+  auto *trx = reader.get();
+  ASSERT_EQ(trx->groups.size(), 400u);
+
+  NoFileLimitRestoreGuard guard;
+  if (getrlimit(RLIMIT_NOFILE, &guard.old_limit) != 0) {
+    GTEST_SKIP() << "getrlimit(RLIMIT_NOFILE) failed: errno=" << errno << " (" << std::strerror(errno) << ")";
+  }
+
+  const rlim_t requested_soft_limit = 64;
+  if (guard.old_limit.rlim_cur <= requested_soft_limit) {
+    GTEST_SKIP() << "Current soft RLIMIT_NOFILE is already tight (" << guard.old_limit.rlim_cur << ")";
+  }
+  if (guard.old_limit.rlim_max < requested_soft_limit) {
+    GTEST_SKIP() << "Hard RLIMIT_NOFILE too low for this test setup: " << guard.old_limit.rlim_max;
+  }
+
+  rlimit tight = guard.old_limit;
+  tight.rlim_cur = requested_soft_limit;
+  if (setrlimit(RLIMIT_NOFILE, &tight) != 0) {
+    GTEST_SKIP() << "setrlimit(RLIMIT_NOFILE) failed: errno=" << errno << " (" << std::strerror(errno) << ")";
+  }
+  guard.active = true;
+
+  for (const auto &kv : trx->groups) {
+    const auto *group = trx->get_group_members(kv.first);
+    ASSERT_NE(group, nullptr);
+    // Regression guard: lazy load should materialize and close each backing file.
+    EXPECT_EQ(group->mmap.file_handle(), mio::invalid_handle);
+    EXPECT_FALSE(group->_matrix_owned.empty());
+  }
+
+  // Also exercise the estimator over many groups in the same tight-fd regime.
+  const auto connectivity = trx->compute_group_connectivity(ConnectivityMeasure::StreamlineCount);
+  EXPECT_EQ(connectivity.group_names.size(), 400u);
+  EXPECT_EQ(connectivity.streamline_count_upper.size(), (400u * 401u) / 2u);
+
+  trx->close();
+  std::error_code ec;
+  fs::remove_all(trx_path.parent_path(), ec);
+}
+#endif
 
 // resize() with default arguments is a no-op when sizes already match.
 TEST(TrxFileTpp, ResizeNoChange) {

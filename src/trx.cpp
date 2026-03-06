@@ -435,21 +435,26 @@ AnyTrxFile::_create_from_pointer(json header,
       if (nb_streamlines == 0 || size % nb_streamlines != 0 || nb_scalar != dim) {
         throw TrxFormatError("Wrong dps size/dimensionality");
       }
-      trx.data_per_streamline.emplace(base, make_typed_array(elem_filename, nb_streamlines, nb_scalar, ext));
+      auto arr = make_typed_array(elem_filename, nb_streamlines, nb_scalar, ext);
+      arr.materialize_to_owned();
+      trx.data_per_streamline.emplace(base, std::move(arr));
     } else if (folder == "dpv") {
       const int nb_scalar = nb_vertices > 0 ? static_cast<int>(size / nb_vertices) : 0;
       if (nb_vertices == 0 || size % nb_vertices != 0 || nb_scalar != dim) {
         throw TrxFormatError("Wrong dpv size/dimensionality");
       }
-      trx.data_per_vertex.emplace(base, make_typed_array(elem_filename, nb_vertices, nb_scalar, ext));
+      auto arr = make_typed_array(elem_filename, nb_vertices, nb_scalar, ext);
+      arr.materialize_to_owned();
+      trx.data_per_vertex.emplace(base, std::move(arr));
     } else if (folder.rfind("dpg", 0) == 0) {
       if (size != dim) {
         throw TrxFormatError("Wrong dpg size/dimensionality");
       }
       std::string data_name = path_basename(base);
       std::string sub_folder = path_basename(folder);
-      trx.data_per_group[sub_folder].emplace(data_name,
-                                             make_typed_array(elem_filename, 1, static_cast<int>(size), ext));
+      auto arr = make_typed_array(elem_filename, 1, static_cast<int>(size), ext);
+      arr.materialize_to_owned();
+      trx.data_per_group[sub_folder].emplace(data_name, std::move(arr));
     } else if (folder == "groups") {
       if (dim != 1) {
         throw TrxFormatError("Wrong group dimensionality");
@@ -457,7 +462,9 @@ AnyTrxFile::_create_from_pointer(json header,
       if (ext != "uint32") {
         throw TrxDTypeError("Unsupported group dtype: " + ext);
       }
-      trx.groups.emplace(base, make_typed_array(elem_filename, static_cast<int>(size), 1, ext));
+      auto arr = make_typed_array(elem_filename, static_cast<int>(size), 1, ext);
+      arr.materialize_to_owned();
+      trx.groups.emplace(base, std::move(arr));
     } else {
       throw TrxFormatError("Entry is not part of a valid TRX structure: " + elem_filename);
     }
