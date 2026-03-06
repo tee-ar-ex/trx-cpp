@@ -232,6 +232,7 @@ template <typename DT> struct ArraySequence {
   Eigen::Map<Eigen::Matrix<DT, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> _data;
   Eigen::Map<Eigen::Matrix<uint64_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> _offsets;
   Eigen::Matrix<uint32_t, Eigen::Dynamic, 1> _lengths;
+  std::vector<DT> _data_owned;
   std::vector<uint64_t> _offsets_owned;
   mio::shared_mmap_sink mmap_pos;
   mio::shared_mmap_sink mmap_off;
@@ -245,6 +246,7 @@ template <typename DT> struct MMappedMatrix {
   const auto &matrix() const { return _matrix; }
 
   Eigen::Map<Eigen::Matrix<DT, Eigen::Dynamic, Eigen::Dynamic>> _matrix;
+  std::vector<DT> _matrix_owned;
   mio::shared_mmap_sink mmap;
 
   MMappedMatrix() : _matrix(nullptr, 1, 1) {}
@@ -253,11 +255,19 @@ template <typename DT> struct MMappedMatrix {
 template <typename DT> class TrxFile {
   // Access specifier
 public:
+  struct GroupBackingInfo {
+    std::string filename;
+    int rows = 0;
+    int cols = 0;
+    std::string dtype;
+    long long mem_offset = 0;
+  };
+
   // Data Members
   json header;
   std::unique_ptr<ArraySequence<DT>> streamlines;
 
-  std::map<std::string, std::unique_ptr<MMappedMatrix<uint32_t>>> groups; // vector of indices
+  mutable std::map<std::string, std::unique_ptr<MMappedMatrix<uint32_t>>> groups; // vector of indices
 
   // int or float --check python float precision (singletons)
   std::map<std::string, std::unique_ptr<MMappedMatrix<DT>>> data_per_streamline;
@@ -436,6 +446,7 @@ public:
 
   const MMappedMatrix<DT> *get_dps(const std::string &name) const;
   const ArraySequence<DT> *get_dpv(const std::string &name) const;
+  const MMappedMatrix<uint32_t> *get_group_members(const std::string &name) const;
   std::vector<std::array<DT, 3>> get_streamline(size_t streamline_index) const;
   template <typename Fn> void for_each_streamline(Fn &&fn) const;
 
@@ -528,6 +539,8 @@ public:
   int len();
 
 private:
+  void ensure_all_groups_loaded() const;
+  std::map<std::string, GroupBackingInfo> group_backing_info_;
   mutable std::vector<std::array<Eigen::half, 6>> aabb_cache_;
   /**
    * @brief Get the real size of data (ignoring zeros of preallocation)
@@ -547,8 +560,9 @@ struct TypedArray {
   int rows = 0;
   int cols = 0;
   mio::shared_mmap_sink mmap;
+  std::vector<std::uint8_t> owned;
 
-  bool empty() const { return rows == 0 || cols == 0 || mmap.data() == nullptr; }
+  bool empty() const { return rows == 0 || cols == 0 || (owned.empty() && mmap.data() == nullptr); }
   size_t size() const { return static_cast<size_t>(rows) * static_cast<size_t>(cols); }
 
   /**
@@ -593,7 +607,7 @@ struct TypedArray {
     if (empty()) {
       return {};
     }
-    return {reinterpret_cast<const std::uint8_t *>(mmap.data()),
+    return {reinterpret_cast<const std::uint8_t *>(data()),
             static_cast<size_t>(detail::_sizeof_dtype(dtype)) * size()};
   }
 
@@ -607,19 +621,39 @@ struct TypedArray {
     if (empty()) {
       return {};
     }
-    return {reinterpret_cast<std::uint8_t *>(mmap.data()), static_cast<size_t>(detail::_sizeof_dtype(dtype)) * size()};
+    return {reinterpret_cast<std::uint8_t *>(data()), static_cast<size_t>(detail::_sizeof_dtype(dtype)) * size()};
+  }
+
+  void materialize_to_owned() {
+    const auto bytes = to_bytes();
+    if (bytes.size > 0 && bytes.data != nullptr) {
+      owned.assign(bytes.data, bytes.data + bytes.size);
+    } else {
+      owned.clear();
+    }
+    mmap.unmap();
   }
 
 private:
-  const void *data() const { return mmap.data(); }
-  void *data() { return mmap.data(); }
+  const void *data() const {
+    if (!owned.empty()) {
+      return owned.data();
+    }
+    return mmap.data();
+  }
+  void *data() {
+    if (!owned.empty()) {
+      return owned.data();
+    }
+    return mmap.data();
+  }
 
   template <typename T> T *data_as() {
     const std::string expected = dtype_from_scalar<T>();
     if (dtype != expected) {
       throw std::invalid_argument("TypedArray dtype mismatch: expected " + expected + " got " + dtype);
     }
-    return reinterpret_cast<T *>(mmap.data());
+    return reinterpret_cast<T *>(data());
   }
 
   template <typename T> const T *data_as() const {
@@ -627,7 +661,7 @@ private:
     if (dtype != expected) {
       throw std::invalid_argument("TypedArray dtype mismatch: expected " + expected + " got " + dtype);
     }
-    return reinterpret_cast<const T *>(mmap.data());
+    return reinterpret_cast<const T *>(data());
   }
 };
 
@@ -1100,14 +1134,50 @@ TrxFile<DT>::compute_group_connectivity(ConnectivityMeasure measure, const std::
   std::vector<std::vector<uint32_t>> streamline_to_groups(num_streamlines_total);
   for (const auto &kv : this->groups) {
     const auto it_gid = group_to_id.find(kv.first);
-    if (it_gid == group_to_id.end() || kv.second == nullptr) {
+    if (it_gid == group_to_id.end()) {
       continue;
     }
     const size_t gid = it_gid->second;
-    const auto &mat = kv.second->_matrix;
-    const size_t n_ids = static_cast<size_t>(mat.size());
+    const uint32_t *ids_ptr = nullptr;
+    size_t n_ids = 0;
+    std::vector<uint32_t> tmp_ids;
+
+    if (kv.second != nullptr) {
+      const auto &mat = kv.second->_matrix;
+      ids_ptr = mat.data();
+      n_ids = static_cast<size_t>(mat.size());
+    } else {
+      auto b = this->group_backing_info_.find(kv.first);
+      if (b == this->group_backing_info_.end()) {
+        continue;
+      }
+      const size_t expected_ids = static_cast<size_t>(std::max(0, b->second.rows)) * static_cast<size_t>(std::max(0, b->second.cols));
+      tmp_ids.resize(expected_ids);
+      if (expected_ids > 0) {
+        std::ifstream in(b->second.filename, std::ios::binary);
+        if (!in.is_open()) {
+          continue;
+        }
+        if (b->second.mem_offset > 0) {
+          const std::streamoff byte_offset =
+              static_cast<std::streamoff>(b->second.mem_offset) * static_cast<std::streamoff>(sizeof(uint32_t));
+          in.seekg(byte_offset, std::ios::beg);
+          if (!in.good()) {
+            continue;
+          }
+        }
+        in.read(reinterpret_cast<char *>(tmp_ids.data()),
+                static_cast<std::streamsize>(expected_ids * sizeof(uint32_t)));
+        if (!in) {
+          continue;
+        }
+      }
+      ids_ptr = tmp_ids.data();
+      n_ids = tmp_ids.size();
+    }
+
     for (size_t n = 0; n < n_ids; ++n) {
-      const uint32_t sid = mat.data()[n];
+      const uint32_t sid = ids_ptr[n];
       if (static_cast<size_t>(sid) < num_streamlines_total) {
         streamline_to_groups[static_cast<size_t>(sid)].push_back(static_cast<uint32_t>(gid));
       }

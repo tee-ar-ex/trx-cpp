@@ -62,10 +62,13 @@ Access groups
 
 .. code-block:: cpp
 
-   for (const auto& [name, indices] : trx.groups) {
+   // AnyTrxFile: groups are TypedArray values.
+   for (const auto& [name, arr] : trx.groups) {
      std::cout << "group " << name << ": "
-               << indices.size() << " streamlines\n";
+               << arr.rows << " streamlines\n";
    }
+
+   auto ids = trx.groups.at("CST_L").as_matrix<uint32_t>(); // (N, 1)
 
 Typed access via TrxFile<DT>
 ----------------------------
@@ -81,6 +84,16 @@ directly, avoiding element-wise conversion:
 
    // trx.streamlines->_data    is Eigen::Matrix<float, Dynamic, 3>
    // trx.streamlines->_offsets is Eigen::Matrix<uint64_t, Dynamic, 1>
+
+   // Groups are discovered at load time but loaded lazily on first access.
+   for (const auto& kv : trx.groups) {
+     const auto& name = kv.first;
+     const auto* group = trx.get_group_members(name); // lazy load + cache
+     if (group == nullptr) {
+       continue;
+     }
+     std::cout << name << ": " << group->_matrix.rows() << " members\n";
+   }
 
    reader->close();
 

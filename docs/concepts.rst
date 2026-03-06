@@ -71,7 +71,9 @@ A DPS array stores one value per streamline. It has shape
 - Per-streamline cluster labels
 - Tractography algorithm weights
 
-DPS arrays live under ``dps/`` and are mapped into ``MMappedMatrix`` objects.
+DPS arrays live under ``dps/`` and are loaded as typed matrix fields. If the
+on-disk dtype differs from the requested typed reader dtype, values are
+converted during load.
 
 Groups
 ------
@@ -95,8 +97,9 @@ contain any number of scalar or vector arrays. Typical uses:
 - Per-bundle display color
 - Volume or surface-area estimates
 
-In trx-cpp, groups are ``MMappedMatrix<uint32_t>`` objects and DPG fields are
-``MMappedMatrix<DT>`` entries, both memory-mapped.
+In ``TrxFile<DT>``, groups are discovered at load time but loaded lazily on
+first ``get_group_members(name)`` access, then cached in memory. DPG fields are
+loaded as typed matrices (with dtype conversion when needed).
 
 Header
 ------
