@@ -207,7 +207,16 @@ bool is_trx_directory(const std::string &path) {
   return trx::fs::is_directory(input, ec) && !ec;
 }
 
-AnyTrxFile::~AnyTrxFile() { _cleanup_temporary_directory(); }
+AnyTrxFile::~AnyTrxFile() {
+  // Release mmap-backed members before deleting temporary backing directory.
+  positions = TypedArray();
+  offsets = TypedArray();
+  groups.clear();
+  data_per_streamline.clear();
+  data_per_vertex.clear();
+  data_per_group.clear();
+  _cleanup_temporary_directory();
+}
 
 std::string AnyTrxFile::_normalize_dtype(const std::string &dtype) {
   if (dtype == "bool") {
@@ -274,7 +283,6 @@ std::vector<std::array<double, 3>> AnyTrxFile::get_streamline(size_t streamline_
 }
 
 void AnyTrxFile::close() {
-  _cleanup_temporary_directory();
   positions = TypedArray();
   offsets = TypedArray();
   offsets_u64.clear();
@@ -283,6 +291,7 @@ void AnyTrxFile::close() {
   data_per_streamline.clear();
   data_per_vertex.clear();
   data_per_group.clear();
+  _cleanup_temporary_directory();
   _uncompressed_folder_handle.clear();
   _owns_uncompressed_folder = false;
 

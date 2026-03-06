@@ -706,13 +706,13 @@ TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int strs_start, int pts_s
 }
 
 template <typename DT> void TrxFile<DT>::close() {
-  this->_cleanup_temporary_directory();
   this->streamlines.reset();
   this->groups.clear();
   this->group_backing_info_.clear();
   this->data_per_streamline.clear();
   this->data_per_vertex.clear();
   this->data_per_group.clear();
+  this->_cleanup_temporary_directory();
   this->_uncompressed_folder_handle.clear();
   this->_owns_uncompressed_folder = false;
   this->_copy_safe = true;
@@ -730,7 +730,17 @@ template <typename DT> void TrxFile<DT>::close() {
   this->header = json(header_obj);
 }
 
-template <typename DT> TrxFile<DT>::~TrxFile() { this->_cleanup_temporary_directory(); }
+template <typename DT>
+TrxFile<DT>::~TrxFile() {
+  // Release mmap-backed members before deleting temporary backing directory.
+  this->streamlines.reset();
+  this->groups.clear();
+  this->group_backing_info_.clear();
+  this->data_per_streamline.clear();
+  this->data_per_vertex.clear();
+  this->data_per_group.clear();
+  this->_cleanup_temporary_directory();
+}
 
 template <typename DT>
 // Caveat: cleanup is best-effort; filesystem errors are ignored.
@@ -2660,11 +2670,37 @@ const MMappedMatrix<uint32_t> *TrxFile<DT>::get_group_members(const std::string 
     if (b == this->group_backing_info_.end()) {
       return nullptr;
     }
-    std::tuple<int, int> shape = std::make_tuple(b->second.rows, b->second.cols);
+    const int rows = b->second.rows;
+    const int cols = b->second.cols;
+    std::tuple<int, int> shape = std::make_tuple(rows, cols);
     it->second = std::make_unique<MMappedMatrix<uint32_t>>();
-    it->second->mmap = trx::_create_memmap(b->second.filename, shape, "r+", b->second.dtype, b->second.mem_offset);
-    trx::detail::remap(it->second->_matrix, it->second->mmap.data(), shape);
-    materialize_matrix_map_and_unmap(*it->second);
+    const size_t n = static_cast<size_t>(std::max(0, rows)) * static_cast<size_t>(std::max(0, cols));
+    it->second->_matrix_owned.resize(n);
+
+    if (n > 0) {
+      std::ifstream in(b->second.filename, std::ios::binary);
+      if (!in.is_open()) {
+        it->second.reset();
+        return nullptr;
+      }
+      if (b->second.mem_offset > 0) {
+        const std::streamoff byte_offset =
+            static_cast<std::streamoff>(b->second.mem_offset) * static_cast<std::streamoff>(sizeof(uint32_t));
+        in.seekg(byte_offset, std::ios::beg);
+        if (!in.good()) {
+          it->second.reset();
+          return nullptr;
+        }
+      }
+      in.read(reinterpret_cast<char *>(it->second->_matrix_owned.data()), static_cast<std::streamsize>(n * sizeof(uint32_t)));
+      if (!in) {
+        it->second.reset();
+        return nullptr;
+      }
+      trx::detail::remap(it->second->_matrix, it->second->_matrix_owned.data(), shape);
+    } else {
+      trx::detail::remap(it->second->_matrix, static_cast<uint32_t *>(nullptr), shape);
+    }
   }
   return it->second.get();
 }
