@@ -84,6 +84,63 @@ void materialize_sequence_data_and_unmap(ArraySequence<T> &sequence) {
   sequence.mmap_pos.unmap();
 }
 
+template <typename OutT, typename InT>
+void copy_cast_buffer(const InT *src, size_t n, std::vector<OutT> &dst) {
+  dst.resize(n);
+  for (size_t i = 0; i < n; ++i) {
+    dst[i] = static_cast<OutT>(src[i]);
+  }
+}
+
+template <typename OutT>
+void copy_cast_from_dtype_buffer(const void *src, size_t n, const std::string &dtype, std::vector<OutT> &dst) {
+  if (dtype == "uint8") {
+    copy_cast_buffer(reinterpret_cast<const uint8_t *>(src), n, dst); // NOLINT
+    return;
+  }
+  if (dtype == "uint16" || dtype == "ushort") {
+    copy_cast_buffer(reinterpret_cast<const uint16_t *>(src), n, dst); // NOLINT
+    return;
+  }
+  if (dtype == "uint32") {
+    copy_cast_buffer(reinterpret_cast<const uint32_t *>(src), n, dst); // NOLINT
+    return;
+  }
+  if (dtype == "uint64") {
+    copy_cast_buffer(reinterpret_cast<const uint64_t *>(src), n, dst); // NOLINT
+    return;
+  }
+  if (dtype == "int8") {
+    copy_cast_buffer(reinterpret_cast<const int8_t *>(src), n, dst); // NOLINT
+    return;
+  }
+  if (dtype == "int16") {
+    copy_cast_buffer(reinterpret_cast<const int16_t *>(src), n, dst); // NOLINT
+    return;
+  }
+  if (dtype == "int32") {
+    copy_cast_buffer(reinterpret_cast<const int32_t *>(src), n, dst); // NOLINT
+    return;
+  }
+  if (dtype == "int64") {
+    copy_cast_buffer(reinterpret_cast<const int64_t *>(src), n, dst); // NOLINT
+    return;
+  }
+  if (dtype == "float16") {
+    copy_cast_buffer(reinterpret_cast<const Eigen::half *>(src), n, dst); // NOLINT
+    return;
+  }
+  if (dtype == "float32") {
+    copy_cast_buffer(reinterpret_cast<const float *>(src), n, dst); // NOLINT
+    return;
+  }
+  if (dtype == "float64") {
+    copy_cast_buffer(reinterpret_cast<const double *>(src), n, dst); // NOLINT
+    return;
+  }
+  throw TrxDTypeError("Unsupported metadata dtype for conversion: " + dtype);
+}
+
 template <class Matrix> void write_binary(const std::string &filename, const Matrix &matrix) {
   std::ofstream out(filename, std::ios::out | std::ios::binary | std::ios::trunc);
   typename Matrix::Index rows = matrix.rows(), cols = matrix.cols();
@@ -453,8 +510,18 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
         shape = std::make_tuple(static_cast<int>(trx->header["NB_STREAMLINES"].int_value()), nb_scalar);
       }
       trx->data_per_streamline[base]->mmap = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
-      trx::detail::remap(trx->data_per_streamline[base]->_matrix, trx->data_per_streamline[base]->mmap.data(), shape);
-      materialize_matrix_map_and_unmap(*trx->data_per_streamline[base]);
+      const std::string expected_dtype = dtype_from_scalar<DT>();
+      if (ext == expected_dtype) {
+        trx::detail::remap(trx->data_per_streamline[base]->_matrix, trx->data_per_streamline[base]->mmap.data(), shape);
+        materialize_matrix_map_and_unmap(*trx->data_per_streamline[base]);
+      } else {
+        const size_t n = static_cast<size_t>(std::get<0>(shape)) * static_cast<size_t>(std::get<1>(shape));
+        copy_cast_from_dtype_buffer<DT>(trx->data_per_streamline[base]->mmap.data(), n, ext,
+                                        trx->data_per_streamline[base]->_matrix_owned);
+        trx::detail::remap(trx->data_per_streamline[base]->_matrix,
+                           trx->data_per_streamline[base]->_matrix_owned.data(), shape);
+        trx->data_per_streamline[base]->mmap.unmap();
+      }
     }
 
     else if (folder == "dpv") {
@@ -468,7 +535,16 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
         shape = std::make_tuple(static_cast<int>(trx->header["NB_VERTICES"].int_value()), nb_scalar);
       }
       trx->data_per_vertex[base]->mmap_pos = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
-      trx::detail::remap(trx->data_per_vertex[base]->_data, trx->data_per_vertex[base]->mmap_pos.data(), shape);
+      const std::string expected_dtype = dtype_from_scalar<DT>();
+      if (ext == expected_dtype) {
+        trx::detail::remap(trx->data_per_vertex[base]->_data, trx->data_per_vertex[base]->mmap_pos.data(), shape);
+      } else {
+        const size_t n = static_cast<size_t>(std::get<0>(shape)) * static_cast<size_t>(std::get<1>(shape));
+        copy_cast_from_dtype_buffer<DT>(trx->data_per_vertex[base]->mmap_pos.data(), n, ext,
+                                        trx->data_per_vertex[base]->_data_owned);
+        trx::detail::remap(trx->data_per_vertex[base]->_data, trx->data_per_vertex[base]->_data_owned.data(), shape);
+        trx->data_per_vertex[base]->mmap_pos.unmap();
+      }
       trx::detail::remap(trx->data_per_vertex[base]->_offsets, trx->streamlines->_offsets.data(),
                          int(trx->streamlines->_offsets.rows()), int(trx->streamlines->_offsets.cols()));
       trx->data_per_vertex[base]->_lengths = trx->streamlines->_lengths;
@@ -489,10 +565,19 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
       trx->data_per_group[sub_folder][data_name] = std::make_unique<MMappedMatrix<DT>>();
       trx->data_per_group[sub_folder][data_name]->mmap = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
-
-      trx::detail::remap(trx->data_per_group[sub_folder][data_name]->_matrix,
-                         trx->data_per_group[sub_folder][data_name]->mmap.data(), shape);
-      materialize_matrix_map_and_unmap(*trx->data_per_group[sub_folder][data_name]);
+      const std::string expected_dtype = dtype_from_scalar<DT>();
+      if (ext == expected_dtype) {
+        trx::detail::remap(trx->data_per_group[sub_folder][data_name]->_matrix,
+                           trx->data_per_group[sub_folder][data_name]->mmap.data(), shape);
+        materialize_matrix_map_and_unmap(*trx->data_per_group[sub_folder][data_name]);
+      } else {
+        const size_t n = static_cast<size_t>(std::get<0>(shape)) * static_cast<size_t>(std::get<1>(shape));
+        copy_cast_from_dtype_buffer<DT>(trx->data_per_group[sub_folder][data_name]->mmap.data(), n, ext,
+                                        trx->data_per_group[sub_folder][data_name]->_matrix_owned);
+        trx::detail::remap(trx->data_per_group[sub_folder][data_name]->_matrix,
+                           trx->data_per_group[sub_folder][data_name]->_matrix_owned.data(), shape);
+        trx->data_per_group[sub_folder][data_name]->mmap.unmap();
+      }
     }
 
     else if (folder == "groups") {

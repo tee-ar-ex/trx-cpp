@@ -703,6 +703,114 @@ TEST(TrxFileMemmap, load_directory_test_data) {
   EXPECT_GT(trx->streamlines->_data.size(), 0);
 }
 
+TEST(TrxFileMemmap, load_mixed_metadata_dtype_into_half_reader) {
+  const fs::path out_dir = make_temp_test_dir("trx_mixed_meta_dtype");
+  const fs::path out_path = out_dir / "mixed.trx";
+
+  trx::TrxStream stream("float16");
+  stream.push_streamline(std::vector<float>{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f});
+  stream.push_streamline(std::vector<float>{2.0f, 2.0f, 2.0f, 3.0f, 3.0f, 3.0f});
+  stream.push_dps_from_vector("dps1", "float32", std::vector<float>{1.0f, 4.0f});
+  stream.push_dpv_from_vector("dpv1", "float32", std::vector<float>{100.0f, 101.0f, 106.0f, 107.0f});
+  stream.finalize<float>(out_path.string(), ZIP_CM_STORE);
+
+  trx::TrxReader<half> reader(out_path.string());
+  auto *trx = reader.get();
+  ASSERT_NE(trx, nullptr);
+  ASSERT_NE(trx->streamlines, nullptr);
+  EXPECT_GT(trx->streamlines->_data.size(), 0);
+
+  auto dps_it = trx->data_per_streamline.find("dps1");
+  ASSERT_NE(dps_it, trx->data_per_streamline.end());
+  EXPECT_FLOAT_EQ(static_cast<float>(dps_it->second->_matrix(0, 0)), 1.0f);
+  EXPECT_FLOAT_EQ(static_cast<float>(dps_it->second->_matrix(1, 0)), 4.0f);
+
+  auto dpv_it = trx->data_per_vertex.find("dpv1");
+  ASSERT_NE(dpv_it, trx->data_per_vertex.end());
+  EXPECT_FLOAT_EQ(static_cast<float>(dpv_it->second->_data(0, 0)), 100.0f);
+  EXPECT_FLOAT_EQ(static_cast<float>(dpv_it->second->_data(3, 0)), 107.0f);
+
+  trx->close();
+  std::error_code ec;
+  fs::remove_all(out_dir, ec);
+}
+
+TEST(TrxFileMemmap, load_multiple_metadata_dtypes_into_half_reader) {
+  const fs::path out_dir = make_temp_test_dir("trx_multi_meta_dtype");
+  const fs::path dir_path = out_dir / "multi_fldr.trx";
+  std::error_code ec;
+  fs::create_directories(dir_path / "dps", ec);
+  fs::create_directories(dir_path / "dpv", ec);
+
+  json::object header_obj;
+  header_obj["DIMENSIONS"] = json::array{1, 1, 1};
+  header_obj["NB_STREAMLINES"] = 2;
+  header_obj["NB_VERTICES"] = 4;
+  header_obj["VOXEL_TO_RASMM"] = json::array{
+      json::array{1.0, 0.0, 0.0, 0.0},
+      json::array{0.0, 1.0, 0.0, 0.0},
+      json::array{0.0, 0.0, 1.0, 0.0},
+      json::array{0.0, 0.0, 0.0, 1.0},
+  };
+  std::ofstream header_out((dir_path / "header.json").string());
+  ASSERT_TRUE(header_out.is_open());
+  header_out << json(header_obj).dump() << std::endl;
+  header_out.close();
+
+  Matrix<half, Dynamic, Dynamic, RowMajor> positions(4, 3);
+  positions.setZero();
+  trx::write_binary((dir_path / "positions.3.float16").string(), positions);
+
+  Matrix<uint32_t, Dynamic, Dynamic, RowMajor> offsets(3, 1);
+  offsets << 0, 2, 4;
+  trx::write_binary((dir_path / "offsets.uint32").string(), offsets);
+
+  // DPS with mixed dtypes
+  Matrix<float, Dynamic, Dynamic, RowMajor> dps_f32(2, 1);
+  dps_f32 << 1.5f, -2.5f;
+  trx::write_binary((dir_path / "dps" / "dps_f32.float32").string(), dps_f32);
+
+  Matrix<int16_t, Dynamic, Dynamic, RowMajor> dps_i16(2, 1);
+  dps_i16 << 7, -8;
+  trx::write_binary((dir_path / "dps" / "dps_i16.int16").string(), dps_i16);
+
+  // DPV with mixed dtypes
+  Matrix<double, Dynamic, Dynamic, RowMajor> dpv_f64(4, 1);
+  dpv_f64 << 1.25, 2.5, 3.75, 5.0;
+  trx::write_binary((dir_path / "dpv" / "dpv_f64.float64").string(), dpv_f64);
+
+  Matrix<uint8_t, Dynamic, Dynamic, RowMajor> dpv_u8(4, 1);
+  dpv_u8 << 15, 16, 17, 18;
+  trx::write_binary((dir_path / "dpv" / "dpv_u8.uint8").string(), dpv_u8);
+
+  trx::TrxReader<half> reader(dir_path.string());
+  auto *trx = reader.get();
+  ASSERT_NE(trx, nullptr);
+  ASSERT_NE(trx->streamlines, nullptr);
+  EXPECT_GT(trx->streamlines->_data.size(), 0);
+
+  auto expect_dps = [&](const std::string &name, float v0, float v1) {
+    auto it = trx->data_per_streamline.find(name);
+    ASSERT_NE(it, trx->data_per_streamline.end()) << "missing DPS: " << name;
+    EXPECT_FLOAT_EQ(static_cast<float>(it->second->_matrix(0, 0)), v0);
+    EXPECT_FLOAT_EQ(static_cast<float>(it->second->_matrix(1, 0)), v1);
+  };
+  expect_dps("dps_f32", 1.5f, -2.5f);
+  expect_dps("dps_i16", 7.0f, -8.0f);
+
+  auto expect_dpv = [&](const std::string &name, float v0, float v3) {
+    auto it = trx->data_per_vertex.find(name);
+    ASSERT_NE(it, trx->data_per_vertex.end()) << "missing DPV: " << name;
+    EXPECT_FLOAT_EQ(static_cast<float>(it->second->_data(0, 0)), v0);
+    EXPECT_FLOAT_EQ(static_cast<float>(it->second->_data(3, 0)), v3);
+  };
+  expect_dpv("dpv_f64", 1.25f, 5.0f);
+  expect_dpv("dpv_u8", 15.0f, 18.0f);
+
+  trx->close();
+  fs::remove_all(out_dir, ec);
+}
+
 // Mirrors trx/tests/test_memmap.py::test_load with missing path raising.
 TEST(TrxFileMemmap, load_missing_trx_throws) {
   const auto root = get_test_data_root();
