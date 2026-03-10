@@ -1352,13 +1352,35 @@ void TrxFile<DT>::add_dps_from_vector(const std::string &name, const std::string
   const int rows = static_cast<int>(nb_streamlines);
   const int cols = 1;
   std::tuple<int, int> shape = std::make_tuple(rows, cols);
+  const size_t n = static_cast<size_t>(rows * cols);
 
   auto matrix = std::make_unique<trx::MMappedMatrix<DT>>();
   matrix->mmap = trx::_create_memmap(dps_filename, shape, "w+", dtype_norm);
 
-  trx::detail::remap(matrix->_matrix, matrix->mmap.data(), rows, cols);
-  for (int i = 0; i < rows; ++i) {
-    matrix->_matrix(i, 0) = static_cast<DT>(values[static_cast<size_t>(i)]);
+  const std::string expected_dtype = dtype_from_scalar<DT>();
+  if (dtype_norm == expected_dtype) {
+    // On-disk dtype matches DT: memory-map directly and write as DT.
+    trx::detail::remap(matrix->_matrix, matrix->mmap.data(), rows, cols);
+    for (int i = 0; i < rows; ++i) {
+      matrix->_matrix(i, 0) = static_cast<DT>(values[static_cast<size_t>(i)]);
+    }
+  } else {
+    // On-disk dtype differs from DT (e.g. float32 DPS inside a float16 TrxFile).
+    // Write values as dtype_norm bytes into the mmap, then cross-cast into owned
+    // DT memory so the in-memory matrix uses the correct element size.
+    if (dtype_norm == "float16") {
+      auto *ptr = reinterpret_cast<Eigen::half *>(matrix->mmap.data());
+      for (size_t i = 0; i < n; ++i) ptr[i] = static_cast<Eigen::half>(values[i]);
+    } else if (dtype_norm == "float32") {
+      auto *ptr = reinterpret_cast<float *>(matrix->mmap.data());
+      for (size_t i = 0; i < n; ++i) ptr[i] = static_cast<float>(values[i]);
+    } else {
+      auto *ptr = reinterpret_cast<double *>(matrix->mmap.data());
+      for (size_t i = 0; i < n; ++i) ptr[i] = static_cast<double>(values[i]);
+    }
+    copy_cast_from_dtype_buffer<DT>(matrix->mmap.data(), n, dtype_norm, matrix->_matrix_owned);
+    trx::detail::remap(matrix->_matrix, matrix->_matrix_owned.data(), shape);
+    matrix->mmap.unmap();
   }
 
   this->data_per_streamline[name] = std::move(matrix);
@@ -1418,13 +1440,35 @@ void TrxFile<DT>::add_dpv_from_vector(const std::string &name, const std::string
   const int rows = static_cast<int>(nb_vertices);
   const int cols = 1;
   std::tuple<int, int> shape = std::make_tuple(rows, cols);
+  const size_t n = static_cast<size_t>(rows * cols);
 
   auto seq = std::make_unique<trx::ArraySequence<DT>>();
   seq->mmap_pos = trx::_create_memmap(dpv_filename, shape, "w+", dtype_norm);
 
-  trx::detail::remap(seq->_data, seq->mmap_pos.data(), rows, cols);
-  for (int i = 0; i < rows; ++i) {
-    seq->_data(i, 0) = static_cast<DT>(values[static_cast<size_t>(i)]);
+  const std::string expected_dtype = dtype_from_scalar<DT>();
+  if (dtype_norm == expected_dtype) {
+    // On-disk dtype matches DT: memory-map directly and write as DT.
+    trx::detail::remap(seq->_data, seq->mmap_pos.data(), rows, cols);
+    for (int i = 0; i < rows; ++i) {
+      seq->_data(i, 0) = static_cast<DT>(values[static_cast<size_t>(i)]);
+    }
+  } else {
+    // On-disk dtype differs from DT (e.g. float32 DPV inside a float16 TrxFile).
+    // Write values as dtype_norm bytes into the mmap, then cross-cast into owned
+    // DT memory so the in-memory matrix uses the correct element size.
+    if (dtype_norm == "float16") {
+      auto *ptr = reinterpret_cast<Eigen::half *>(seq->mmap_pos.data());
+      for (size_t i = 0; i < n; ++i) ptr[i] = static_cast<Eigen::half>(values[i]);
+    } else if (dtype_norm == "float32") {
+      auto *ptr = reinterpret_cast<float *>(seq->mmap_pos.data());
+      for (size_t i = 0; i < n; ++i) ptr[i] = static_cast<float>(values[i]);
+    } else {
+      auto *ptr = reinterpret_cast<double *>(seq->mmap_pos.data());
+      for (size_t i = 0; i < n; ++i) ptr[i] = static_cast<double>(values[i]);
+    }
+    copy_cast_from_dtype_buffer<DT>(seq->mmap_pos.data(), n, dtype_norm, seq->_data_owned);
+    trx::detail::remap(seq->_data, seq->_data_owned.data(), shape);
+    seq->mmap_pos.unmap();
   }
 
   if (this->streamlines && this->streamlines->_offsets.size() > 0) {

@@ -1062,3 +1062,144 @@ TEST(TrxFileTpp, TrxStreamFloat16Buffered) {
   std::error_code ec;
   fs::remove_all(tmp_dir, ec);
 }
+
+// Regression test for add_dps_from_vector / add_dpv_from_vector when the requested
+// on-disk dtype differs from the TrxFile template parameter DT.
+//
+// Before the fix, TrxFile<half>::add_dps_from_vector(..., "float32", ...) would:
+//   1. Allocate a mmap sized for N*4 bytes (float32)
+//   2. Map an Eigen::Matrix<half> over it (only covers N*2 bytes)
+//   3. Write N half values into the first N*2 bytes, leaving N*2 bytes as zeros
+// The on-disk file then contained [half-encoded values][zeros], which was garbage
+// when read back as float32 (each float32 element spanned one half + two zero bytes,
+// producing near-zero denormals instead of the original values).
+//
+// The same bug affected add_dpv_from_vector.
+TEST(TrxFileTpp, AddDpsFromVectorCrossDtypeHalfFileFloat32Data) {
+  // Build a minimal TrxFile<half> with a backing directory, then add float32 DPS.
+  const int nb_streamlines = 4;
+  const int nb_vertices = 4;
+  trx::TrxFile<half> trx(nb_vertices, nb_streamlines);
+
+  trx.streamlines->_offsets(0, 0) = 0;
+  trx.streamlines->_offsets(1, 0) = 1;
+  trx.streamlines->_offsets(2, 0) = 2;
+  trx.streamlines->_offsets(3, 0) = 3;
+  trx.streamlines->_offsets(4, 0) = 4;
+  for (int i = 0; i < nb_streamlines; ++i)
+    trx.streamlines->_lengths(i) = 1;
+
+  // Typical tractography weights: mix of small and large float32 values that
+  // cannot be represented exactly as float16 (to catch byte-level misinterpretation).
+  const std::vector<float> dps_values = {1.5f, 26880.0f, 0.03125f, 1024.5f};
+
+  trx.add_dps_from_vector("weight", "float32", dps_values);
+
+  ASSERT_EQ(trx.data_per_streamline.size(), 1u);
+  auto it = trx.data_per_streamline.find("weight");
+  ASSERT_NE(it, trx.data_per_streamline.end());
+
+  // In-memory matrix is DT=half; values are cross-cast from float32 → half.
+  // Check that each value is close to the original (within float16 relative precision ~0.1%).
+  const auto &mat = it->second->_matrix;
+  ASSERT_EQ(mat.rows(), nb_streamlines);
+  for (int i = 0; i < nb_streamlines; ++i) {
+    const float expected = dps_values[static_cast<size_t>(i)];
+    const float actual = static_cast<float>(mat(i, 0));
+    EXPECT_NEAR(actual, expected, std::abs(expected) * 0.002f)
+        << "DPS value at index " << i << " is corrupted: expected " << expected
+        << " got " << actual;
+  }
+
+  trx.close();
+}
+
+TEST(TrxFileTpp, AddDpvFromVectorCrossDtypeHalfFileFloat32Data) {
+  const int nb_streamlines = 2;
+  const int nb_vertices = 4;
+  trx::TrxFile<half> trx(nb_vertices, nb_streamlines);
+
+  trx.streamlines->_offsets(0, 0) = 0;
+  trx.streamlines->_offsets(1, 0) = 2;
+  trx.streamlines->_offsets(2, 0) = 4;
+  trx.streamlines->_lengths(0) = 2;
+  trx.streamlines->_lengths(1) = 2;
+
+  const std::vector<float> dpv_values = {1.5f, 26880.0f, 0.03125f, 1024.5f};
+
+  trx.add_dpv_from_vector("score", "float32", dpv_values);
+
+  ASSERT_EQ(trx.data_per_vertex.size(), 1u);
+  auto it = trx.data_per_vertex.find("score");
+  ASSERT_NE(it, trx.data_per_vertex.end());
+
+  const auto &mat = it->second->_data;
+  ASSERT_EQ(mat.rows(), nb_vertices);
+  for (int i = 0; i < nb_vertices; ++i) {
+    const float expected = dpv_values[static_cast<size_t>(i)];
+    const float actual = static_cast<float>(mat(i, 0));
+    EXPECT_NEAR(actual, expected, std::abs(expected) * 0.002f)
+        << "DPV value at index " << i << " is corrupted: expected " << expected
+        << " got " << actual;
+  }
+
+  trx.close();
+}
+
+// Regression test: TrxStream("float16") InMemory mode with float32 DPS/DPV.
+//
+// Before the fix, finalize<half>() routed InMemory DPS through
+// TrxFile<half>::add_dps_from_vector(..., "float32", ...) which stored half-precision
+// bytes in a file labelled float32.  On reload the float32 reader would misinterpret
+// those bytes as pairs of zero-padded halves, giving near-zero denormals instead of
+// the original values.
+TEST(TrxFileTpp, TrxStreamFloat16InMemoryFloat32DpsRoundtrip) {
+  auto tmp_dir = make_temp_test_dir("trx_f16_dps_roundtrip");
+  const fs::path out_path = tmp_dir / "f16_dps.trx";
+
+  // 3 single-point streamlines, 3 vertices total.
+  TrxStream proto("float16");
+  proto.push_streamline(std::vector<float>{0.0f, 0.0f, 0.0f});
+  proto.push_streamline(std::vector<float>{1.0f, 0.0f, 0.0f});
+  proto.push_streamline(std::vector<float>{2.0f, 0.0f, 0.0f});
+
+  // DPS: float32 values that are not exactly representable as float16, so any
+  // naive byte-reinterpretation (the old bug) produces obviously wrong results.
+  const std::vector<float> dps_in = {1.5f, 26880.0f, 0.03125f};
+  proto.push_dps_from_vector("weight", "float32", dps_in);
+
+  // DPV: same values, one per vertex.
+  const std::vector<float> dpv_in = {1.5f, 26880.0f, 0.03125f};
+  proto.push_dpv_from_vector("score", "float32", dpv_in);
+
+  proto.finalize<half>(out_path.string(), ZIP_CM_STORE);
+
+  // Load via AnyTrxFile so as_matrix<float>() reads the on-disk dtype directly.
+  auto trx = load_any(out_path.string());
+  EXPECT_EQ(trx.num_streamlines(), 3u);
+  EXPECT_EQ(trx.num_vertices(), 3u);
+
+  // DPS round-trip.
+  auto dps_it = trx.data_per_streamline.find("weight");
+  ASSERT_NE(dps_it, trx.data_per_streamline.end());
+  auto dps_mat = dps_it->second.as_matrix<float>();
+  ASSERT_EQ(dps_mat.rows(), 3);
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_FLOAT_EQ(dps_mat(i, 0), dps_in[static_cast<size_t>(i)])
+        << "DPS value at index " << i << " corrupted after float16-stream round-trip";
+  }
+
+  // DPV round-trip.
+  auto dpv_it = trx.data_per_vertex.find("score");
+  ASSERT_NE(dpv_it, trx.data_per_vertex.end());
+  auto dpv_mat = dpv_it->second.as_matrix<float>();
+  ASSERT_EQ(dpv_mat.rows(), 3);
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_FLOAT_EQ(dpv_mat(i, 0), dpv_in[static_cast<size_t>(i)])
+        << "DPV value at index " << i << " corrupted after float16-stream round-trip";
+  }
+
+  trx.close();
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
