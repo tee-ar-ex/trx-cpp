@@ -1299,28 +1299,92 @@ std::string rm_root(const std::string &root, const std::string &path);
  * entry per group, then commits the archive. The header.json is not modified
  * because group discovery at load time is performed by directory scan.
  *
- * @param path       Path to an existing TRX zip file (.trx).
- * @param groups     Map from group name to sorted vector of uint32 streamline indices.
+ * @param path        Path to an existing TRX zip file (.trx).
+ * @param groups      Map from group name to sorted vector of uint32 streamline indices.
  * @param compression Compression method for new entries (default: ZIP_CM_STORE).
+ * @param overwrite   If false, existing entries with the same name are skipped (default: true).
  * @throws TrxIOError on any zip failure.
  */
 void append_groups_to_zip(const std::string &path,
                           const std::map<std::string, std::vector<uint32_t>> &groups,
-                          zip_uint32_t compression = ZIP_CM_STORE);
+                          zip_uint32_t compression = ZIP_CM_STORE, bool overwrite = true);
 
 /**
  * @brief Append named groups to an existing TRX directory.
  *
  * Creates the groups/ subdirectory if absent, then writes one
- * "{name}.uint32" binary file per group. Existing files with the same name
- * are overwritten.
+ * "{name}.uint32" binary file per group.
  *
  * @param directory  Path to an existing TRX directory.
  * @param groups     Map from group name to sorted vector of uint32 streamline indices.
+ * @param overwrite  If false, existing files with the same name are skipped (default: true).
  * @throws TrxIOError on any I/O failure.
  */
 void append_groups_to_directory(const std::string &directory,
-                                const std::map<std::string, std::vector<uint32_t>> &groups);
+                                const std::map<std::string, std::vector<uint32_t>> &groups,
+                                bool overwrite = true);
+
+/**
+ * @brief Append per-streamline data arrays to an existing TRX zip archive.
+ *
+ * Opens the archive without truncating it, writes one "dps/{name}.{dtype}"
+ * entry per array (or "dps/{name}.{ncols}.{dtype}" for multi-column arrays),
+ * then commits. header.json is not modified; dps entries are discovered at
+ * load time by directory scan.
+ *
+ * @param path        Path to an existing TRX zip file (.trx).
+ * @param dps         Map from array name to TypedArray (e.g. AnyTrxFile::data_per_streamline).
+ * @param compression Compression method for new entries (default: ZIP_CM_STORE).
+ * @param overwrite   If false, existing entries with the same name are skipped (default: true).
+ * @throws TrxIOError on any zip failure.
+ */
+void append_dps_to_zip(const std::string &path, const std::map<std::string, TypedArray> &dps,
+                       zip_uint32_t compression = ZIP_CM_STORE, bool overwrite = true);
+
+/**
+ * @brief Append per-streamline data arrays to an existing TRX directory.
+ *
+ * Creates the dps/ subdirectory if absent, then writes one binary file per array.
+ *
+ * @param directory  Path to an existing TRX directory.
+ * @param dps        Map from array name to TypedArray.
+ * @param overwrite  If false, existing files with the same name are skipped (default: true).
+ * @throws TrxIOError on any I/O failure.
+ */
+void append_dps_to_directory(const std::string &directory,
+                              const std::map<std::string, TypedArray> &dps,
+                              bool overwrite = true);
+
+/**
+ * @brief Append per-vertex data arrays to an existing TRX zip archive.
+ *
+ * Opens the archive without truncating it, writes one "dpv/{name}.{dtype}"
+ * entry per array (or "dpv/{name}.{ncols}.{dtype}" for multi-column arrays),
+ * then commits. header.json is not modified; dpv entries are discovered at
+ * load time by directory scan.
+ *
+ * @param path        Path to an existing TRX zip file (.trx).
+ * @param dpv         Map from array name to TypedArray (e.g. AnyTrxFile::data_per_vertex).
+ * @param compression Compression method for new entries (default: ZIP_CM_STORE).
+ * @param overwrite   If false, existing entries with the same name are skipped (default: true).
+ * @throws TrxIOError on any zip failure.
+ */
+void append_dpv_to_zip(const std::string &path, const std::map<std::string, TypedArray> &dpv,
+                       zip_uint32_t compression = ZIP_CM_STORE, bool overwrite = true);
+
+/**
+ * @brief Append per-vertex data arrays to an existing TRX directory.
+ *
+ * Creates the dpv/ subdirectory if absent, then writes one binary file per array.
+ *
+ * @param directory  Path to an existing TRX directory.
+ * @param dpv        Map from array name to TypedArray.
+ * @param overwrite  If false, existing files with the same name are skipped (default: true).
+ * @throws TrxIOError on any I/O failure.
+ */
+void append_dpv_to_directory(const std::string &directory,
+                              const std::map<std::string, TypedArray> &dpv,
+                              bool overwrite = true);
 
 #ifndef TRX_TPP_STANDALONE
 #endif

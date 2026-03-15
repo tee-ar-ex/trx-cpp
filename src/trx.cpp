@@ -1049,6 +1049,7 @@ std::string rm_root(const std::string &root, const std::string &path) {
   if (index != std::string::npos) {
     stripped = path.substr(index + root.size() + 1, path.size() - index - root.size() - 1);
   }
+  std::replace(stripped.begin(), stripped.end(), '\\', '/');
   return stripped;
 }
 
@@ -1535,75 +1536,169 @@ void merge_trx_shards(const MergeTrxShardsOptions &options) {
   rm_dir(output_dir);
 }
 
-void append_groups_to_zip(const std::string &path,
-                          const std::map<std::string, std::vector<uint32_t>> &groups,
-                          zip_uint32_t compression) {
-  if (groups.empty()) {
+namespace {
+// Represents a single file entry to be written into a TRX subdirectory.
+struct RawEntry {
+  std::string filename; // filename within the subdir (e.g. "weight.float32")
+  const void *data;
+  std::size_t nbytes;
+};
+
+// Adds one entry to an already-open zip archive. The data is copied into a
+// malloc buffer that libzip takes ownership of (free=1).
+// If overwrite=false and the entry already exists the function is a no-op.
+void zip_add_buffer_entry(zip_t *zf, const std::string &entry, const void *data,
+                          std::size_t nbytes, zip_uint32_t compression, bool overwrite) {
+  std::string normalized_entry = entry;
+  std::replace(normalized_entry.begin(), normalized_entry.end(), '\\', '/');
+  if (!overwrite) {
+    const bool found_normalized = zip_name_locate(zf, normalized_entry.c_str(), ZIP_FL_ENC_UTF_8) >= 0;
+    std::string legacy_entry = normalized_entry;
+    std::replace(legacy_entry.begin(), legacy_entry.end(), '/', '\\');
+    const bool found_legacy =
+        (legacy_entry != normalized_entry) && (zip_name_locate(zf, legacy_entry.c_str(), ZIP_FL_ENC_UTF_8) >= 0);
+    if (found_normalized || found_legacy) {
+      return;
+    }
+  }
+  void *buf = std::malloc(nbytes > 0 ? nbytes : 1);
+  if (!buf) {
+    throw TrxIOError("Failed to allocate buffer for zip entry: " + normalized_entry);
+  }
+  if (nbytes > 0) {
+    std::memcpy(buf, data, nbytes);
+  }
+  zip_source_t *src = zip_source_buffer(zf, buf, nbytes, 1 /*libzip frees buf*/);
+  if (!src) {
+    std::free(buf);
+    throw TrxIOError("zip_source_buffer failed for: " + normalized_entry);
+  }
+  const zip_uint32_t flags = ZIP_FL_ENC_UTF_8 | (overwrite ? ZIP_FL_OVERWRITE : 0);
+  const zip_int64_t idx = zip_file_add(zf, normalized_entry.c_str(), src, flags);
+  if (idx < 0) {
+    // libzip consumes src even on failure; do not free.
+    throw TrxIOError("zip_file_add failed for: " + normalized_entry + ": " + zip_strerror(zf));
+  }
+  if (zip_set_file_compression(zf, idx, static_cast<zip_int32_t>(compression), 0) < 0) {
+    throw TrxIOError("zip_set_file_compression failed for: " + normalized_entry);
+  }
+}
+
+// Opens the zip at `path` without truncating it, adds a directory entry for
+// `subdir` (harmless if already present), writes each RawEntry under that
+// subdir, then commits. If overwrite=false, existing entries are skipped.
+void append_raw_entries_to_zip(const std::string &path, const std::string &subdir,
+                                const std::vector<RawEntry> &entries, zip_uint32_t compression,
+                                bool overwrite) {
+  if (entries.empty()) {
     return;
   }
   int errorp = 0;
   detail::ZipArchive zf(zip_open(path.c_str(), 0, &errorp));
   if (!zf) {
-    throw TrxIOError("Cannot open TRX zip for group append: " + path);
+    throw TrxIOError("Cannot open TRX zip for append: " + path);
   }
-  // Ensure the groups/ directory entry exists (harmless if already present).
-  zip_dir_add(zf.get(), "groups", ZIP_FL_ENC_UTF_8);
-  for (const auto &kv : groups) {
-    const std::string &name = kv.first;
-    const std::vector<uint32_t> &indices = kv.second;
-    const std::string entry = "groups/" + name + ".uint32";
-    const std::size_t nbytes = indices.size() * sizeof(uint32_t);
-    // Allocate a buffer libzip will own (freed by libzip when free=1).
-    void *buf = std::malloc(nbytes > 0 ? nbytes : 1);
-    if (!buf) {
-      throw TrxIOError("Failed to allocate buffer for group: " + name);
-    }
-    if (nbytes > 0) {
-      std::memcpy(buf, indices.data(), nbytes);
-    }
-    zip_source_t *src = zip_source_buffer(zf.get(), buf, nbytes, 1 /*libzip frees buf*/);
-    if (!src) {
-      std::free(buf);
-      throw TrxIOError("zip_source_buffer failed for group: " + name);
-    }
-    const zip_int64_t idx =
-        zip_file_add(zf.get(), entry.c_str(), src, ZIP_FL_ENC_UTF_8 | ZIP_FL_OVERWRITE);
-    if (idx < 0) {
-      // libzip consumes src even on failure; do not free.
-      throw TrxIOError("zip_file_add failed for group entry: " + entry + ": " +
-                       zip_strerror(zf.get()));
-    }
-    if (zip_set_file_compression(zf.get(), idx, static_cast<zip_int32_t>(compression), 0) < 0) {
-      throw TrxIOError("zip_set_file_compression failed for: " + entry);
-    }
+  zip_dir_add(zf.get(), subdir.c_str(), ZIP_FL_ENC_UTF_8);
+  for (const auto &e : entries) {
+    zip_add_buffer_entry(zf.get(), subdir + "/" + e.filename, e.data, e.nbytes, compression,
+                         overwrite);
   }
   zf.commit(path);
 }
 
-void append_groups_to_directory(const std::string &directory,
-                                const std::map<std::string, std::vector<uint32_t>> &groups) {
-  if (groups.empty()) {
+// Creates `directory/subdir/` if absent, then writes each RawEntry as a
+// binary file. If overwrite=false, existing files are skipped.
+void append_raw_entries_to_directory(const std::string &directory, const std::string &subdir,
+                                      const std::vector<RawEntry> &entries, bool overwrite) {
+  if (entries.empty()) {
     return;
   }
   std::error_code ec;
-  const std::string groups_dir = directory + SEPARATOR + "groups";
-  trx::fs::create_directories(groups_dir, ec);
+  const std::string sub_path = directory + SEPARATOR + subdir;
+  trx::fs::create_directories(sub_path, ec);
   if (ec) {
-    throw TrxIOError("Failed to create groups directory: " + groups_dir + ": " + ec.message());
+    throw TrxIOError("Failed to create " + subdir + " directory: " + sub_path + ": " + ec.message());
   }
-  for (const auto &kv : groups) {
-    const std::string &name = kv.first;
-    const std::vector<uint32_t> &indices = kv.second;
-    const std::string out_path = groups_dir + SEPARATOR + name + ".uint32";
+  for (const auto &e : entries) {
+    const std::string out_path = sub_path + SEPARATOR + e.filename;
+    if (!overwrite && trx::fs::exists(out_path)) {
+      continue;
+    }
     std::ofstream out(out_path, std::ios::binary | std::ios::out | std::ios::trunc);
     if (!out.is_open()) {
-      throw TrxIOError("Failed to open group file for write: " + out_path);
+      throw TrxIOError("Failed to open file for write: " + out_path);
     }
-    if (!indices.empty()) {
-      out.write(reinterpret_cast<const char *>(indices.data()),
-                static_cast<std::streamsize>(indices.size() * sizeof(uint32_t)));
+    if (e.nbytes > 0) {
+      out.write(static_cast<const char *>(e.data), static_cast<std::streamsize>(e.nbytes));
     }
   }
+}
+} // namespace
+
+void append_groups_to_zip(const std::string &path,
+                          const std::map<std::string, std::vector<uint32_t>> &groups,
+                          zip_uint32_t compression, bool overwrite) {
+  std::vector<RawEntry> entries;
+  entries.reserve(groups.size());
+  for (const auto &kv : groups) {
+    entries.push_back({kv.first + ".uint32", kv.second.data(), kv.second.size() * sizeof(uint32_t)});
+  }
+  append_raw_entries_to_zip(path, "groups", entries, compression, overwrite);
+}
+
+void append_groups_to_directory(const std::string &directory,
+                                const std::map<std::string, std::vector<uint32_t>> &groups,
+                                bool overwrite) {
+  std::vector<RawEntry> entries;
+  entries.reserve(groups.size());
+  for (const auto &kv : groups) {
+    entries.push_back({kv.first + ".uint32", kv.second.data(), kv.second.size() * sizeof(uint32_t)});
+  }
+  append_raw_entries_to_directory(directory, "groups", entries, overwrite);
+}
+
+void append_dps_to_zip(const std::string &path, const std::map<std::string, TypedArray> &dps,
+                       zip_uint32_t compression, bool overwrite) {
+  std::vector<RawEntry> entries;
+  entries.reserve(dps.size());
+  for (const auto &kv : dps) {
+    const auto bytes = kv.second.to_bytes();
+    entries.push_back({typed_array_filename(kv.first, kv.second), bytes.data, bytes.size});
+  }
+  append_raw_entries_to_zip(path, "dps", entries, compression, overwrite);
+}
+
+void append_dps_to_directory(const std::string &directory,
+                              const std::map<std::string, TypedArray> &dps, bool overwrite) {
+  std::vector<RawEntry> entries;
+  entries.reserve(dps.size());
+  for (const auto &kv : dps) {
+    const auto bytes = kv.second.to_bytes();
+    entries.push_back({typed_array_filename(kv.first, kv.second), bytes.data, bytes.size});
+  }
+  append_raw_entries_to_directory(directory, "dps", entries, overwrite);
+}
+
+void append_dpv_to_zip(const std::string &path, const std::map<std::string, TypedArray> &dpv,
+                       zip_uint32_t compression, bool overwrite) {
+  std::vector<RawEntry> entries;
+  entries.reserve(dpv.size());
+  for (const auto &kv : dpv) {
+    const auto bytes = kv.second.to_bytes();
+    entries.push_back({typed_array_filename(kv.first, kv.second), bytes.data, bytes.size});
+  }
+  append_raw_entries_to_zip(path, "dpv", entries, compression, overwrite);
+}
+
+void append_dpv_to_directory(const std::string &directory,
+                              const std::map<std::string, TypedArray> &dpv, bool overwrite) {
+  std::vector<RawEntry> entries;
+  entries.reserve(dpv.size());
+  for (const auto &kv : dpv) {
+    const auto bytes = kv.second.to_bytes();
+    entries.push_back({typed_array_filename(kv.first, kv.second), bytes.data, bytes.size});
+  }
+  append_raw_entries_to_directory(directory, "dpv", entries, overwrite);
 }
 
 }; // namespace trx
