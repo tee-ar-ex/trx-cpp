@@ -1049,6 +1049,7 @@ std::string rm_root(const std::string &root, const std::string &path) {
   if (index != std::string::npos) {
     stripped = path.substr(index + root.size() + 1, path.size() - index - root.size() - 1);
   }
+  std::replace(stripped.begin(), stripped.end(), '\\', '/');
   return stripped;
 }
 
@@ -1548,12 +1549,21 @@ struct RawEntry {
 // If overwrite=false and the entry already exists the function is a no-op.
 void zip_add_buffer_entry(zip_t *zf, const std::string &entry, const void *data,
                           std::size_t nbytes, zip_uint32_t compression, bool overwrite) {
-  if (!overwrite && zip_name_locate(zf, entry.c_str(), ZIP_FL_ENC_UTF_8) >= 0) {
-    return;
+  std::string normalized_entry = entry;
+  std::replace(normalized_entry.begin(), normalized_entry.end(), '\\', '/');
+  if (!overwrite) {
+    const bool found_normalized = zip_name_locate(zf, normalized_entry.c_str(), ZIP_FL_ENC_UTF_8) >= 0;
+    std::string legacy_entry = normalized_entry;
+    std::replace(legacy_entry.begin(), legacy_entry.end(), '/', '\\');
+    const bool found_legacy =
+        (legacy_entry != normalized_entry) && (zip_name_locate(zf, legacy_entry.c_str(), ZIP_FL_ENC_UTF_8) >= 0);
+    if (found_normalized || found_legacy) {
+      return;
+    }
   }
   void *buf = std::malloc(nbytes > 0 ? nbytes : 1);
   if (!buf) {
-    throw TrxIOError("Failed to allocate buffer for zip entry: " + entry);
+    throw TrxIOError("Failed to allocate buffer for zip entry: " + normalized_entry);
   }
   if (nbytes > 0) {
     std::memcpy(buf, data, nbytes);
@@ -1561,16 +1571,16 @@ void zip_add_buffer_entry(zip_t *zf, const std::string &entry, const void *data,
   zip_source_t *src = zip_source_buffer(zf, buf, nbytes, 1 /*libzip frees buf*/);
   if (!src) {
     std::free(buf);
-    throw TrxIOError("zip_source_buffer failed for: " + entry);
+    throw TrxIOError("zip_source_buffer failed for: " + normalized_entry);
   }
   const zip_uint32_t flags = ZIP_FL_ENC_UTF_8 | (overwrite ? ZIP_FL_OVERWRITE : 0);
-  const zip_int64_t idx = zip_file_add(zf, entry.c_str(), src, flags);
+  const zip_int64_t idx = zip_file_add(zf, normalized_entry.c_str(), src, flags);
   if (idx < 0) {
     // libzip consumes src even on failure; do not free.
-    throw TrxIOError("zip_file_add failed for: " + entry + ": " + zip_strerror(zf));
+    throw TrxIOError("zip_file_add failed for: " + normalized_entry + ": " + zip_strerror(zf));
   }
   if (zip_set_file_compression(zf, idx, static_cast<zip_int32_t>(compression), 0) < 0) {
-    throw TrxIOError("zip_set_file_compression failed for: " + entry);
+    throw TrxIOError("zip_set_file_compression failed for: " + normalized_entry);
   }
 }
 
