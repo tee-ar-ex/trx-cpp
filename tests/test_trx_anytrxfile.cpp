@@ -361,6 +361,16 @@ fs::path write_test_shard(const fs::path &root,
 
   return shard_dir;
 }
+
+TypedArray make_float32_array(const std::vector<float> &values, int cols = 1) {
+  TypedArray arr;
+  arr.dtype = "float32";
+  arr.rows = static_cast<int>(values.size()) / cols;
+  arr.cols = cols;
+  arr.owned.resize(values.size() * sizeof(float));
+  std::memcpy(arr.owned.data(), values.data(), arr.owned.size());
+  return arr;
+}
 } // namespace
 
 TEST(AnyTrxFile, LoadZipAndValidate) {
@@ -479,6 +489,298 @@ TEST(AnyTrxFile, AppendGroupsToZipAddsAndOverwrites) {
   EXPECT_EQ(new_bundle(1, 0), 1U);
   loaded.close();
 
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, AppendDpsToDirectoryAddsAndOverwrites) {
+  const fs::path temp_root = make_temp_test_dir("trx_append_dps_dir");
+  // shard has 2 streamlines, 3 vertices; existing dps: "weight" = {10, 20}
+  const fs::path shard = write_test_shard(temp_root,
+                                          "shard",
+                                          {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, {2.0F, 0.0F, 0.0F}},
+                                          {0, 1, 3},
+                                          {10.0F, 20.0F},
+                                          {0.1F, 0.2F, 0.3F},
+                                          {0});
+
+  const std::map<std::string, TypedArray> appended_dps = {
+      {"weight", make_float32_array({99.0F, 88.0F})},   // overwrite existing
+      {"confidence", make_float32_array({0.9F, 0.8F})}, // new entry
+  };
+  append_dps_to_directory(shard.string(), appended_dps);
+
+  auto loaded = load_any(shard.string());
+
+  const TypedArray *weight = loaded.get_dps("weight");
+  ASSERT_NE(weight, nullptr);
+  auto weight_mat = weight->as_matrix<float>();
+  ASSERT_EQ(weight_mat.rows(), 2);
+  EXPECT_FLOAT_EQ(weight_mat(0, 0), 99.0F);
+  EXPECT_FLOAT_EQ(weight_mat(1, 0), 88.0F);
+
+  const TypedArray *confidence = loaded.get_dps("confidence");
+  ASSERT_NE(confidence, nullptr);
+  auto confidence_mat = confidence->as_matrix<float>();
+  ASSERT_EQ(confidence_mat.rows(), 2);
+  EXPECT_FLOAT_EQ(confidence_mat(0, 0), 0.9F);
+  EXPECT_FLOAT_EQ(confidence_mat(1, 0), 0.8F);
+
+  loaded.close();
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, AppendDpsToZipAddsAndOverwrites) {
+  const fs::path temp_root = make_temp_test_dir("trx_append_dps_zip");
+  const fs::path shard = write_test_shard(temp_root,
+                                          "shard",
+                                          {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, {2.0F, 0.0F, 0.0F}},
+                                          {0, 1, 3},
+                                          {10.0F, 20.0F},
+                                          {0.1F, 0.2F, 0.3F},
+                                          {0});
+
+  const fs::path archive = temp_root / "base.trx";
+  auto source = load_any(shard.string());
+  source.save(archive.string(), ZIP_CM_STORE);
+  source.close();
+
+  const std::map<std::string, TypedArray> appended_dps = {
+      {"weight", make_float32_array({99.0F, 88.0F})},   // overwrite existing
+      {"confidence", make_float32_array({0.9F, 0.8F})}, // new entry
+  };
+  append_dps_to_zip(archive.string(), appended_dps, ZIP_CM_STORE);
+
+  auto loaded = load_any(archive.string());
+
+  const TypedArray *weight = loaded.get_dps("weight");
+  ASSERT_NE(weight, nullptr);
+  auto weight_mat = weight->as_matrix<float>();
+  ASSERT_EQ(weight_mat.rows(), 2);
+  EXPECT_FLOAT_EQ(weight_mat(0, 0), 99.0F);
+  EXPECT_FLOAT_EQ(weight_mat(1, 0), 88.0F);
+
+  const TypedArray *confidence = loaded.get_dps("confidence");
+  ASSERT_NE(confidence, nullptr);
+  auto confidence_mat = confidence->as_matrix<float>();
+  ASSERT_EQ(confidence_mat.rows(), 2);
+  EXPECT_FLOAT_EQ(confidence_mat(0, 0), 0.9F);
+  EXPECT_FLOAT_EQ(confidence_mat(1, 0), 0.8F);
+
+  loaded.close();
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, AppendDpvToDirectoryAddsAndOverwrites) {
+  const fs::path temp_root = make_temp_test_dir("trx_append_dpv_dir");
+  // shard has 2 streamlines, 3 vertices; existing dpv: "signal" = {0.1, 0.2, 0.3}
+  const fs::path shard = write_test_shard(temp_root,
+                                          "shard",
+                                          {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, {2.0F, 0.0F, 0.0F}},
+                                          {0, 1, 3},
+                                          {10.0F, 20.0F},
+                                          {0.1F, 0.2F, 0.3F},
+                                          {0});
+
+  const std::map<std::string, TypedArray> appended_dpv = {
+      {"signal", make_float32_array({1.1F, 2.2F, 3.3F})},    // overwrite existing
+      {"curvature", make_float32_array({0.5F, 0.6F, 0.7F})}, // new entry
+  };
+  append_dpv_to_directory(shard.string(), appended_dpv);
+
+  auto loaded = load_any(shard.string());
+
+  const TypedArray *signal = loaded.get_dpv("signal");
+  ASSERT_NE(signal, nullptr);
+  auto signal_mat = signal->as_matrix<float>();
+  ASSERT_EQ(signal_mat.rows(), 3);
+  EXPECT_FLOAT_EQ(signal_mat(0, 0), 1.1F);
+  EXPECT_FLOAT_EQ(signal_mat(1, 0), 2.2F);
+  EXPECT_FLOAT_EQ(signal_mat(2, 0), 3.3F);
+
+  const TypedArray *curvature = loaded.get_dpv("curvature");
+  ASSERT_NE(curvature, nullptr);
+  auto curvature_mat = curvature->as_matrix<float>();
+  ASSERT_EQ(curvature_mat.rows(), 3);
+  EXPECT_FLOAT_EQ(curvature_mat(0, 0), 0.5F);
+  EXPECT_FLOAT_EQ(curvature_mat(1, 0), 0.6F);
+  EXPECT_FLOAT_EQ(curvature_mat(2, 0), 0.7F);
+
+  loaded.close();
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, AppendDpvToZipAddsAndOverwrites) {
+  const fs::path temp_root = make_temp_test_dir("trx_append_dpv_zip");
+  const fs::path shard = write_test_shard(temp_root,
+                                          "shard",
+                                          {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, {2.0F, 0.0F, 0.0F}},
+                                          {0, 1, 3},
+                                          {10.0F, 20.0F},
+                                          {0.1F, 0.2F, 0.3F},
+                                          {0});
+
+  const fs::path archive = temp_root / "base.trx";
+  auto source = load_any(shard.string());
+  source.save(archive.string(), ZIP_CM_STORE);
+  source.close();
+
+  const std::map<std::string, TypedArray> appended_dpv = {
+      {"signal", make_float32_array({1.1F, 2.2F, 3.3F})},    // overwrite existing
+      {"curvature", make_float32_array({0.5F, 0.6F, 0.7F})}, // new entry
+  };
+  append_dpv_to_zip(archive.string(), appended_dpv, ZIP_CM_STORE);
+
+  auto loaded = load_any(archive.string());
+
+  const TypedArray *signal = loaded.get_dpv("signal");
+  ASSERT_NE(signal, nullptr);
+  auto signal_mat = signal->as_matrix<float>();
+  ASSERT_EQ(signal_mat.rows(), 3);
+  EXPECT_FLOAT_EQ(signal_mat(0, 0), 1.1F);
+  EXPECT_FLOAT_EQ(signal_mat(1, 0), 2.2F);
+  EXPECT_FLOAT_EQ(signal_mat(2, 0), 3.3F);
+
+  const TypedArray *curvature = loaded.get_dpv("curvature");
+  ASSERT_NE(curvature, nullptr);
+  auto curvature_mat = curvature->as_matrix<float>();
+  ASSERT_EQ(curvature_mat.rows(), 3);
+  EXPECT_FLOAT_EQ(curvature_mat(0, 0), 0.5F);
+  EXPECT_FLOAT_EQ(curvature_mat(1, 0), 0.6F);
+  EXPECT_FLOAT_EQ(curvature_mat(2, 0), 0.7F);
+
+  loaded.close();
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, AppendNoOverwriteSkipsExistingDirectory) {
+  const fs::path temp_root = make_temp_test_dir("trx_append_no_overwrite_dir");
+  const fs::path shard = write_test_shard(temp_root,
+                                          "shard",
+                                          {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, {2.0F, 0.0F, 0.0F}},
+                                          {0, 1, 3},
+                                          {10.0F, 20.0F},
+                                          {0.1F, 0.2F, 0.3F},
+                                          {0});
+
+  // Attempt to overwrite existing entries with overwrite=false — originals must be preserved.
+  append_dps_to_directory(shard.string(),
+                          {{"weight", make_float32_array({99.0F, 88.0F})},
+                           {"confidence", make_float32_array({0.9F, 0.8F})}},
+                          /*overwrite=*/false);
+  append_dpv_to_directory(shard.string(),
+                          {{"signal", make_float32_array({9.9F, 8.8F, 7.7F})},
+                           {"curvature", make_float32_array({0.5F, 0.6F, 0.7F})}},
+                          /*overwrite=*/false);
+  append_groups_to_directory(shard.string(), {{"Bundle", {0, 1}}, {"NewBundle", {1}}},
+                              /*overwrite=*/false);
+
+  auto loaded = load_any(shard.string());
+
+  // "weight" must still be the original {10, 20}
+  const TypedArray *weight = loaded.get_dps("weight");
+  ASSERT_NE(weight, nullptr);
+  auto weight_mat = weight->as_matrix<float>();
+  EXPECT_FLOAT_EQ(weight_mat(0, 0), 10.0F);
+  EXPECT_FLOAT_EQ(weight_mat(1, 0), 20.0F);
+
+  // "confidence" is new so it should be present
+  const TypedArray *confidence = loaded.get_dps("confidence");
+  ASSERT_NE(confidence, nullptr);
+  EXPECT_FLOAT_EQ(confidence->as_matrix<float>()(0, 0), 0.9F);
+
+  // "signal" must still be the original {0.1, 0.2, 0.3}
+  const TypedArray *signal = loaded.get_dpv("signal");
+  ASSERT_NE(signal, nullptr);
+  auto signal_mat = signal->as_matrix<float>();
+  EXPECT_FLOAT_EQ(signal_mat(0, 0), 0.1F);
+  EXPECT_FLOAT_EQ(signal_mat(1, 0), 0.2F);
+  EXPECT_FLOAT_EQ(signal_mat(2, 0), 0.3F);
+
+  // "curvature" is new so it should be present
+  const TypedArray *curvature = loaded.get_dpv("curvature");
+  ASSERT_NE(curvature, nullptr);
+  EXPECT_FLOAT_EQ(curvature->as_matrix<float>()(0, 0), 0.5F);
+
+  // "Bundle" must still be the original {0}
+  auto bundle_it = loaded.groups.find("Bundle");
+  ASSERT_NE(bundle_it, loaded.groups.end());
+  EXPECT_EQ(bundle_it->second.as_matrix<uint32_t>().rows(), 1);
+
+  // "NewBundle" is new so it should be present
+  EXPECT_NE(loaded.groups.find("NewBundle"), loaded.groups.end());
+
+  loaded.close();
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+TEST(AnyTrxFile, AppendNoOverwriteSkipsExistingZip) {
+  const fs::path temp_root = make_temp_test_dir("trx_append_no_overwrite_zip");
+  const fs::path shard = write_test_shard(temp_root,
+                                          "shard",
+                                          {{0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, {2.0F, 0.0F, 0.0F}},
+                                          {0, 1, 3},
+                                          {10.0F, 20.0F},
+                                          {0.1F, 0.2F, 0.3F},
+                                          {0});
+
+  const fs::path archive = temp_root / "base.trx";
+  auto source = load_any(shard.string());
+  source.save(archive.string(), ZIP_CM_STORE);
+  source.close();
+
+  append_dps_to_zip(archive.string(),
+                    {{"weight", make_float32_array({99.0F, 88.0F})},
+                     {"confidence", make_float32_array({0.9F, 0.8F})}},
+                    ZIP_CM_STORE, /*overwrite=*/false);
+  append_dpv_to_zip(archive.string(),
+                    {{"signal", make_float32_array({9.9F, 8.8F, 7.7F})},
+                     {"curvature", make_float32_array({0.5F, 0.6F, 0.7F})}},
+                    ZIP_CM_STORE, /*overwrite=*/false);
+  append_groups_to_zip(archive.string(), {{"Bundle", {0, 1}}, {"NewBundle", {1}}}, ZIP_CM_STORE,
+                       /*overwrite=*/false);
+
+  auto loaded = load_any(archive.string());
+
+  // "weight" must still be the original {10, 20}
+  const TypedArray *weight = loaded.get_dps("weight");
+  ASSERT_NE(weight, nullptr);
+  auto weight_mat = weight->as_matrix<float>();
+  EXPECT_FLOAT_EQ(weight_mat(0, 0), 10.0F);
+  EXPECT_FLOAT_EQ(weight_mat(1, 0), 20.0F);
+
+  // "confidence" is new so it should be present
+  const TypedArray *confidence = loaded.get_dps("confidence");
+  ASSERT_NE(confidence, nullptr);
+  EXPECT_FLOAT_EQ(confidence->as_matrix<float>()(0, 0), 0.9F);
+
+  // "signal" must still be the original {0.1, 0.2, 0.3}
+  const TypedArray *signal = loaded.get_dpv("signal");
+  ASSERT_NE(signal, nullptr);
+  auto signal_mat = signal->as_matrix<float>();
+  EXPECT_FLOAT_EQ(signal_mat(0, 0), 0.1F);
+  EXPECT_FLOAT_EQ(signal_mat(1, 0), 0.2F);
+  EXPECT_FLOAT_EQ(signal_mat(2, 0), 0.3F);
+
+  // "curvature" is new so it should be present
+  const TypedArray *curvature = loaded.get_dpv("curvature");
+  ASSERT_NE(curvature, nullptr);
+  EXPECT_FLOAT_EQ(curvature->as_matrix<float>()(0, 0), 0.5F);
+
+  // "Bundle" must still be the original {0}
+  auto bundle_it = loaded.groups.find("Bundle");
+  ASSERT_NE(bundle_it, loaded.groups.end());
+  EXPECT_EQ(bundle_it->second.as_matrix<uint32_t>().rows(), 1);
+
+  // "NewBundle" is new so it should be present
+  EXPECT_NE(loaded.groups.find("NewBundle"), loaded.groups.end());
+
+  loaded.close();
   std::error_code ec;
   fs::remove_all(temp_root, ec);
 }
