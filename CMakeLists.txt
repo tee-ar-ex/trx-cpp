@@ -69,10 +69,11 @@ elseif(TARGET zip::zip)
 else()
     message(FATAL_ERROR "No suitable libzip target (expected libzip::libzip or zip::zip)")
 endif()
-set(TRX_EIGEN3_TARGET "" CACHE STRING
-    "Pre-existing Eigen3 target to use instead of find_package(Eigen3). \
-Set to e.g. ITK::ITKEigen3Module when building as an ITK remote module.")
-
+# TRX_EIGEN3_TARGET may be pre-set by a caller (e.g. an ITK remote module build)
+# to skip find_package(Eigen3) and use a specific target directly, such as
+# eigen_internal or ITK::ITKEigen3Module. Left as a plain variable (no CACHE
+# declaration) so a parent scope can set it via FetchContent without the value
+# being cleared by a CACHE set (CMake policy CMP0126 defaults to OLD before 3.21).
 if(TRX_EIGEN3_TARGET AND TARGET ${TRX_EIGEN3_TARGET})
     message(STATUS "trx-cpp: using provided Eigen3 target: ${TRX_EIGEN3_TARGET}")
 else()
