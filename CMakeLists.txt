@@ -69,20 +69,29 @@ elseif(TARGET zip::zip)
 else()
     message(FATAL_ERROR "No suitable libzip target (expected libzip::libzip or zip::zip)")
 endif()
-# Prefer Eigen3_ROOT so -DEigen3_ROOT=/path/to/eigen-3.4 is used over system Eigen
-if(Eigen3_ROOT)
-  list(PREPEND CMAKE_PREFIX_PATH "${Eigen3_ROOT}")
-endif()
-find_package(Eigen3 3.4 CONFIG QUIET)
-if (NOT Eigen3_FOUND)
-    find_package(Eigen3 REQUIRED) # try module mode
-endif()
-# Create an imported target if the package did not provide one (module mode)
-if (NOT TARGET Eigen3::Eigen AND EXISTS "${EIGEN3_INCLUDE_DIR}")
-    add_library(Eigen3::Eigen INTERFACE IMPORTED)
-    set_target_properties(Eigen3::Eigen PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_INCLUDE_DIR}"
-    )
+set(TRX_EIGEN3_TARGET "" CACHE STRING
+    "Pre-existing Eigen3 target to use instead of find_package(Eigen3). \
+Set to e.g. ITK::ITKEigen3Module when building as an ITK remote module.")
+
+if(TRX_EIGEN3_TARGET AND TARGET ${TRX_EIGEN3_TARGET})
+    message(STATUS "trx-cpp: using provided Eigen3 target: ${TRX_EIGEN3_TARGET}")
+else()
+    # Prefer Eigen3_ROOT so -DEigen3_ROOT=/path/to/eigen-3.4 is used over system Eigen
+    if(Eigen3_ROOT)
+        list(PREPEND CMAKE_PREFIX_PATH "${Eigen3_ROOT}")
+    endif()
+    find_package(Eigen3 3.4 CONFIG QUIET)
+    if(NOT Eigen3_FOUND)
+        find_package(Eigen3 REQUIRED) # try module mode
+    endif()
+    # Create an imported target if the package did not provide one (module mode)
+    if(NOT TARGET Eigen3::Eigen AND EXISTS "${EIGEN3_INCLUDE_DIR}")
+        add_library(Eigen3::Eigen INTERFACE IMPORTED)
+        set_target_properties(Eigen3::Eigen PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_INCLUDE_DIR}"
+        )
+    endif()
+    set(TRX_EIGEN3_TARGET Eigen3::Eigen)
 endif()
 set(TRX_HAVE_MIO_TARGET OFF)
 set(MIO_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/mio/include")
@@ -121,7 +130,7 @@ endif()
 TARGET_LINK_LIBRARIES(trx
     PUBLIC
         ${TRX_LIBZIP_TARGET}
-        Eigen3::Eigen
+        ${TRX_EIGEN3_TARGET}
         $<$<BOOL:${TRX_HAVE_MIO_TARGET}>:mio::mio>
 )
 target_include_directories(trx
@@ -182,7 +191,7 @@ if(TRX_ENABLE_NIFTI)
     )
     target_link_libraries(trx-nifti
         PUBLIC
-            Eigen3::Eigen
+            ${TRX_EIGEN3_TARGET}
             ZLIB::ZLIB
     )
 endif()
