@@ -1063,6 +1063,32 @@ TEST(TrxFileTpp, TrxStreamFloat16Buffered) {
   fs::remove_all(tmp_dir, ec);
 }
 
+TEST(TrxFileTpp, LoadFloat32PositionsFromFloat16Chunked) {
+  auto tmp_dir = make_temp_test_dir("trx_load_f32_chunked");
+  const fs::path out_path = tmp_dir / "f16_chunked.trx";
+
+  TrxStream proto("float16");
+  proto.push_streamline(std::vector<float>{0.1f, 1.2f, 2.3f, 3.4f, 4.5f, 5.6f});
+  proto.push_streamline(std::vector<float>{6.7f, 7.8f, 8.9f});
+  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);
+
+  LoadFloat32Options options;
+  options.chunk_rows = 1; // force chunked loop execution
+  auto trx_f32 = load_float32_positions(out_path.string(), options);
+  ASSERT_TRUE(trx_f32);
+  ASSERT_TRUE(trx_f32->streamlines);
+  ASSERT_EQ(trx_f32->num_streamlines(), 2u);
+  ASSERT_EQ(trx_f32->num_vertices(), 3u);
+
+  EXPECT_NEAR(trx_f32->streamlines->_data(0, 0), 0.1f, 2e-3f);
+  EXPECT_NEAR(trx_f32->streamlines->_data(1, 0), 3.4f, 2e-3f);
+  EXPECT_NEAR(trx_f32->streamlines->_data(2, 2), 8.9f, 2e-3f);
+
+  trx_f32->close();
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
+
 // Regression test for add_dps_from_vector / add_dpv_from_vector when the requested
 // on-disk dtype differs from the TrxFile template parameter DT.
 //

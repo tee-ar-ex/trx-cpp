@@ -1065,6 +1065,43 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> load(const std::string &path
   return TrxFile<DT>::load(path);
 }
 
+inline std::unique_ptr<TrxFile<float>>
+load_float32_positions(const std::string &path, const LoadFloat32Options &options) {
+  const TrxScalarType dtype = detect_positions_scalar_type(path, TrxScalarType::Float32);
+  if (dtype == TrxScalarType::Float32) {
+    return load<float>(path);
+  }
+
+  auto out = load<float>(path);
+  if (!out || !out->streamlines) {
+    return out;
+  }
+
+  const Eigen::Index n_vertices = static_cast<Eigen::Index>(out->num_vertices());
+  if (n_vertices <= 0) {
+    return out;
+  }
+  const Eigen::Index chunk_rows = static_cast<Eigen::Index>(std::max<size_t>(1, options.chunk_rows));
+
+  with_trx_reader(path, [&](auto &reader, TrxScalarType) -> int {
+    const auto &src = reader->streamlines->_data;
+    if (src.rows() != n_vertices || src.cols() != 3) {
+      throw TrxFormatError("load_float32_positions(): unexpected positions shape during conversion");
+    }
+    for (Eigen::Index row0 = 0; row0 < n_vertices; row0 += chunk_rows) {
+      const Eigen::Index row1 = std::min<Eigen::Index>(n_vertices, row0 + chunk_rows);
+      for (Eigen::Index r = row0; r < row1; ++r) {
+        out->streamlines->_data(r, 0) = static_cast<float>(src(r, 0));
+        out->streamlines->_data(r, 1) = static_cast<float>(src(r, 1));
+        out->streamlines->_data(r, 2) = static_cast<float>(src(r, 2));
+      }
+    }
+    return 0;
+  });
+
+  return out;
+}
+
 template <typename DT> TrxReader<DT>::TrxReader(const std::string &path) { trx_ = TrxFile<DT>::load(path); }
 
 template <typename DT> TrxReader<DT>::TrxReader(TrxReader &&other) noexcept : trx_(std::move(other.trx_)) {}

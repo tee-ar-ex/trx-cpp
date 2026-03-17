@@ -1021,6 +1021,12 @@ void merge_trx_shards(const MergeTrxShardsOptions &options);
  */
 TrxScalarType detect_positions_scalar_type(const std::string &path, TrxScalarType fallback = TrxScalarType::Float32);
 
+struct LoadFloat32Options {
+  // Number of rows copied per chunk when converting non-float32 positions.
+  // Lower values reduce peak transient memory at the cost of more loop overhead.
+  size_t chunk_rows = 1 << 20;
+};
+
 /**
  * @brief Return true if the TRX path is a directory.
  *
@@ -1037,6 +1043,15 @@ bool is_trx_directory(const std::string &path);
  * @return TrxFile<DT>* TrxFile representing the read data
  */
 template <typename DT> std::unique_ptr<TrxFile<DT>> load(const std::string &path);
+
+/**
+ * @brief Load a TRX file as float32 positions with bounded transient memory.
+ *
+ * For native float32 files this is identical to load<float>().
+ * For float16/float64 files, this performs chunked conversion into the loaded
+ * float32 container, avoiding any additional full-size position buffer.
+ */
+std::unique_ptr<TrxFile<float>> load_float32_positions(const std::string &path, const LoadFloat32Options &options = {});
 
 /**
  * @brief RAII wrapper for loading TRX files from a path.
