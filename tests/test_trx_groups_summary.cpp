@@ -27,6 +27,7 @@ TEST(FormatGroupsSummary, EmptyGroupsAlwaysReturnsEmptyString) {
   const std::map<std::string, size_t> groups;
   EXPECT_EQ(trx::format_groups_summary(groups), "");
   EXPECT_EQ(trx::format_groups_summary(groups, 0), "");
+  EXPECT_EQ(trx::format_groups_summary(groups, -1), "");
   EXPECT_EQ(trx::format_groups_summary(groups, 2), "");
   EXPECT_EQ(trx::format_groups_summary(groups, 2, "  "), "");
 }
@@ -50,6 +51,15 @@ TEST(FormatGroupsSummary, FlatListMultipleGroups) {
   EXPECT_EQ(lines[0], "glasser_Left_V1: 100 streamlines");
   EXPECT_EQ(lines[1], "glasser_Left_V2: 200 streamlines");
   EXPECT_EQ(lines[2], "glasser_Right_V1: 150 streamlines");
+}
+
+TEST(FormatGroupsSummary, NegativePrefixDepthBehavesLikeFlatList) {
+  const std::map<std::string, size_t> groups = {
+      {"glasser_Left_V1", 100},
+      {"glasser_Left_V2", 200},
+      {"glasser_Right_V1", 150},
+  };
+  EXPECT_EQ(trx::format_groups_summary(groups, -3), trx::format_groups_summary(groups, 0));
 }
 
 TEST(FormatGroupsSummary, FlatListNoTrailingNewline) {

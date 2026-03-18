@@ -142,6 +142,40 @@ fs::path create_float_trx_dir_missing_sentinel() {
   return root;
 }
 
+fs::path create_float64_trx_dir() {
+  fs::path root = make_temp_test_dir("trx_float64");
+  fs::path header_path = root / "header.json";
+
+  json::object header_obj;
+  header_obj["DIMENSIONS"] = json::array{1, 1, 1};
+  header_obj["NB_STREAMLINES"] = 2;
+  header_obj["NB_VERTICES"] = 4;
+  header_obj["VOXEL_TO_RASMM"] = json::array{
+      json::array{1.0, 0.0, 0.0, 0.0},
+      json::array{0.0, 1.0, 0.0, 0.0},
+      json::array{0.0, 0.0, 1.0, 0.0},
+      json::array{0.0, 0.0, 0.0, 1.0},
+  };
+  json header(header_obj);
+
+  std::ofstream header_out(header_path.string());
+  if (!header_out.is_open()) {
+    throw std::runtime_error("Failed to write header.json");
+  }
+  header_out << header.dump() << std::endl;
+  header_out.close();
+
+  Matrix<double, Dynamic, Dynamic, RowMajor> positions(4, 3);
+  positions << 0.125, 1.5, 2.875, 3.25, 4.625, 5.75, 6.0, 7.125, 8.5, 9.875, 10.25, 11.625;
+  trx::write_binary((root / "positions.3.float64").string(), positions);
+
+  Matrix<uint32_t, Dynamic, Dynamic, RowMajor> offsets(3, 1);
+  offsets << 0, 2, 4;
+  trx::write_binary((root / "offsets.uint32").string(), offsets);
+
+  return root;
+}
+
 fs::path create_connectivity_fixture_trx() {
   fs::path root = make_temp_test_dir("trx_connectivity_fixture");
   const fs::path out_path = root / "connectivity.trx";
@@ -1087,6 +1121,60 @@ TEST(TrxFileTpp, LoadFloat32PositionsFromFloat16Chunked) {
   trx_f32->close();
   std::error_code ec;
   fs::remove_all(tmp_dir, ec);
+}
+
+TEST(TrxFileTpp, LoadFloat32PositionsPassthroughFromFloat32) {
+  auto tmp_dir = make_temp_test_dir("trx_load_f32_passthrough");
+  const fs::path out_path = tmp_dir / "f32_passthrough.trx";
+
+  TrxStream proto("float32");
+  proto.push_streamline(std::vector<float>{0.25f, 1.25f, 2.25f, 3.25f, 4.25f, 5.25f});
+  proto.push_streamline(std::vector<float>{6.25f, 7.25f, 8.25f});
+  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);
+
+  auto via_api = load_float32_positions(out_path.string());
+  auto direct = load<float>(out_path.string());
+  ASSERT_TRUE(via_api);
+  ASSERT_TRUE(direct);
+  ASSERT_TRUE(via_api->streamlines);
+  ASSERT_TRUE(direct->streamlines);
+
+  EXPECT_EQ(via_api->num_streamlines(), direct->num_streamlines());
+  EXPECT_EQ(via_api->num_vertices(), direct->num_vertices());
+  EXPECT_EQ(via_api->streamlines->_data.rows(), direct->streamlines->_data.rows());
+  EXPECT_EQ(via_api->streamlines->_data.cols(), direct->streamlines->_data.cols());
+  EXPECT_EQ(via_api->streamlines->_data, direct->streamlines->_data);
+  EXPECT_EQ(via_api->streamlines->_offsets, direct->streamlines->_offsets);
+  EXPECT_EQ(via_api->streamlines->_lengths, direct->streamlines->_lengths);
+
+  via_api->close();
+  direct->close();
+  std::error_code ec;
+  fs::remove_all(tmp_dir, ec);
+}
+
+TEST(TrxFileTpp, LoadFloat32PositionsFromFloat64ChunkRowsZeroClamped) {
+  const fs::path data_dir = create_float64_trx_dir();
+
+  LoadFloat32Options options;
+  options.chunk_rows = 0; // should clamp to 1 and still convert all vertices
+  auto trx_f32 = load_float32_positions(data_dir.string(), options);
+  ASSERT_TRUE(trx_f32);
+  ASSERT_TRUE(trx_f32->streamlines);
+  ASSERT_EQ(trx_f32->num_streamlines(), 2u);
+  ASSERT_EQ(trx_f32->num_vertices(), 4u);
+
+  EXPECT_FLOAT_EQ(trx_f32->streamlines->_data(0, 0), 0.125f);
+  EXPECT_FLOAT_EQ(trx_f32->streamlines->_data(1, 1), 4.625f);
+  EXPECT_FLOAT_EQ(trx_f32->streamlines->_data(2, 2), 8.5f);
+  EXPECT_FLOAT_EQ(trx_f32->streamlines->_data(3, 0), 9.875f);
+  EXPECT_EQ(trx_f32->streamlines->_offsets(0, 0), 0u);
+  EXPECT_EQ(trx_f32->streamlines->_offsets(1, 0), 2u);
+  EXPECT_EQ(trx_f32->streamlines->_offsets(2, 0), 4u);
+
+  trx_f32->close();
+  std::error_code ec;
+  fs::remove_all(data_dir, ec);
 }
 
 // Regression test for add_dps_from_vector / add_dpv_from_vector when the requested
