@@ -63,25 +63,35 @@ endif()
 # to ZLIB::ZLIB before libzip is found or fetched, because libzip's CMakeLists.txt
 # calls find_package(ZLIB REQUIRED) internally. Plain variable, no CACHE
 # declaration, for the same reason as TRX_EIGEN3_TARGET.
-if(TRX_ZLIB_TARGET AND TARGET ${TRX_ZLIB_TARGET} AND NOT TARGET ZLIB::ZLIB)
-    add_library(ZLIB::ZLIB INTERFACE IMPORTED GLOBAL)
-    set_target_properties(ZLIB::ZLIB PROPERTIES
-        INTERFACE_LINK_LIBRARIES "${TRX_ZLIB_TARGET}"
-    )
-    # FindZLIB's find_package_handle_standard_args requires ZLIB_LIBRARY and
-    # ZLIB_INCLUDE_DIR to be truthy. ZLIB::ZLIB already exists so FindZLIB's
-    # NOT-TARGET guard skips re-creation; these values are never used as file paths.
-    set(ZLIB_LIBRARY "${TRX_ZLIB_TARGET}")
-    set(ZLIB_INCLUDE_DIR "${TRX_ZLIB_TARGET}")
-    set(ZLIB_FOUND TRUE)
+if(TRX_ZLIB_TARGET AND NOT TARGET ZLIB::ZLIB)
+    if(TARGET ${TRX_ZLIB_TARGET})
+        add_library(ZLIB::ZLIB INTERFACE IMPORTED GLOBAL)
+        set_target_properties(ZLIB::ZLIB PROPERTIES
+            INTERFACE_LINK_LIBRARIES "${TRX_ZLIB_TARGET}"
+        )
+        # FindZLIB's find_package_handle_standard_args requires ZLIB_LIBRARY and
+        # ZLIB_INCLUDE_DIR to be truthy. ZLIB::ZLIB already exists so FindZLIB's
+        # NOT-TARGET guard skips re-creation; these values are never used as file paths.
+        set(ZLIB_LIBRARY "${TRX_ZLIB_TARGET}")
+        set(ZLIB_INCLUDE_DIR "${TRX_ZLIB_TARGET}")
+        set(ZLIB_FOUND TRUE)
+    endif()
 endif()
 
 # TRX_LIBZIP_TARGET may be pre-set by a caller (e.g. an ITK remote module build)
 # to skip find_package(libzip) and use a specific target directly. Left as a
 # plain variable (no CACHE declaration) for the same reason as TRX_EIGEN3_TARGET.
-if(TRX_LIBZIP_TARGET AND TARGET ${TRX_LIBZIP_TARGET})
+set(_trx_libzip_provided OFF)
+if(TRX_LIBZIP_TARGET)
+    if(TARGET ${TRX_LIBZIP_TARGET})
+        set(_trx_libzip_provided ON)
+    endif()
+endif()
+if(_trx_libzip_provided)
     message(STATUS "trx-cpp: using provided libzip target: ${TRX_LIBZIP_TARGET}")
+    unset(_trx_libzip_provided)
 else()
+    unset(_trx_libzip_provided)
     find_package(libzip QUIET)
     if(NOT libzip_FOUND)
         message(STATUS "libzip not found; fetching v1.11.4")
