@@ -58,16 +58,22 @@ if(MSVC)
     add_compile_definitions(NOMINMAX)
 endif()
 
-find_package(libzip REQUIRED)
-set(TRX_LIBZIP_TARGET "")
-if(TARGET libzip::libzip)
-    set(TRX_LIBZIP_TARGET libzip::libzip)
-elseif(TARGET libzip::zip)
-    set(TRX_LIBZIP_TARGET libzip::zip)
-elseif(TARGET zip::zip)
-    set(TRX_LIBZIP_TARGET zip::zip)
+# TRX_LIBZIP_TARGET may be pre-set by a caller (e.g. an ITK remote module build)
+# to skip find_package(libzip) and use a specific target directly. Left as a
+# plain variable (no CACHE declaration) for the same reason as TRX_EIGEN3_TARGET.
+if(TRX_LIBZIP_TARGET AND TARGET ${TRX_LIBZIP_TARGET})
+    message(STATUS "trx-cpp: using provided libzip target: ${TRX_LIBZIP_TARGET}")
 else()
-    message(FATAL_ERROR "No suitable libzip target (expected libzip::libzip or zip::zip)")
+    find_package(libzip REQUIRED)
+    if(TARGET libzip::libzip)
+        set(TRX_LIBZIP_TARGET libzip::libzip)
+    elseif(TARGET libzip::zip)
+        set(TRX_LIBZIP_TARGET libzip::zip)
+    elseif(TARGET zip::zip)
+        set(TRX_LIBZIP_TARGET zip::zip)
+    else()
+        message(FATAL_ERROR "No suitable libzip target (expected libzip::libzip or zip::zip)")
+    endif()
 endif()
 # TRX_EIGEN3_TARGET may be pre-set by a caller (e.g. an ITK remote module build)
 # to skip find_package(Eigen3) and use a specific target directly, such as
@@ -179,7 +185,15 @@ if(TRX_BUILD_BENCHMARKS)
 endif()
 
 if(TRX_ENABLE_NIFTI)
-    find_package(ZLIB REQUIRED)
+    # TRX_ZLIB_TARGET may be pre-set by a caller to skip find_package(ZLIB) and
+    # use a specific target directly (e.g. ITK::ITKZLIBModule). Plain variable,
+    # no CACHE declaration, for the same reason as TRX_EIGEN3_TARGET.
+    if(TRX_ZLIB_TARGET AND TARGET ${TRX_ZLIB_TARGET})
+        message(STATUS "trx-cpp: using provided ZLIB target: ${TRX_ZLIB_TARGET}")
+    else()
+        find_package(ZLIB REQUIRED)
+        set(TRX_ZLIB_TARGET ZLIB::ZLIB)
+    endif()
     add_library(trx-nifti
         src/nifti_io.cpp
     )
@@ -193,7 +207,7 @@ if(TRX_ENABLE_NIFTI)
     target_link_libraries(trx-nifti
         PUBLIC
             ${TRX_EIGEN3_TARGET}
-            ZLIB::ZLIB
+            ${TRX_ZLIB_TARGET}
     )
 endif()
 
