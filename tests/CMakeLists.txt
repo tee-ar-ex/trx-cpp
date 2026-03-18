@@ -98,6 +98,10 @@ add_executable(test_anytrxfile test_trx_anytrxfile.cpp)
 target_link_libraries(test_anytrxfile PRIVATE trx GTest::gtest_main)
 target_compile_features(test_anytrxfile PRIVATE cxx_std_17)
 
+add_executable(test_groups_summary test_trx_groups_summary.cpp)
+target_link_libraries(test_groups_summary PRIVATE trx GTest::gtest_main)
+target_compile_features(test_groups_summary PRIVATE cxx_std_17)
+
 include(GoogleTest)
 gtest_discover_tests(test_mmap PROPERTIES
     ENVIRONMENT "TRX_TEST_DATA_DIR=${TRX_TEST_DATA_DIR}"
@@ -118,3 +122,5 @@ gtest_discover_tests(test_trxfile PROPERTIES
 gtest_discover_tests(test_anytrxfile PROPERTIES
     ENVIRONMENT "TRX_TEST_DATA_DIR=${TRX_TEST_DATA_DIR}"
 )
+
+gtest_discover_tests(test_groups_summary)

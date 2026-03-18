@@ -1021,6 +1021,12 @@ void merge_trx_shards(const MergeTrxShardsOptions &options);
  */
 TrxScalarType detect_positions_scalar_type(const std::string &path, TrxScalarType fallback = TrxScalarType::Float32);
 
+struct LoadFloat32Options {
+  // Number of rows copied per chunk when converting non-float32 positions.
+  // Lower values reduce peak transient memory at the cost of more loop overhead.
+  size_t chunk_rows = 1 << 20;
+};
+
 /**
  * @brief Return true if the TRX path is a directory.
  *
@@ -1037,6 +1043,15 @@ bool is_trx_directory(const std::string &path);
  * @return TrxFile<DT>* TrxFile representing the read data
  */
 template <typename DT> std::unique_ptr<TrxFile<DT>> load(const std::string &path);
+
+/**
+ * @brief Load a TRX file as float32 positions with bounded transient memory.
+ *
+ * For native float32 files this is identical to load<float>().
+ * For float16/float64 files, this performs chunked conversion into the loaded
+ * float32 container, avoiding any additional full-size position buffer.
+ */
+std::unique_ptr<TrxFile<float>> load_float32_positions(const std::string &path, const LoadFloat32Options &options = {});
 
 /**
  * @brief RAII wrapper for loading TRX files from a path.
@@ -1385,6 +1400,32 @@ void append_dpv_to_zip(const std::string &path, const std::map<std::string, Type
 void append_dpv_to_directory(const std::string &directory,
                               const std::map<std::string, TypedArray> &dpv,
                               bool overwrite = true);
+
+/**
+ * @brief Format a group listing with optional prefix-based collapsing.
+ *
+ * When @p prefix_depth is 0 (the default), every group is listed individually:
+ * @code
+ *   glasser_Left_V1: 123 streamlines
+ *   glasser_Left_V2: 456 streamlines
+ * @endcode
+ *
+ * When @p prefix_depth > 0, group names are split on '_' and the first
+ * @p prefix_depth tokens form the aggregation key.  Groups that share a key
+ * have their streamline counts summed and are shown as a single collapsed line:
+ * @code
+ *   glasser_*: 579 streamlines (2 groups)
+ * @endcode
+ * If only one group maps to a given prefix key the wildcard suffix is omitted
+ * and the original group name is used as-is.
+ *
+ * @param groups       Map from group name to streamline count.
+ * @param prefix_depth Number of '_'-delimited tokens used as the grouping key (0 = flat list).
+ * @param line_prefix  String prepended to every output line (e.g. for indentation).
+ * @return             Formatted multi-line string (no trailing newline).
+ */
+std::string format_groups_summary(const std::map<std::string, size_t> &groups, int prefix_depth = 0,
+                                   const std::string &line_prefix = "");
 
 #ifndef TRX_TPP_STANDALONE
 #endif
