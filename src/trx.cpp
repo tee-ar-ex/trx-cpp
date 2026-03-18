@@ -14,6 +14,7 @@
 #include <limits>
 #include <map>
 #include <random>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
@@ -1699,6 +1700,49 @@ void append_dpv_to_directory(const std::string &directory,
     entries.push_back({typed_array_filename(kv.first, kv.second), bytes.data, bytes.size});
   }
   append_raw_entries_to_directory(directory, "dpv", entries, overwrite);
+}
+
+static std::string make_prefix_key(const std::string &name, int depth) {
+  size_t pos = 0;
+  for (int i = 0; i < depth; ++i) {
+    const size_t next = name.find('_', pos);
+    if (next == std::string::npos)
+      return name; // fewer delimiters than depth: use full name as key
+    pos = next + 1;
+  }
+  return name.substr(0, pos - 1);
+}
+
+std::string format_groups_summary(const std::map<std::string, size_t> &groups, int prefix_depth,
+                                   const std::string &line_prefix) {
+  if (groups.empty())
+    return "";
+  std::ostringstream out;
+  if (prefix_depth <= 0) {
+    for (const auto &kv : groups)
+      out << line_prefix << kv.first << ": " << kv.second << " streamlines\n";
+  } else {
+    std::map<std::string, size_t> prefix_counts;
+    std::map<std::string, size_t> prefix_group_counts;
+    std::map<std::string, std::string> prefix_lone_name; // full original name, only used when n==1
+    for (const auto &kv : groups) {
+      const std::string key = make_prefix_key(kv.first, prefix_depth);
+      prefix_counts[key] += kv.second;
+      prefix_group_counts[key]++;
+      prefix_lone_name[key] = kv.first;
+    }
+    for (const auto &kv : prefix_counts) {
+      const size_t n = prefix_group_counts[kv.first];
+      if (n == 1)
+        out << line_prefix << prefix_lone_name[kv.first] << ": " << kv.second << " streamlines\n";
+      else
+        out << line_prefix << kv.first << "_*: " << kv.second << " streamlines (" << n << " groups)\n";
+    }
+  }
+  std::string result = out.str();
+  if (!result.empty() && result.back() == '\n')
+    result.pop_back();
+  return result;
 }
 
 }; // namespace trx

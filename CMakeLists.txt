@@ -58,21 +58,71 @@ if(MSVC)
     add_compile_definitions(NOMINMAX)
 endif()
 
+# TRX_ZLIB_TARGET may be pre-set by a caller to provide a ZLIB target directly
+# (e.g. ITK::ITKZLIBModule), bypassing find_package(ZLIB). This must be bridged
+# to ZLIB::ZLIB before libzip is found or fetched, because libzip's CMakeLists.txt
+# calls find_package(ZLIB REQUIRED) internally. Plain variable, no CACHE
+# declaration, for the same reason as TRX_EIGEN3_TARGET.
+if(TRX_ZLIB_TARGET AND TARGET ${TRX_ZLIB_TARGET} AND NOT TARGET ZLIB::ZLIB)
+    add_library(ZLIB::ZLIB INTERFACE IMPORTED GLOBAL)
+    set_target_properties(ZLIB::ZLIB PROPERTIES
+        INTERFACE_LINK_LIBRARIES "${TRX_ZLIB_TARGET}"
+    )
+    # FindZLIB's find_package_handle_standard_args requires ZLIB_LIBRARY and
+    # ZLIB_INCLUDE_DIR to be truthy. ZLIB::ZLIB already exists so FindZLIB's
+    # NOT-TARGET guard skips re-creation; these values are never used as file paths.
+    set(ZLIB_LIBRARY "${TRX_ZLIB_TARGET}")
+    set(ZLIB_INCLUDE_DIR "${TRX_ZLIB_TARGET}")
+    set(ZLIB_FOUND TRUE)
+endif()
+
 # TRX_LIBZIP_TARGET may be pre-set by a caller (e.g. an ITK remote module build)
 # to skip find_package(libzip) and use a specific target directly. Left as a
 # plain variable (no CACHE declaration) for the same reason as TRX_EIGEN3_TARGET.
 if(TRX_LIBZIP_TARGET AND TARGET ${TRX_LIBZIP_TARGET})
     message(STATUS "trx-cpp: using provided libzip target: ${TRX_LIBZIP_TARGET}")
 else()
-    find_package(libzip REQUIRED)
+    find_package(libzip QUIET)
+    if(NOT libzip_FOUND)
+        message(STATUS "libzip not found; fetching v1.11.4")
+        set(LIBZIP_DO_INSTALL OFF)
+        set(BUILD_TOOLS OFF)
+        set(BUILD_REGRESS OFF)
+        set(BUILD_EXAMPLES OFF)
+        set(BUILD_DOC OFF)
+        # TRX files only use deflate; disable optional codecs to avoid pulling
+        # in system bzip2/lzma/zstd as undeclared link dependencies.
+        # CMAKE_POLICY_DEFAULT_CMP0077 propagates into the subdirectory scope
+        # that FetchContent_MakeAvailable creates, so libzip's option() calls
+        # respect these normal variables.
+        set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+        set(ENABLE_BZIP2 OFF)
+        set(ENABLE_LZMA OFF)
+        set(ENABLE_ZSTD OFF)
+        set(_saved_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
+        set(BUILD_SHARED_LIBS OFF)
+        FetchContent_Declare(
+            libzip
+            GIT_REPOSITORY https://github.com/nih-at/libzip.git
+            GIT_TAG v1.11.4
+        )
+        FetchContent_MakeAvailable(libzip)
+        set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS})
+        unset(_saved_BUILD_SHARED_LIBS)
+        if(TARGET zip)
+            set_target_properties(zip PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        endif()
+    endif()
     if(TARGET libzip::libzip)
         set(TRX_LIBZIP_TARGET libzip::libzip)
     elseif(TARGET libzip::zip)
         set(TRX_LIBZIP_TARGET libzip::zip)
     elseif(TARGET zip::zip)
         set(TRX_LIBZIP_TARGET zip::zip)
+    elseif(TARGET zip)
+        set(TRX_LIBZIP_TARGET zip)
     else()
-        message(FATAL_ERROR "No suitable libzip target (expected libzip::libzip or zip::zip)")
+        message(FATAL_ERROR "No suitable libzip target (expected libzip::libzip, zip::zip, or zip)")
     endif()
 endif()
 # TRX_EIGEN3_TARGET may be pre-set by a caller (e.g. an ITK remote module build)

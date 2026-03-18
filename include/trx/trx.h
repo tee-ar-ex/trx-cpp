@@ -1401,6 +1401,32 @@ void append_dpv_to_directory(const std::string &directory,
                               const std::map<std::string, TypedArray> &dpv,
                               bool overwrite = true);
 
+/**
+ * @brief Format a group listing with optional prefix-based collapsing.
+ *
+ * When @p prefix_depth is 0 (the default), every group is listed individually:
+ * @code
+ *   glasser_Left_V1: 123 streamlines
+ *   glasser_Left_V2: 456 streamlines
+ * @endcode
+ *
+ * When @p prefix_depth > 0, group names are split on '_' and the first
+ * @p prefix_depth tokens form the aggregation key.  Groups that share a key
+ * have their streamline counts summed and are shown as a single collapsed line:
+ * @code
+ *   glasser_*: 579 streamlines (2 groups)
+ * @endcode
+ * If only one group maps to a given prefix key the wildcard suffix is omitted
+ * and the original group name is used as-is.
+ *
+ * @param groups       Map from group name to streamline count.
+ * @param prefix_depth Number of '_'-delimited tokens used as the grouping key (0 = flat list).
+ * @param line_prefix  String prepended to every output line (e.g. for indentation).
+ * @return             Formatted multi-line string (no trailing newline).
+ */
+std::string format_groups_summary(const std::map<std::string, size_t> &groups, int prefix_depth = 0,
+                                   const std::string &line_prefix = "");
+
 #ifndef TRX_TPP_STANDALONE
 #endif
 
