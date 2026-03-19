@@ -523,6 +523,49 @@ void AnyTrxFile::save(const std::string &filename, zip_uint32_t compression_stan
   save(filename, options);
 }
 
+// Convert positions TypedArray to raw bytes in a different dtype.
+// Supports all three TRX position dtypes (float16, float32, float64).
+static std::vector<uint8_t> convert_positions_to_dtype(const TypedArray &pos, TrxScalarType target) {
+  const size_t n = static_cast<size_t>(pos.rows) * 3;
+  const auto bytes = pos.to_bytes();
+
+  auto convert = [&](auto src_ptr) -> std::vector<uint8_t> {
+    using SrcT = std::remove_pointer_t<std::remove_const_t<decltype(src_ptr)>>;
+    switch (target) {
+    case TrxScalarType::Float16: {
+      std::vector<uint8_t> out(n * sizeof(Eigen::half));
+      auto *dst = reinterpret_cast<Eigen::half *>(out.data());
+      for (size_t i = 0; i < n; ++i)
+        dst[i] = static_cast<Eigen::half>(static_cast<float>(src_ptr[i]));
+      return out;
+    }
+    case TrxScalarType::Float64: {
+      std::vector<uint8_t> out(n * sizeof(double));
+      auto *dst = reinterpret_cast<double *>(out.data());
+      for (size_t i = 0; i < n; ++i)
+        dst[i] = static_cast<double>(src_ptr[i]);
+      return out;
+    }
+    case TrxScalarType::Float32:
+    default: {
+      std::vector<uint8_t> out(n * sizeof(float));
+      auto *dst = reinterpret_cast<float *>(out.data());
+      for (size_t i = 0; i < n; ++i)
+        dst[i] = static_cast<float>(src_ptr[i]);
+      return out;
+    }
+    }
+    // suppress warning
+    return {};
+  };
+
+  if (pos.dtype == "float16")
+    return convert(reinterpret_cast<const Eigen::half *>(bytes.data));
+  if (pos.dtype == "float64")
+    return convert(reinterpret_cast<const double *>(bytes.data));
+  return convert(reinterpret_cast<const float *>(bytes.data));
+}
+
 void AnyTrxFile::save(const std::string &filename, const TrxSaveOptions &options) {
   const std::string ext = get_ext(filename);
   const TrxSaveMode save_mode = resolve_save_mode(filename, options.mode);

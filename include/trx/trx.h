@@ -18,6 +18,7 @@
 #include <json11.hpp>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -62,6 +63,9 @@ struct TrxSaveOptions {
   TrxSaveMode mode = TrxSaveMode::Auto;
   size_t memory_limit_bytes = 0; // Reserved for future save-path tuning.
   bool overwrite_existing = true;
+  /// When set, the positions array is converted to this dtype on output.
+  /// All other data (dps, dpv, groups, offsets) is preserved unchanged.
+  std::optional<TrxScalarType> positions_dtype;
 };
 
 inline json::object _json_object(const json &value) {
