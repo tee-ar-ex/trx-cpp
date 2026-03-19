@@ -1536,3 +1536,210 @@ TEST(AnyTrxFile, GetStreamlineFloat64) {
   std::error_code ec;
   fs::remove_all(temp_root, ec);
 }
+
+// ---------------------------------------------------------------------------
+// SaveWithPositionsDtype round-trip tests
+// ---------------------------------------------------------------------------
+
+namespace {
+// Source data shared across SaveWithPositionsDtype tests:
+//   3 points, 2 streamlines, dps "weight", dpv "signal", group "Bundle"
+// Use non-integer values so float16 truncation is visible in assertions.
+const std::vector<std::array<float, 3>> kRoundTripPoints = {
+    {1.5F, 2.5F, 3.5F},
+    {4.5F, 5.5F, 6.5F},
+    {7.5F, 8.5F, 9.5F},
+};
+const std::vector<uint64_t> kRoundTripOffsets = {0, 2, 3}; // 2 streamlines: [2pts, 1pt]
+const std::vector<float> kRoundTripDps = {10.0F, 20.0F};
+const std::vector<float> kRoundTripDpv = {0.1F, 0.2F, 0.3F};
+const std::vector<uint32_t> kRoundTripGroup = {0}; // streamline 0 in "Bundle"
+
+void expect_metadata_preserved(const AnyTrxFile &loaded) {
+  EXPECT_EQ(loaded.num_streamlines(), 2u);
+  EXPECT_EQ(loaded.num_vertices(), 3u);
+
+  const TypedArray *dps = loaded.get_dps("weight");
+  ASSERT_NE(dps, nullptr);
+  ASSERT_EQ(dps->rows, 2);
+  const auto dps_view = dps->as_matrix<float>();
+  EXPECT_NEAR(dps_view(0, 0), 10.0F, 1e-5F);
+  EXPECT_NEAR(dps_view(1, 0), 20.0F, 1e-5F);
+
+  const TypedArray *dpv = loaded.get_dpv("signal");
+  ASSERT_NE(dpv, nullptr);
+  EXPECT_EQ(dpv->rows, 3);
+
+  EXPECT_EQ(loaded.groups.count("Bundle"), 1u);
+  const auto &grp = loaded.groups.at("Bundle");
+  ASSERT_EQ(grp.rows, 1);
+  const auto grp_view = grp.as_matrix<uint32_t>();
+  EXPECT_EQ(grp_view(0, 0), 0u);
+}
+} // namespace
+
+// Float32 source → float16 output (zip archive).
+// Positions should be approximately preserved within float16 precision (~1e-2).
+TEST(AnyTrxFile, SaveWithPositionsDtype_Float32ToFloat16_Archive) {
+  const fs::path temp_root = make_temp_test_dir("trx_dtype_f32_f16_arc");
+  const fs::path src = write_test_shard(
+      temp_root, "src", kRoundTripPoints, kRoundTripOffsets,
+      kRoundTripDps, kRoundTripDpv, kRoundTripGroup);
+
+  auto trx = load_any(src.string());
+  const fs::path out = temp_root / "out.trx";
+  TrxSaveOptions opts;
+  opts.positions_dtype = TrxScalarType::Float16;
+  trx.save(out.string(), opts);
+  trx.close();
+
+  EXPECT_EQ(detect_positions_dtype(out.string()), "float16");
+  auto loaded = load_any(out.string());
+  EXPECT_EQ(loaded.positions.dtype, "float16");
+  expect_metadata_preserved(loaded);
+
+  // float16 has ~3 significant decimal digits; values ~1-9 → tolerance 0.01
+  auto sl0 = loaded.get_streamline(0);
+  ASSERT_EQ(sl0.size(), 2u);
+  EXPECT_NEAR(sl0[0][0], 1.5, 1e-2);
+  EXPECT_NEAR(sl0[0][1], 2.5, 1e-2);
+  EXPECT_NEAR(sl0[0][2], 3.5, 1e-2);
+  EXPECT_NEAR(sl0[1][0], 4.5, 1e-2);
+  EXPECT_NEAR(sl0[1][1], 5.5, 1e-2);
+  EXPECT_NEAR(sl0[1][2], 6.5, 1e-2);
+
+  auto sl1 = loaded.get_streamline(1);
+  ASSERT_EQ(sl1.size(), 1u);
+  EXPECT_NEAR(sl1[0][0], 7.5, 1e-2);
+
+  loaded.close();
+  std::error_code ec2;
+  fs::remove_all(temp_root, ec2);
+}
+
+// Float32 source → float64 output (zip archive).
+// Positions should be preserved with float32 precision (no information loss).
+TEST(AnyTrxFile, SaveWithPositionsDtype_Float32ToFloat64_Archive) {
+  const fs::path temp_root = make_temp_test_dir("trx_dtype_f32_f64_arc");
+  const fs::path src = write_test_shard(
+      temp_root, "src", kRoundTripPoints, kRoundTripOffsets,
+      kRoundTripDps, kRoundTripDpv, kRoundTripGroup);
+
+  auto trx = load_any(src.string());
+  const fs::path out = temp_root / "out.trx";
+  TrxSaveOptions opts;
+  opts.positions_dtype = TrxScalarType::Float64;
+  trx.save(out.string(), opts);
+  trx.close();
+
+  EXPECT_EQ(detect_positions_dtype(out.string()), "float64");
+  auto loaded = load_any(out.string());
+  EXPECT_EQ(loaded.positions.dtype, "float64");
+  expect_metadata_preserved(loaded);
+
+  // float32→float64 is lossless; original float32 values are preserved exactly
+  auto sl0 = loaded.get_streamline(0);
+  ASSERT_EQ(sl0.size(), 2u);
+  EXPECT_NEAR(sl0[0][0], 1.5, 1e-6);
+  EXPECT_NEAR(sl0[0][2], 3.5, 1e-6);
+  EXPECT_NEAR(sl0[1][1], 5.5, 1e-6);
+
+  loaded.close();
+  std::error_code ec2;
+  fs::remove_all(temp_root, ec2);
+}
+
+// Float32 source → float16 output, directory mode.
+// Verifies the directory save path (not zip) also converts correctly.
+TEST(AnyTrxFile, SaveWithPositionsDtype_Float32ToFloat16_Directory) {
+  const fs::path temp_root = make_temp_test_dir("trx_dtype_f32_f16_dir");
+  const fs::path src = write_test_shard(
+      temp_root, "src", kRoundTripPoints, kRoundTripOffsets,
+      kRoundTripDps, kRoundTripDpv, kRoundTripGroup);
+
+  auto trx = load_any(src.string());
+  const fs::path out = temp_root / "out_dir.trx";
+  TrxSaveOptions opts;
+  opts.positions_dtype = TrxScalarType::Float16;
+  opts.mode = TrxSaveMode::Directory;
+  trx.save(out.string(), opts);
+  trx.close();
+
+  EXPECT_TRUE(fs::is_directory(out));
+  EXPECT_EQ(detect_positions_dtype(out.string()), "float16");
+  auto loaded = load_any(out.string());
+  EXPECT_EQ(loaded.positions.dtype, "float16");
+  expect_metadata_preserved(loaded);
+
+  auto sl0 = loaded.get_streamline(0);
+  ASSERT_EQ(sl0.size(), 2u);
+  EXPECT_NEAR(sl0[0][0], 1.5, 1e-2);
+  EXPECT_NEAR(sl0[1][2], 6.5, 1e-2);
+
+  // Old positions file must not be present alongside the new one
+  EXPECT_FALSE(fs::exists(out / "positions.3.float32"));
+  EXPECT_TRUE(fs::exists(out / "positions.3.float16"));
+
+  loaded.close();
+  std::error_code ec2;
+  fs::remove_all(temp_root, ec2);
+}
+
+// Float16 source → float32 output (zip archive).
+// Exercises the float16 source path in convert_positions_to_dtype.
+TEST(AnyTrxFile, SaveWithPositionsDtype_Float16ToFloat32_Archive) {
+  const fs::path temp_root = make_temp_test_dir("trx_dtype_f16_f32_arc");
+  const fs::path src = write_test_shard_with_dtype(
+      temp_root, "src", kRoundTripPoints, kRoundTripOffsets, "float16");
+
+  auto trx = load_any(src.string());
+  ASSERT_EQ(trx.positions.dtype, "float16");
+
+  const fs::path out = temp_root / "out.trx";
+  TrxSaveOptions opts;
+  opts.positions_dtype = TrxScalarType::Float32;
+  trx.save(out.string(), opts);
+  trx.close();
+
+  EXPECT_EQ(detect_positions_dtype(out.string()), "float32");
+  auto loaded = load_any(out.string());
+  EXPECT_EQ(loaded.positions.dtype, "float32");
+
+  // Values are the float16 representations of kRoundTripPoints (already rounded)
+  auto sl0 = loaded.get_streamline(0);
+  ASSERT_EQ(sl0.size(), 2u);
+  EXPECT_NEAR(sl0[0][0], 1.5, 1e-2);
+  EXPECT_NEAR(sl0[1][2], 6.5, 1e-2);
+
+  loaded.close();
+  std::error_code ec2;
+  fs::remove_all(temp_root, ec2);
+}
+
+// Same-dtype save (float32 → float32) must succeed and preserve values exactly.
+TEST(AnyTrxFile, SaveWithPositionsDtype_SameDtypeNoOp) {
+  const fs::path temp_root = make_temp_test_dir("trx_dtype_noop");
+  const fs::path src = write_test_shard(
+      temp_root, "src", kRoundTripPoints, kRoundTripOffsets,
+      kRoundTripDps, kRoundTripDpv, kRoundTripGroup);
+
+  auto trx = load_any(src.string());
+  const fs::path out = temp_root / "out.trx";
+  TrxSaveOptions opts;
+  opts.positions_dtype = TrxScalarType::Float32;
+  trx.save(out.string(), opts);
+  trx.close();
+
+  EXPECT_EQ(detect_positions_dtype(out.string()), "float32");
+  auto loaded = load_any(out.string());
+  expect_metadata_preserved(loaded);
+
+  auto sl0 = loaded.get_streamline(0);
+  ASSERT_EQ(sl0.size(), 2u);
+  EXPECT_FLOAT_EQ(static_cast<float>(sl0[0][0]), 1.5F);
+  EXPECT_FLOAT_EQ(static_cast<float>(sl0[1][2]), 6.5F);
+
+  loaded.close();
+  std::error_code ec2;
+  fs::remove_all(temp_root, ec2);
+}

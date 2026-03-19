@@ -47,6 +47,8 @@ using json = json11::Json;
 namespace trx {
 enum class TrxSaveMode { Auto, Archive, Directory };
 
+enum class TrxScalarType { Float16, Float32, Float64 };
+
 enum class ConnectivityMeasure {
   StreamlineCount,
   DpsSum
@@ -962,8 +964,6 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> load_from_directory(const st
  * @return std::string dtype (e.g., float16/float32/float64) or empty if unknown.
  */
 std::string detect_positions_dtype(const std::string &path);
-
-enum class TrxScalarType { Float16, Float32, Float64 };
 
 /**
  * @brief Return the canonical string name for a TrxScalarType.
