@@ -517,11 +517,74 @@ AnyTrxFile::_create_from_pointer(json header,
   return trx;
 }
 
+void write_positions_as_dtype(const AnyTrxFile &source,
+                               TrxScalarType target_dtype,
+                               const std::string &out_path,
+                               size_t chunk_bytes) {
+  std::ofstream out(out_path, std::ios::binary | std::ios::trunc);
+  if (!out)
+    throw TrxIOError("Failed to create positions output: " + out_path);
+
+  source.for_each_positions_chunk(
+      chunk_bytes,
+      [&](TrxScalarType src_dtype, const void *data, size_t /*point_offset*/, size_t point_count) {
+        const size_t n = point_count * 3;
+
+        // Inner lambda: read from typed source pointer, cast to DstT, write to stream.
+        auto write_as = [&](auto typed_src) {
+          switch (target_dtype) {
+          case TrxScalarType::Float16: {
+            std::vector<Eigen::half> buf(n);
+            for (size_t i = 0; i < n; ++i)
+              buf[i] = static_cast<Eigen::half>(static_cast<float>(typed_src[i]));
+            out.write(reinterpret_cast<const char *>(buf.data()),
+                      static_cast<std::streamsize>(n * sizeof(Eigen::half)));
+            break;
+          }
+          case TrxScalarType::Float64: {
+            std::vector<double> buf(n);
+            for (size_t i = 0; i < n; ++i)
+              buf[i] = static_cast<double>(typed_src[i]);
+            out.write(reinterpret_cast<const char *>(buf.data()),
+                      static_cast<std::streamsize>(n * sizeof(double)));
+            break;
+          }
+          default: {
+            std::vector<float> buf(n);
+            for (size_t i = 0; i < n; ++i)
+              buf[i] = static_cast<float>(typed_src[i]);
+            out.write(reinterpret_cast<const char *>(buf.data()),
+                      static_cast<std::streamsize>(n * sizeof(float)));
+            break;
+          }
+          }
+        };
+
+        switch (src_dtype) {
+        case TrxScalarType::Float16:
+          write_as(reinterpret_cast<const Eigen::half *>(data));
+          break;
+        case TrxScalarType::Float64:
+          write_as(reinterpret_cast<const double *>(data));
+          break;
+        default:
+          write_as(reinterpret_cast<const float *>(data));
+          break;
+        }
+      });
+
+  if (out.bad())
+    throw TrxIOError("I/O error writing converted positions to: " + out_path);
+}
+
 void AnyTrxFile::save(const std::string &filename, zip_uint32_t compression_standard) {
   TrxSaveOptions options;
   options.compression_standard = compression_standard;
   save(filename, options);
 }
+
+using trx::detail::TempFileGuard;
+using trx::detail::make_unique_temp_path;
 
 void AnyTrxFile::save(const std::string &filename, const TrxSaveOptions &options) {
   const std::string ext = get_ext(filename);
@@ -592,7 +655,30 @@ void AnyTrxFile::save(const std::string &filename, const TrxSaveOptions &options
                                std::string(zip_strerror(zf.get())));
     }
 
-    const std::unordered_set<std::string> skip = {"header.json"};
+    std::unordered_set<std::string> skip = {"header.json"};
+    // Guard deletes the temp positions file after commit (or on exception).
+    TempFileGuard tmp_pos_guard;
+    if (options.positions_dtype.has_value() && !positions.empty()) {
+      const TrxScalarType target = *options.positions_dtype;
+      const std::string new_dtype_str = scalar_type_name(target);
+      if (new_dtype_str != positions.dtype) {
+        skip.insert("positions.3." + positions.dtype);
+        tmp_pos_guard.path = make_unique_temp_path("trx_pos_convert");
+        write_positions_as_dtype(*this, target, tmp_pos_guard.path);
+        const std::string new_pos_name = "positions.3." + new_dtype_str;
+        zip_source_t *pos_src =
+            zip_source_file(zf.get(), tmp_pos_guard.path.c_str(), 0, -1);
+        if (!pos_src)
+          throw TrxIOError("Failed to create zip source for converted positions");
+        const zip_int64_t pos_idx =
+            zip_file_add(zf.get(), new_pos_name.c_str(), pos_src, ZIP_FL_ENC_UTF_8 | ZIP_FL_OVERWRITE);
+        if (pos_idx < 0)
+          throw TrxIOError("Failed to add converted positions to archive: " +
+                           std::string(zip_strerror(zf.get())));
+        if (zip_set_file_compression(zf.get(), pos_idx, compression, 0) < 0)
+          throw TrxIOError("Failed to set compression for converted positions");
+      }
+    }
     zip_from_folder(zf.get(), source_dir, source_dir, options.compression_standard, &skip);
     zf.commit(filename);
   } else {
@@ -617,6 +703,18 @@ void AnyTrxFile::save(const std::string &filename, const TrxSaveOptions &options
 
     if (!same_directory) {
       copy_dir(source_dir, filename);
+    }
+
+    if (options.positions_dtype.has_value() && !positions.empty()) {
+      const TrxScalarType target = *options.positions_dtype;
+      const std::string new_dtype_str = scalar_type_name(target);
+      if (new_dtype_str != positions.dtype) {
+        const std::string old_pos = filename + SEPARATOR + "positions.3." + positions.dtype;
+        const std::string new_pos = filename + SEPARATOR + "positions.3." + new_dtype_str;
+        write_positions_as_dtype(*this, target, new_pos);
+        std::error_code rm_ec;
+        trx::fs::remove(old_pos, rm_ec);
+      }
     }
 
     const trx::fs::path final_header_path = dest_path / "header.json";

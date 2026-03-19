@@ -72,9 +72,11 @@ endif()
 if(TRX_LIBZIP_TARGET AND TARGET ${TRX_LIBZIP_TARGET})
     message(STATUS "trx-cpp: using provided libzip target: ${TRX_LIBZIP_TARGET}")
 else()
-    find_package(libzip QUIET)
-    if(NOT libzip_FOUND)
-        message(STATUS "libzip not found; fetching v1.11.4")
+    # CONFIG-only: only accept a system libzip that provides a proper cmake
+    # config (creating libzip::zip). If not found, always fetch and build.
+    find_package(libzip CONFIG QUIET)
+    if(NOT TARGET libzip::zip)
+        message(STATUS "libzip not found via config-mode find_package; fetching v1.11.4")
         set(LIBZIP_DO_INSTALL OFF)
         set(BUILD_TOOLS OFF)
         set(BUILD_REGRESS OFF)
@@ -103,7 +105,7 @@ else()
             set_target_properties(zip PROPERTIES POSITION_INDEPENDENT_CODE ON)
         endif()
     endif()
-    # Detect the target name: find_package creates libzip::zip;
+    # Detect the target name: CONFIG find_package creates libzip::zip;
     # FetchContent creates the bare 'zip' target.
     if(TARGET libzip::zip)
         set(TRX_LIBZIP_TARGET libzip::zip)
