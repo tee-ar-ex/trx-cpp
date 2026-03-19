@@ -69,12 +69,19 @@ if(TRX_ZLIB_TARGET AND NOT TARGET ZLIB::ZLIB)
         set_target_properties(ZLIB::ZLIB PROPERTIES
             INTERFACE_LINK_LIBRARIES "${TRX_ZLIB_TARGET}"
         )
-        # FindZLIB's find_package_handle_standard_args requires ZLIB_LIBRARY and
-        # ZLIB_INCLUDE_DIR to be truthy. ZLIB::ZLIB already exists so FindZLIB's
-        # NOT-TARGET guard skips re-creation; these values are never used as file paths.
-        set(ZLIB_LIBRARY "${TRX_ZLIB_TARGET}")
-        set(ZLIB_INCLUDE_DIR "${TRX_ZLIB_TARGET}")
-        set(ZLIB_FOUND TRUE)
+        # libzip calls find_package(ZLIB) and FindZLIB still validates legacy
+        # ZLIB_* variables even when an imported target already exists. Populate
+        # them with sane values to avoid a false-negative.
+        set(ZLIB_LIBRARY "ZLIB::ZLIB")
+        # ITK vendors zlib and its include layout differs between in-tree builds
+        # (ITKZLIBModule target, multiple dirs) and installed builds
+        # (ITK::ITKZLIBModule target, single merged include dir). Either target
+        # being present is a definitive indicator of an ITK build; use ITK's own
+        # module variable rather than trying to derive the path from the target.
+        if(TARGET ITKZLIBModule OR TARGET ITK::ITKZLIBModule)
+            set(ZLIB_INCLUDE_DIR "${ITKZLIB_INCLUDE_DIRS}")
+            set(ZLIB_FOUND TRUE)
+        endif()
     endif()
 endif()
 
@@ -135,6 +142,7 @@ else()
         message(FATAL_ERROR "No suitable libzip target (expected libzip::libzip, zip::zip, or zip)")
     endif()
 endif()
+
 # TRX_EIGEN3_TARGET may be pre-set by a caller (e.g. an ITK remote module build)
 # to skip find_package(Eigen3) and use a specific target directly, such as
 # eigen_internal or ITK::ITKEigen3Module. Left as a plain variable (no CACHE
@@ -160,7 +168,6 @@ else()
     endif()
     set(TRX_EIGEN3_TARGET Eigen3::Eigen)
 endif()
-set(TRX_HAVE_MIO_TARGET OFF)
 set(MIO_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/mio/include")
 if (NOT EXISTS "${MIO_INCLUDE_DIR}/mio/mmap.hpp")
     message(FATAL_ERROR "Vendored mio headers not found at ${MIO_INCLUDE_DIR}/mio/mmap.hpp.")
@@ -194,17 +201,16 @@ if(NOT _trx_libzip_includes)
     endif()
 endif()
 
-TARGET_LINK_LIBRARIES(trx
+target_link_libraries(trx
     PUBLIC
         ${TRX_LIBZIP_TARGET}
         ${TRX_EIGEN3_TARGET}
-        $<$<BOOL:${TRX_HAVE_MIO_TARGET}>:mio::mio>
 )
 target_include_directories(trx
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-        $<$<NOT:$<BOOL:${TRX_HAVE_MIO_TARGET}>>:$<BUILD_INTERFACE:${MIO_INCLUDE_DIR}>>
+        $<BUILD_INTERFACE:${MIO_INCLUDE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/json11>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
