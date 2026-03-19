@@ -559,6 +559,32 @@ private:
 
 namespace detail {
 int _sizeof_dtype(const std::string &dtype);
+
+/// RAII guard that deletes a temporary file on scope exit.
+struct TempFileGuard {
+  std::string path;
+  TempFileGuard() = default;
+  TempFileGuard(const TempFileGuard &) = delete;
+  TempFileGuard &operator=(const TempFileGuard &) = delete;
+  ~TempFileGuard() {
+    if (!path.empty()) {
+      std::error_code ec;
+      trx::fs::remove(path, ec);
+    }
+  }
+};
+
+/// Return a unique path in the OS temp directory suitable for a scratch file.
+inline std::string make_unique_temp_path(const std::string &prefix) {
+  std::error_code ec;
+  trx::fs::path tmp = trx::fs::temp_directory_path(ec);
+  if (ec)
+    tmp = trx::fs::path(".");
+  thread_local std::mt19937_64 rng(std::random_device{}());
+  std::uniform_int_distribution<uint64_t> dist;
+  return (tmp / (prefix + "_" + std::to_string(dist(rng)) + ".bin")).string();
+}
+
 } // namespace detail
 
 struct TypedArray {
@@ -964,6 +990,23 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> load_from_directory(const st
  * @return std::string dtype (e.g., float16/float32/float64) or empty if unknown.
  */
 std::string detect_positions_dtype(const std::string &path);
+
+/**
+ * @brief Convert and write positions from @p source to @p out_path in @p target_dtype.
+ *
+ * Reads positions chunk-by-chunk (each chunk at most @p chunk_bytes bytes of source data)
+ * and writes converted raw bytes to @p out_path. Peak transient memory is bounded to
+ * roughly one source chunk plus one destination chunk — independent of file size.
+ *
+ * @param source      TRX file whose positions will be converted.
+ * @param target_dtype Desired output scalar type.
+ * @param out_path    Path to write the raw converted positions binary.
+ * @param chunk_bytes Bytes of source data per conversion pass (default 64 MiB).
+ */
+void write_positions_as_dtype(const AnyTrxFile &source,
+                               TrxScalarType target_dtype,
+                               const std::string &out_path,
+                               size_t chunk_bytes = 64 * 1024 * 1024);
 
 /**
  * @brief Return the canonical string name for a TrxScalarType.

@@ -1285,8 +1285,38 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, const
     if (!zf) {
       throw TrxIOError("Could not open archive " + filename + ": " + strerror(errorp));
     }
-    zip_from_folder(zf.get(), tmp_dir_name, tmp_dir_name, options.compression_standard, nullptr);
+
+    std::unordered_set<std::string> skip;
+    detail::TempFileGuard tmp_pos_guard;
+    if (options.positions_dtype.has_value() && save_trx->streamlines) {
+      const TrxScalarType target = *options.positions_dtype;
+      const std::string cur_dtype = detect_positions_dtype(tmp_dir_name);
+      const std::string new_dtype_str = scalar_type_name(target);
+      if (!cur_dtype.empty() && cur_dtype != new_dtype_str) {
+        skip.insert("positions.3." + cur_dtype);
+        tmp_pos_guard.path = detail::make_unique_temp_path("trx_pos_convert");
+        {
+          auto src_any = load_any(tmp_dir_name);
+          write_positions_as_dtype(src_any, target, tmp_pos_guard.path);
+        }
+        const std::string new_pos_name = "positions.3." + new_dtype_str;
+        zip_source_t *pos_src = zip_source_file(zf.get(), tmp_pos_guard.path.c_str(), 0, -1);
+        if (!pos_src)
+          throw TrxIOError("Failed to create zip source for converted positions");
+        const zip_int64_t pos_idx = zip_file_add(
+            zf.get(), new_pos_name.c_str(), pos_src, ZIP_FL_ENC_UTF_8 | ZIP_FL_OVERWRITE);
+        if (pos_idx < 0)
+          throw TrxIOError("Failed to add converted positions to archive");
+        if (zip_set_file_compression(
+                zf.get(), pos_idx,
+                static_cast<zip_int32_t>(options.compression_standard), 0) < 0)
+          throw TrxIOError("Failed to set compression for converted positions");
+      }
+    }
+    zip_from_folder(zf.get(), tmp_dir_name, tmp_dir_name, options.compression_standard,
+                    skip.empty() ? nullptr : &skip);
     zf.commit(filename);
+    // tmp_pos_guard destructor removes the temp file after commit.
   } else {
     std::error_code ec;
     if (!trx::fs::exists(tmp_dir_name, ec) || !trx::fs::is_directory(tmp_dir_name, ec)) {
@@ -1309,6 +1339,23 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, const
     if (!trx::fs::exists(filename, ec) || !trx::fs::is_directory(filename, ec)) {
       throw TrxIOError("Failed to create output directory: " + filename);
     }
+
+    if (options.positions_dtype.has_value() && save_trx->streamlines) {
+      const TrxScalarType target = *options.positions_dtype;
+      const std::string cur_dtype = detect_positions_dtype(filename);
+      const std::string new_dtype_str = scalar_type_name(target);
+      if (!cur_dtype.empty() && cur_dtype != new_dtype_str) {
+        const std::string old_pos = filename + SEPARATOR + "positions.3." + cur_dtype;
+        const std::string new_pos = filename + SEPARATOR + "positions.3." + new_dtype_str;
+        {
+          auto src_any = load_any(filename);
+          write_positions_as_dtype(src_any, target, new_pos);
+        }
+        std::error_code rm_ec;
+        trx::fs::remove(old_pos, rm_ec);
+      }
+    }
+
     const trx::fs::path header_path = dest_path / "header.json";
     if (!trx::fs::exists(header_path)) {
       throw TrxFormatError("Missing header.json in output directory: " + header_path.string());
