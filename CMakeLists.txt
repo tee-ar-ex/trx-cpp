@@ -58,41 +58,6 @@ if(MSVC)
     add_compile_definitions(NOMINMAX)
 endif()
 
-# TRX_ZLIB_TARGET may be pre-set by a caller to provide a ZLIB target directly
-# (e.g. ITK::ITKZLIBModule), bypassing find_package(ZLIB). This must be bridged
-# to ZLIB::ZLIB before libzip is found or fetched, because libzip's CMakeLists.txt
-# calls find_package(ZLIB REQUIRED) internally. Plain variable, no CACHE
-# declaration, for the same reason as TRX_EIGEN3_TARGET.
-if(TRX_ZLIB_TARGET AND NOT TARGET ZLIB::ZLIB)
-    if(TARGET ${TRX_ZLIB_TARGET})
-        add_library(ZLIB::ZLIB INTERFACE IMPORTED GLOBAL)
-        set_target_properties(ZLIB::ZLIB PROPERTIES
-            INTERFACE_LINK_LIBRARIES "${TRX_ZLIB_TARGET}"
-        )
-        # libzip calls find_package(ZLIB) and FindZLIB still validates legacy
-        # ZLIB_* variables even when an imported target already exists. Populate
-        # them with sane values to avoid a false-negative.
-        set(ZLIB_LIBRARY "ZLIB::ZLIB")
-        # ITK vendors zlib and its include layout differs between in-tree builds
-        # (ITKZLIBModule target, multiple dirs) and installed builds
-        # (ITK::ITKZLIBModule target, single merged include dir). Either target
-        # being present is a definitive indicator of an ITK build; use ITK's own
-        # module variable rather than trying to derive the path from the target.
-        if(TARGET ITKZLIBModule OR TARGET ITK::ITKZLIBModule)
-            # ITKZLIB_INCLUDE_DIRS is a list: in-tree builds have multiple entries
-            # (src/ and src/itkzlib-ng/ where zlib.h actually lives); installed
-            # builds have a single merged include dir. Find the entry with zlib.h.
-            foreach(_trx_zlib_dir IN LISTS ITKZLIB_INCLUDE_DIRS)
-                if(EXISTS "${_trx_zlib_dir}/zlib.h")
-                    set(ZLIB_INCLUDE_DIR "${_trx_zlib_dir}")
-                    set(ZLIB_FOUND TRUE)
-                    break()
-                endif()
-            endforeach()
-            unset(_trx_zlib_dir)
-        endif()
-    endif()
-endif()
 
 # TRX_LIBZIP_TARGET may be pre-set by a caller (e.g. an ITK remote module build)
 # to skip find_package(libzip) and use a specific target directly. Left as a
