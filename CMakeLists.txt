@@ -79,8 +79,17 @@ if(TRX_ZLIB_TARGET AND NOT TARGET ZLIB::ZLIB)
         # being present is a definitive indicator of an ITK build; use ITK's own
         # module variable rather than trying to derive the path from the target.
         if(TARGET ITKZLIBModule OR TARGET ITK::ITKZLIBModule)
-            set(ZLIB_INCLUDE_DIR "${ITKZLIB_INCLUDE_DIRS}")
-            set(ZLIB_FOUND TRUE)
+            # ITKZLIB_INCLUDE_DIRS is a list: in-tree builds have multiple entries
+            # (src/ and src/itkzlib-ng/ where zlib.h actually lives); installed
+            # builds have a single merged include dir. Find the entry with zlib.h.
+            foreach(_trx_zlib_dir IN LISTS ITKZLIB_INCLUDE_DIRS)
+                if(EXISTS "${_trx_zlib_dir}/zlib.h")
+                    set(ZLIB_INCLUDE_DIR "${_trx_zlib_dir}")
+                    set(ZLIB_FOUND TRUE)
+                    break()
+                endif()
+            endforeach()
+            unset(_trx_zlib_dir)
         endif()
     endif()
 endif()
