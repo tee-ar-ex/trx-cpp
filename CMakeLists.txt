@@ -58,21 +58,20 @@ if(MSVC)
     add_compile_definitions(NOMINMAX)
 endif()
 
-
-# TRX_LIBZIP_TARGET may be pre-set by a caller (e.g. an ITK remote module build)
-# to skip find_package(libzip) and use a specific target directly. Left as a
-# plain variable (no CACHE declaration) for the same reason as TRX_EIGEN3_TARGET.
-set(_trx_libzip_provided OFF)
-if(TRX_LIBZIP_TARGET)
-    if(TARGET ${TRX_LIBZIP_TARGET})
-        set(_trx_libzip_provided ON)
-    endif()
+if(TRX_USE_CONAN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ConanSetup.cmake")
+    include(cmake/ConanSetup.cmake)
+elseif(TRX_USE_CONAN)
+    message(STATUS "TRX_USE_CONAN enabled but cmake/ConanSetup.cmake not found; skipping Conan.")
 endif()
-if(_trx_libzip_provided)
+
+# ── libzip ──────────────────────────────────────────────────────────────────
+# TRX_LIBZIP_TARGET: a caller (e.g. ITKTractographyTRX) may pre-set this to
+# a specific target to skip libzip discovery entirely. Plain variable (not
+# CACHE) so that a parent scope's set() propagates into this FetchContent
+# child scope without being cleared by CMake's CACHE precedence rules.
+if(TRX_LIBZIP_TARGET AND TARGET ${TRX_LIBZIP_TARGET})
     message(STATUS "trx-cpp: using provided libzip target: ${TRX_LIBZIP_TARGET}")
-    unset(_trx_libzip_provided)
 else()
-    unset(_trx_libzip_provided)
     find_package(libzip QUIET)
     if(NOT libzip_FOUND)
         message(STATUS "libzip not found; fetching v1.11.4")
@@ -104,28 +103,24 @@ else()
             set_target_properties(zip PROPERTIES POSITION_INDEPENDENT_CODE ON)
         endif()
     endif()
-    if(TARGET libzip::libzip)
-        set(TRX_LIBZIP_TARGET libzip::libzip)
-    elseif(TARGET libzip::zip)
+    # Detect the target name: find_package creates libzip::zip;
+    # FetchContent creates the bare 'zip' target.
+    if(TARGET libzip::zip)
         set(TRX_LIBZIP_TARGET libzip::zip)
-    elseif(TARGET zip::zip)
-        set(TRX_LIBZIP_TARGET zip::zip)
     elseif(TARGET zip)
         set(TRX_LIBZIP_TARGET zip)
     else()
-        message(FATAL_ERROR "No suitable libzip target (expected libzip::libzip, zip::zip, or zip)")
+        message(FATAL_ERROR "No suitable libzip target found (expected libzip::zip or zip)")
     endif()
 endif()
 
-# TRX_EIGEN3_TARGET may be pre-set by a caller (e.g. an ITK remote module build)
-# to skip find_package(Eigen3) and use a specific target directly, such as
-# eigen_internal or ITK::ITKEigen3Module. Left as a plain variable (no CACHE
-# declaration) so a parent scope can set it via FetchContent without the value
-# being cleared by a CACHE set (CMake policy CMP0126 defaults to OLD before 3.21).
+# ── Eigen ───────────────────────────────────────────────────────────────────
+# TRX_EIGEN3_TARGET: a caller may pre-set this to a specific Eigen target
+# (e.g. ITK::ITKEigen3Module) to skip find_package(Eigen3). Plain variable
+# (not CACHE) for the same reason as TRX_LIBZIP_TARGET above.
 if(TRX_EIGEN3_TARGET AND TARGET ${TRX_EIGEN3_TARGET})
     message(STATUS "trx-cpp: using provided Eigen3 target: ${TRX_EIGEN3_TARGET}")
 else()
-    # Prefer Eigen3_ROOT so -DEigen3_ROOT=/path/to/eigen-3.4 is used over system Eigen
     if(Eigen3_ROOT)
         list(PREPEND CMAKE_PREFIX_PATH "${Eigen3_ROOT}")
     endif()
@@ -142,11 +137,14 @@ else()
     endif()
     set(TRX_EIGEN3_TARGET Eigen3::Eigen)
 endif()
+
+# ── Vendored headers ────────────────────────────────────────────────────────
 set(MIO_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/mio/include")
-if (NOT EXISTS "${MIO_INCLUDE_DIR}/mio/mmap.hpp")
+if(NOT EXISTS "${MIO_INCLUDE_DIR}/mio/mmap.hpp")
     message(FATAL_ERROR "Vendored mio headers not found at ${MIO_INCLUDE_DIR}/mio/mmap.hpp.")
 endif()
 
+# ── Core library ────────────────────────────────────────────────────────────
 add_library(trx
     src/trx.cpp
     src/detail/dtype_helpers.cpp
@@ -158,22 +156,6 @@ set_source_files_properties(third_party/json11/json11.cpp PROPERTIES SKIP_LINTIN
 add_library(trx-cpp::trx ALIAS trx)
 
 target_compile_features(trx PUBLIC cxx_std_17)
-
-if(TRX_USE_CONAN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ConanSetup.cmake")
-    include(cmake/ConanSetup.cmake)
-elseif(TRX_USE_CONAN)
-    message(STATUS "TRX_USE_CONAN enabled but cmake/ConanSetup.cmake not found; skipping Conan.")
-endif()
-
-# Fallback for libzip packages that don't expose include dirs via CMake targets.
-set(TRX_LIBZIP_INCLUDE_DIR "")
-get_target_property(_trx_libzip_includes ${TRX_LIBZIP_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
-if(NOT _trx_libzip_includes)
-    find_path(TRX_LIBZIP_INCLUDE_DIR zip.h)
-    if(NOT TRX_LIBZIP_INCLUDE_DIR)
-        message(FATAL_ERROR "libzip headers not found. Set TRX_LIBZIP_INCLUDE_DIR or fix libzip CMake targets.")
-    endif()
-endif()
 
 target_link_libraries(trx
     PUBLIC
@@ -189,13 +171,22 @@ target_include_directories(trx
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-if(TRX_LIBZIP_INCLUDE_DIR)
-    target_include_directories(trx PUBLIC
-        $<BUILD_INTERFACE:${TRX_LIBZIP_INCLUDE_DIR}>
-        $<INSTALL_INTERFACE:${TRX_LIBZIP_INCLUDE_DIR}>
-    )
+# Fallback for system libzip packages that don't expose include dirs via
+# their CMake targets. Only needed for distro packages with broken configs.
+get_target_property(_trx_libzip_includes ${TRX_LIBZIP_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
+if(NOT _trx_libzip_includes)
+    find_path(TRX_LIBZIP_INCLUDE_DIR zip.h)
+    if(TRX_LIBZIP_INCLUDE_DIR)
+        target_include_directories(trx PUBLIC
+            $<BUILD_INTERFACE:${TRX_LIBZIP_INCLUDE_DIR}>
+        )
+    else()
+        message(FATAL_ERROR "libzip headers not found. Set TRX_LIBZIP_INCLUDE_DIR or fix libzip CMake targets.")
+    endif()
 endif()
+unset(_trx_libzip_includes)
 
+# ── Tests ───────────────────────────────────────────────────────────────────
 if(TRX_BUILD_TESTS)
     find_package(GTest CONFIG QUIET)
     if(NOT GTest_FOUND)
@@ -209,6 +200,7 @@ if(TRX_BUILD_TESTS)
     endif()
 endif()
 
+# ── Benchmarks ──────────────────────────────────────────────────────────────
 if(TRX_BUILD_BENCHMARKS)
     find_package(benchmark CONFIG QUIET)
     if(NOT benchmark_FOUND)
@@ -224,10 +216,10 @@ if(TRX_BUILD_BENCHMARKS)
     add_subdirectory(bench)
 endif()
 
+# ── Optional NIfTI utilities ────────────────────────────────────────────────
 if(TRX_ENABLE_NIFTI)
-    # TRX_ZLIB_TARGET may be pre-set by a caller to skip find_package(ZLIB) and
-    # use a specific target directly (e.g. ITK::ITKZLIBModule). Plain variable,
-    # no CACHE declaration, for the same reason as TRX_EIGEN3_TARGET.
+    # TRX_ZLIB_TARGET: a caller may pre-set this to skip find_package(ZLIB)
+    # (e.g. ITK::ITKZLIBModule). Plain variable, same convention as above.
     if(TRX_ZLIB_TARGET AND TARGET ${TRX_ZLIB_TARGET})
         message(STATUS "trx-cpp: using provided ZLIB target: ${TRX_ZLIB_TARGET}")
     else()
@@ -251,6 +243,7 @@ if(TRX_ENABLE_NIFTI)
     )
 endif()
 
+# ── Examples ────────────────────────────────────────────────────────────────
 if(TRX_BUILD_EXAMPLES)
     FetchContent_Declare(
         cxxopts
@@ -261,6 +254,7 @@ if(TRX_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
+# ── Docs ────────────────────────────────────────────────────────────────────
 if(TRX_BUILD_DOCS)
     find_package(Doxygen QUIET)
     find_program(TRX_SPHINX_BUILD_EXE NAMES sphinx-build)
@@ -280,7 +274,7 @@ if(TRX_BUILD_DOCS)
     endif()
 endif()
 
-# Installation and package config
+# ── Installation and package config ─────────────────────────────────────────
 if(TRX_ENABLE_INSTALL)
     set(TRX_INSTALL_CONFIGDIR "${CMAKE_INSTALL_LIBDIR}/cmake/trx-cpp")
 
