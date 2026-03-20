@@ -7,16 +7,15 @@ Dependencies
 Required:
 
 - C++17 compiler
-- libzip
-- Eigen3
+- zlib (required by libzip)
 
 
 Installing dependencies
 ------------------------
 
 The examples below include GoogleTest, which is only required when building
-the tests. Ninja is optional but recommended. zlib is only required for the
-NIfTI I/O features.
+the tests. Ninja is optional but recommended. libzip and Eigen are resolved by
+CMake: it uses local installs when present and otherwise fetches them.
 
 On Debian-based systems the zip tools have been split into separate packages
 on recent Ubuntu versions.
@@ -25,8 +24,6 @@ on recent Ubuntu versions.
 
    sudo apt-get install \
       zlib1g-dev \
-      libeigen3-dev \
-      libzip-dev \
       zipcmp \
       zipmerge \
       ziptool \
@@ -37,7 +34,7 @@ On Mac OS, you can install the dependencies with brew:
 
 .. code-block:: bash
 
-   brew install libzip eigen googletest ninja zlib
+   brew install googletest ninja zlib
 
 
 On Windows, you can install the dependencies through vcpkg and chocolatey:
@@ -45,7 +42,7 @@ On Windows, you can install the dependencies through vcpkg and chocolatey:
 .. code-block:: powershell
 
    choco install ninja -y
-   vcpkg install libzip eigen3 gtest zlib
+   vcpkg install gtest zlib
 
 
 Building to use in other projects
@@ -70,6 +67,7 @@ Key CMake options:
 - ``TRX_BUILD_DOCS``: Build docs with Doxygen/Sphinx (default OFF)
 - ``TRX_ENABLE_CLANG_TIDY``: Run clang-tidy during builds (default OFF)
 - ``TRX_USE_CONAN``: Use Conan setup in ``cmake/ConanSetup.cmake`` (default OFF)
+- ``TRX_FETCH_EIGEN``: Fetch Eigen3 with FetchContent when not found locally (default ON)
 
 To use trx-cpp from another CMake project after installation:
 
@@ -103,7 +101,7 @@ Building for testing
 
 Tests require GTest to be discoverable by CMake (e.g., via a system package or
 ``GTest_DIR``). If GTest is not found, tests will be skipped.
-NIfTI I/O tests additionally require zlib to be discoverable (``ZLIB::ZLIB``).
+zlib must be discoverable by CMake (``ZLIB::ZLIB``), including for NIfTI I/O.
 
 
 Building documentation:

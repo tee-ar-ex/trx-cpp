@@ -29,6 +29,7 @@ option(TRX_ENABLE_CLANG_TIDY "Run clang-tidy during builds" OFF)
 option(TRX_ENABLE_INSTALL "Install trx-cpp targets" ${TRX_IS_TOP_LEVEL})
 option(TRX_BUILD_DOCS "Build API documentation with Doxygen/Sphinx" OFF)
 option(TRX_ENABLE_NIFTI "Enable optional NIfTI header utilities" ${TRX_BUILD_EXAMPLES})
+option(TRX_FETCH_EIGEN "Fetch Eigen3 via FetchContent if not found" ON)
 
 if(TRX_ENABLE_CLANG_TIDY)
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -127,8 +128,27 @@ else()
         list(PREPEND CMAKE_PREFIX_PATH "${Eigen3_ROOT}")
     endif()
     find_package(Eigen3 3.4 CONFIG QUIET)
-    if(NOT Eigen3_FOUND)
-        find_package(Eigen3 REQUIRED) # try module mode
+    if(NOT TARGET Eigen3::Eigen)
+        # Try module mode for distributions that ship FindEigen3.cmake.
+        find_package(Eigen3 3.4 QUIET MODULE)
+    endif()
+    if(NOT TARGET Eigen3::Eigen AND TRX_FETCH_EIGEN)
+        message(STATUS "Eigen3 not found; fetching v3.4.0")
+        # Eigen 3.4.0's CMakeLists.txt unconditionally enters blas/ and lapack/
+        # which call enable_language(Fortran). Use SOURCE_SUBDIR to skip running
+        # Eigen's CMake entirely — Eigen is header-only so we just need the
+        # include path.
+        FetchContent_Declare(
+            eigen
+            URL https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+            SOURCE_SUBDIR _nonexistent
+        )
+        FetchContent_MakeAvailable(eigen)
+        add_library(Eigen3::Eigen INTERFACE IMPORTED)
+        set_target_properties(Eigen3::Eigen PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${eigen_SOURCE_DIR}"
+        )
     endif()
     # Create an imported target if the package did not provide one (module mode)
     if(NOT TARGET Eigen3::Eigen AND EXISTS "${EIGEN3_INCLUDE_DIR}")
@@ -136,6 +156,9 @@ else()
         set_target_properties(Eigen3::Eigen PROPERTIES
             INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_INCLUDE_DIR}"
         )
+    endif()
+    if(NOT TARGET Eigen3::Eigen)
+        message(FATAL_ERROR "Eigen3 target not found. Install Eigen3 or set TRX_FETCH_EIGEN=ON.")
     endif()
     set(TRX_EIGEN3_TARGET Eigen3::Eigen)
 endif()
@@ -277,6 +300,22 @@ if(TRX_BUILD_DOCS)
 endif()
 
 # ── Installation and package config ─────────────────────────────────────────
+# Installation requires that link dependencies are IMPORTED targets (so they
+# don't need to be in the export set). This is the case when libzip and Eigen
+# were found via find_package (libzip::zip, Eigen3::Eigen). When they were
+# built via FetchContent (bare "zip" target), installation is not supported —
+# the FetchContent path is a developer/CI convenience, not an installable
+# configuration.
+if(TRX_ENABLE_INSTALL AND TARGET zip)
+    get_target_property(_zip_imported zip IMPORTED)
+    if(NOT _zip_imported)
+        message(STATUS "trx-cpp: skipping install — libzip was built via FetchContent. "
+            "Install libzip separately and reconfigure to enable installation.")
+        set(TRX_ENABLE_INSTALL OFF)
+    endif()
+    unset(_zip_imported)
+endif()
+
 if(TRX_ENABLE_INSTALL)
     set(TRX_INSTALL_CONFIGDIR "${CMAKE_INSTALL_LIBDIR}/cmake/trx-cpp")
 

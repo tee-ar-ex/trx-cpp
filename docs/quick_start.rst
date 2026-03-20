@@ -9,8 +9,10 @@ Prerequisites
 
 - A C++17 compiler (GCC ≥ 7, Clang ≥ 5, MSVC 2019+)
 - CMake ≥ 3.14
-- `libzip <https://libzip.org/>`_
-- `Eigen 3.4+ <https://eigen.tuxfamily.org/>`_
+- zlib development headers/libraries
+
+``libzip`` and ``Eigen 3.4+`` are discovered from the local system when
+available and fetched automatically by CMake otherwise.
 
 See :doc:`building` for platform-specific installation commands.
 

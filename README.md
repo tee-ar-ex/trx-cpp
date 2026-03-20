@@ -16,7 +16,7 @@ A C++17 library for reading, writing, and memory-mapping the [TRX tractography f
 
 ## Quick start
 
-**Dependencies:** a C++17 compiler, [libzip](https://libzip.org/), [Eigen 3.4+](https://eigen.tuxfamily.org/)
+**Dependencies:** a C++17 compiler and zlib (`zlib1g-dev` / `zlib-devel` / Homebrew `zlib`). `libzip` and Eigen 3.4+ are found locally when available, otherwise fetched automatically by CMake.
 
 ```cmake
 # CMakeLists.txt
