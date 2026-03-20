@@ -7,8 +7,18 @@
 #include <sys/stat.h>
 #include <system_error>
 #include <trx/trx.h>
+#include <trx/detail/zip_raii.h>
 #include <typeinfo>
 #include <zip.h>
+
+// Internal functions not exposed in the public API — declared here for testing.
+namespace trx {
+zip_t *open_zip_for_read(const std::string &path, int &errorp);
+std::string extract_zip_to_directory(zip_t *zfolder);
+void zip_from_folder(zip_t *zf, const std::string &root, const std::string &directory,
+                     zip_uint32_t compression_standard, const std::unordered_set<std::string> *skip);
+json load_header(zip_t *zfolder);
+} // namespace trx
 
 using namespace Eigen;
 using ::json;
@@ -712,7 +722,7 @@ TEST(TrxFileMemmap, load_mixed_metadata_dtype_into_half_reader) {
   stream.push_streamline(std::vector<float>{2.0f, 2.0f, 2.0f, 3.0f, 3.0f, 3.0f});
   stream.push_dps_from_vector("dps1", "float32", std::vector<float>{1.0f, 4.0f});
   stream.push_dpv_from_vector("dpv1", "float32", std::vector<float>{100.0f, 101.0f, 106.0f, 107.0f});
-  stream.finalize<float>(out_path.string(), ZIP_CM_STORE);
+  stream.finalize<float>(out_path.string(), trx::TrxCompression::None);
 
   trx::TrxReader<half> reader(out_path.string());
   auto *trx = reader.get();

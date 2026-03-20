@@ -30,13 +30,13 @@
 #include <utility>
 #include <vector>
 #include <thread>
-#include <zip.h>
+
 
 #include <mio/mmap.hpp>
 #include <mio/shared_mmap.hpp>
 
 #include <trx/detail/exceptions.h>
-#include <trx/detail/zip_raii.h>
+
 
 namespace trx {
 namespace fs = std::filesystem;
@@ -46,6 +46,8 @@ using json = json11::Json;
 
 namespace trx {
 enum class TrxSaveMode { Auto, Archive, Directory };
+
+enum class TrxCompression { None, Deflate };
 
 enum class TrxScalarType { Float16, Float32, Float64 };
 
@@ -61,7 +63,7 @@ struct ConnectivityMatrixResult {
 };
 
 struct TrxSaveOptions {
-  zip_uint32_t compression_standard = ZIP_CM_STORE;
+  TrxCompression compression = TrxCompression::None;
   TrxSaveMode mode = TrxSaveMode::Auto;
   size_t memory_limit_bytes = 0; // Reserved for future save-path tuning.
   bool overwrite_existing = true;
@@ -121,30 +123,7 @@ inline std::string to_utf8_string(const trx::fs::path &path) {
 #endif
 }
 
-inline zip_t *open_zip_for_read(const std::string &path, int &errorp) {
-  zip_t *zf = zip_open(path.c_str(), 0, &errorp);
-  if (zf != nullptr) {
-    return zf;
-  }
 
-  const trx::fs::path fs_path(path);
-  const std::string generic = fs_path.generic_string();
-  if (generic != path) {
-    zf = zip_open(generic.c_str(), 0, &errorp);
-    if (zf != nullptr) {
-      return zf;
-    }
-  }
-
-#if defined(_WIN32) || defined(_WIN64)
-  const std::string u8 = to_utf8_string(fs_path);
-  if (!u8.empty() && u8 != path && u8 != generic) {
-    zf = zip_open(u8.c_str(), 0, &errorp);
-  }
-#endif
-
-  return zf;
-}
 
 template <typename T> struct DTypeName {
   static constexpr bool supported = false;
@@ -330,9 +309,9 @@ public:
    * @brief Save a TrxFile
    *
    * @param filename  The path to save the TrxFile to
-   * @param compression_standard The compression standard to use, as defined by libzip (default: no compression)
+   * @param compression Compression method (default: no compression).
    */
-  void save(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+  void save(const std::string &filename, TrxCompression compression = TrxCompression::None);
   void save(const std::string &filename, const TrxSaveOptions &options);
   /**
    * @brief Normalize in-memory arrays for deterministic save semantics.
@@ -723,7 +702,7 @@ public:
   size_t num_vertices() const;
   size_t num_streamlines() const;
   void close();
-  void save(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+  void save(const std::string &filename, TrxCompression compression = TrxCompression::None);
   void save(const std::string &filename, const TrxSaveOptions &options);
 
   const TypedArray *get_dps(const std::string &name) const;
@@ -852,10 +831,10 @@ public:
   /**
    * @brief Finalize and write a TRX file.
    */
-  template <typename DT> void finalize(const std::string &filename, zip_uint32_t compression_standard = ZIP_CM_STORE);
+  template <typename DT> void finalize(const std::string &filename, TrxCompression compression = TrxCompression::None);
   void finalize(const std::string &filename,
                 TrxScalarType output_dtype,
-                zip_uint32_t compression_standard = ZIP_CM_STORE);
+                TrxCompression compression = TrxCompression::None);
   void finalize(const std::string &filename, const TrxSaveOptions &options);
 
   /**
@@ -955,15 +934,6 @@ private:
  */
 json assignHeader(const json &root);
 
-/**
- * This function loads the header json file
- * stored within a Zip archive
- *
- * @param[in] zfolder a pointer to an opened zip archive
- * @param[out] header the JSONCpp root of the header. nullptr on error.
- *
- * */
-json load_header(zip_t *zfolder);
 
 /**
  * Load the TRX file stored within a Zip archive.
@@ -1052,7 +1022,7 @@ PositionsOutputInfo prepare_positions_output(const AnyTrxFile &input,
 struct MergeTrxShardsOptions {
   std::vector<std::string> shard_directories;
   std::string output_path;
-  zip_uint32_t compression_standard = ZIP_CM_STORE;
+  TrxCompression compression = TrxCompression::None;
   bool output_directory = false;
   bool overwrite_existing = true;
 };
@@ -1325,22 +1295,28 @@ void ediff1d(Eigen::Matrix<DT, Eigen::Dynamic, 1> &lengths,
  * @tparam DT
  * @param trx The TrxFile to save
  * @param filename  The path to save the TrxFile to
- * @param compression_standard The compression standard to use, as defined by libzip (default: no
- * compression)
+ * @param compression Compression method (default: no compression).
  */
 
 /**
- * @brief Utils function to zip on-disk memmaps
+ * @brief Extract a TRX zip archive to a temporary directory.
  *
- * @param directory The path to the on-disk memmap
- * @param filename The path where the zip file should be created
- * @param compression_standard The compression standard to use, as defined by the ZipFile library
+ * Returns the path to the temporary directory containing the extracted files.
  */
-void zip_from_folder(zip_t *zf,
-                     const std::string &root,
-                     const std::string &directory,
-                     zip_uint32_t compression_standard = ZIP_CM_STORE,
-                     const std::unordered_set<std::string> *skip = nullptr);
+std::string extract_trx_archive(const std::string &zip_path);
+
+/**
+ * @brief Create a TRX zip archive from an on-disk directory.
+ *
+ * Creates the archive at @p filename, compresses the contents of @p source_dir
+ * into it, optionally adding a converted-positions entry.
+ */
+void write_trx_archive(const std::string &filename,
+                        const std::string &source_dir,
+                        TrxCompression compression,
+                        const std::string &converted_positions_path = "",
+                        const std::string &converted_positions_entry = "",
+                        const std::unordered_set<std::string> *skip = nullptr);
 
 std::string get_base(const std::string &delimiter, const std::string &str);
 std::string get_ext(const std::string &str);
@@ -1350,7 +1326,6 @@ void copy_dir(const std::string &src, const std::string &dst);
 void copy_file(const std::string &src, const std::string &dst);
 int rm_dir(const std::string &d);
 std::string make_temp_dir(const std::string &prefix);
-std::string extract_zip_to_directory(zip_t *zfolder);
 
 std::string rm_root(const std::string &root, const std::string &path);
 
@@ -1363,13 +1338,13 @@ std::string rm_root(const std::string &root, const std::string &path);
  *
  * @param path        Path to an existing TRX zip file (.trx).
  * @param groups      Map from group name to sorted vector of uint32 streamline indices.
- * @param compression Compression method for new entries (default: ZIP_CM_STORE).
+ * @param compression Compression method for new entries (default: TrxCompression::None).
  * @param overwrite   If false, existing entries with the same name are skipped (default: true).
  * @throws TrxIOError on any zip failure.
  */
 void append_groups_to_zip(const std::string &path,
                           const std::map<std::string, std::vector<uint32_t>> &groups,
-                          zip_uint32_t compression = ZIP_CM_STORE, bool overwrite = true);
+                          TrxCompression compression = TrxCompression::None, bool overwrite = true);
 
 /**
  * @brief Append named groups to an existing TRX directory.
@@ -1396,12 +1371,12 @@ void append_groups_to_directory(const std::string &directory,
  *
  * @param path        Path to an existing TRX zip file (.trx).
  * @param dps         Map from array name to TypedArray (e.g. AnyTrxFile::data_per_streamline).
- * @param compression Compression method for new entries (default: ZIP_CM_STORE).
+ * @param compression Compression method for new entries (default: TrxCompression::None).
  * @param overwrite   If false, existing entries with the same name are skipped (default: true).
  * @throws TrxIOError on any zip failure.
  */
 void append_dps_to_zip(const std::string &path, const std::map<std::string, TypedArray> &dps,
-                       zip_uint32_t compression = ZIP_CM_STORE, bool overwrite = true);
+                       TrxCompression compression = TrxCompression::None, bool overwrite = true);
 
 /**
  * @brief Append per-streamline data arrays to an existing TRX directory.
@@ -1427,12 +1402,12 @@ void append_dps_to_directory(const std::string &directory,
  *
  * @param path        Path to an existing TRX zip file (.trx).
  * @param dpv         Map from array name to TypedArray (e.g. AnyTrxFile::data_per_vertex).
- * @param compression Compression method for new entries (default: ZIP_CM_STORE).
+ * @param compression Compression method for new entries (default: TrxCompression::None).
  * @param overwrite   If false, existing entries with the same name are skipped (default: true).
  * @throws TrxIOError on any zip failure.
  */
 void append_dpv_to_zip(const std::string &path, const std::map<std::string, TypedArray> &dpv,
-                       zip_uint32_t compression = ZIP_CM_STORE, bool overwrite = true);
+                       TrxCompression compression = TrxCompression::None, bool overwrite = true);
 
 /**
  * @brief Append per-vertex data arrays to an existing TRX directory.

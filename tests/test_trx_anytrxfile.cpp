@@ -410,7 +410,7 @@ TEST(AnyTrxFile, SaveUpdatesHeader) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save");
   const fs::path out_path = temp_dir / "saved_copy.trx";
-  trx.save(out_path.string(), ZIP_CM_STORE);
+  trx.save(out_path.string(), trx::TrxCompression::None);
   trx.close();
 
   auto reloaded = load_any(out_path.string());
@@ -465,14 +465,14 @@ TEST(AnyTrxFile, AppendGroupsToZipAddsAndOverwrites) {
 
   const fs::path archive = temp_root / "base.trx";
   auto source = load_any(shard.string());
-  source.save(archive.string(), ZIP_CM_STORE);
+  source.save(archive.string(), trx::TrxCompression::None);
   source.close();
 
   const std::map<std::string, std::vector<uint32_t>> appended_groups = {
       {"Bundle", {1}},
       {"NewBundle", {0, 1}},
   };
-  append_groups_to_zip(archive.string(), appended_groups, ZIP_CM_STORE);
+  append_groups_to_zip(archive.string(), appended_groups, trx::TrxCompression::None);
 
   auto loaded = load_any(archive.string());
   auto bundle_it = loaded.groups.find("Bundle");
@@ -543,14 +543,14 @@ TEST(AnyTrxFile, AppendDpsToZipAddsAndOverwrites) {
 
   const fs::path archive = temp_root / "base.trx";
   auto source = load_any(shard.string());
-  source.save(archive.string(), ZIP_CM_STORE);
+  source.save(archive.string(), trx::TrxCompression::None);
   source.close();
 
   const std::map<std::string, TypedArray> appended_dps = {
       {"weight", make_float32_array({99.0F, 88.0F})},   // overwrite existing
       {"confidence", make_float32_array({0.9F, 0.8F})}, // new entry
   };
-  append_dps_to_zip(archive.string(), appended_dps, ZIP_CM_STORE);
+  append_dps_to_zip(archive.string(), appended_dps, trx::TrxCompression::None);
 
   auto loaded = load_any(archive.string());
 
@@ -625,14 +625,14 @@ TEST(AnyTrxFile, AppendDpvToZipAddsAndOverwrites) {
 
   const fs::path archive = temp_root / "base.trx";
   auto source = load_any(shard.string());
-  source.save(archive.string(), ZIP_CM_STORE);
+  source.save(archive.string(), trx::TrxCompression::None);
   source.close();
 
   const std::map<std::string, TypedArray> appended_dpv = {
       {"signal", make_float32_array({1.1F, 2.2F, 3.3F})},    // overwrite existing
       {"curvature", make_float32_array({0.5F, 0.6F, 0.7F})}, // new entry
   };
-  append_dpv_to_zip(archive.string(), appended_dpv, ZIP_CM_STORE);
+  append_dpv_to_zip(archive.string(), appended_dpv, trx::TrxCompression::None);
 
   auto loaded = load_any(archive.string());
 
@@ -731,18 +731,18 @@ TEST(AnyTrxFile, AppendNoOverwriteSkipsExistingZip) {
 
   const fs::path archive = temp_root / "base.trx";
   auto source = load_any(shard.string());
-  source.save(archive.string(), ZIP_CM_STORE);
+  source.save(archive.string(), trx::TrxCompression::None);
   source.close();
 
   append_dps_to_zip(archive.string(),
                     {{"weight", make_float32_array({99.0F, 88.0F})},
                      {"confidence", make_float32_array({0.9F, 0.8F})}},
-                    ZIP_CM_STORE, /*overwrite=*/false);
+                    trx::TrxCompression::None, /*overwrite=*/false);
   append_dpv_to_zip(archive.string(),
                     {{"signal", make_float32_array({9.9F, 8.8F, 7.7F})},
                      {"curvature", make_float32_array({0.5F, 0.6F, 0.7F})}},
-                    ZIP_CM_STORE, /*overwrite=*/false);
-  append_groups_to_zip(archive.string(), {{"Bundle", {0, 1}}, {"NewBundle", {1}}}, ZIP_CM_STORE,
+                    trx::TrxCompression::None, /*overwrite=*/false);
+  append_groups_to_zip(archive.string(), {{"Bundle", {0, 1}}, {"NewBundle", {1}}}, trx::TrxCompression::None,
                        /*overwrite=*/false);
 
   auto loaded = load_any(archive.string());
@@ -1020,7 +1020,7 @@ TEST(AnyTrxFile, SaveRejectsUnsupportedExtension) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_badext");
   const fs::path out_path = temp_dir / "bad.txt";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxDTypeError);
+  EXPECT_THROW(trx.save(out_path.string(), trx::TrxCompression::None), trx::TrxDTypeError);
   trx.close();
 
   std::error_code ec;
@@ -1035,7 +1035,7 @@ TEST(AnyTrxFile, SaveRejectsMissingOffsets) {
   trx.offsets = TypedArray();
   const auto temp_dir = make_temp_test_dir("trx_any_save_no_offsets");
   const fs::path out_path = temp_dir / "missing_offsets.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxFormatError);
+  EXPECT_THROW(trx.save(out_path.string(), trx::TrxCompression::None), trx::TrxFormatError);
   trx.close();
 
   std::error_code ec;
@@ -1050,7 +1050,7 @@ TEST(AnyTrxFile, SaveRejectsMissingDecodedOffsets) {
   trx.offsets_u64.clear();
   const auto temp_dir = make_temp_test_dir("trx_any_save_no_offsets_u64");
   const fs::path out_path = temp_dir / "missing_offsets_u64.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxFormatError);
+  EXPECT_THROW(trx.save(out_path.string(), trx::TrxCompression::None), trx::TrxFormatError);
   trx.close();
 
   std::error_code ec;
@@ -1068,7 +1068,7 @@ TEST(AnyTrxFile, SaveRejectsStreamlineCountMismatch) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_bad_streamlines");
   const fs::path out_path = temp_dir / "bad_streamlines.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxFormatError);
+  EXPECT_THROW(trx.save(out_path.string(), trx::TrxCompression::None), trx::TrxFormatError);
   trx.close();
 
   std::error_code ec;
@@ -1086,7 +1086,7 @@ TEST(AnyTrxFile, SaveRejectsVertexCountMismatch) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_bad_vertices");
   const fs::path out_path = temp_dir / "bad_vertices.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxFormatError);
+  EXPECT_THROW(trx.save(out_path.string(), trx::TrxCompression::None), trx::TrxFormatError);
   trx.close();
 
   std::error_code ec;
@@ -1104,7 +1104,7 @@ TEST(AnyTrxFile, SaveRejectsNonMonotonicOffsets) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_non_mono");
   const fs::path out_path = temp_dir / "non_mono.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxFormatError);
+  EXPECT_THROW(trx.save(out_path.string(), trx::TrxCompression::None), trx::TrxFormatError);
   trx.close();
 
   std::error_code ec;
@@ -1122,7 +1122,7 @@ TEST(AnyTrxFile, SaveRejectsPositionsRowMismatch) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_bad_positions");
   const fs::path out_path = temp_dir / "bad_positions.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxFormatError);
+  EXPECT_THROW(trx.save(out_path.string(), trx::TrxCompression::None), trx::TrxFormatError);
   trx.close();
 
   std::error_code ec;
@@ -1139,7 +1139,7 @@ TEST(AnyTrxFile, SaveRejectsMissingBackingDirectory) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_no_backing");
   const fs::path out_path = temp_dir / "no_backing.trx";
-  EXPECT_THROW(trx.save(out_path.string(), ZIP_CM_STORE), trx::TrxIOError);
+  EXPECT_THROW(trx.save(out_path.string(), trx::TrxCompression::None), trx::TrxIOError);
   trx.close();
 
   std::error_code ec;
@@ -1424,7 +1424,7 @@ TEST(AnyTrxFile, SaveRespectsExplicitMode) {
   const fs::path archive_out = temp_root / "save_archive_mode.trx";
   TrxSaveOptions archive_opts;
   archive_opts.mode = TrxSaveMode::Archive;
-  archive_opts.compression_standard = ZIP_CM_STORE;
+  archive_opts.compression = trx::TrxCompression::None;
   trx.save(archive_out.string(), archive_opts);
   EXPECT_TRUE(fs::is_regular_file(archive_out));
 

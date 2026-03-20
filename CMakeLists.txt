@@ -184,8 +184,9 @@ target_compile_features(trx PUBLIC cxx_std_17)
 
 target_link_libraries(trx
     PUBLIC
-        ${TRX_LIBZIP_TARGET}
         ${TRX_EIGEN3_TARGET}
+    PRIVATE
+        ${TRX_LIBZIP_TARGET}
 )
 target_include_directories(trx
     PUBLIC
@@ -202,8 +203,8 @@ get_target_property(_trx_libzip_includes ${TRX_LIBZIP_TARGET} INTERFACE_INCLUDE_
 if(NOT _trx_libzip_includes)
     find_path(TRX_LIBZIP_INCLUDE_DIR zip.h)
     if(TRX_LIBZIP_INCLUDE_DIR)
-        target_include_directories(trx PUBLIC
-            $<BUILD_INTERFACE:${TRX_LIBZIP_INCLUDE_DIR}>
+        target_include_directories(trx PRIVATE
+            ${TRX_LIBZIP_INCLUDE_DIR}
         )
     else()
         message(FATAL_ERROR "libzip headers not found. Set TRX_LIBZIP_INCLUDE_DIR or fix libzip CMake targets.")
@@ -300,22 +301,6 @@ if(TRX_BUILD_DOCS)
 endif()
 
 # ── Installation and package config ─────────────────────────────────────────
-# Installation requires that link dependencies are IMPORTED targets (so they
-# don't need to be in the export set). This is the case when libzip and Eigen
-# were found via find_package (libzip::zip, Eigen3::Eigen). When they were
-# built via FetchContent (bare "zip" target), installation is not supported —
-# the FetchContent path is a developer/CI convenience, not an installable
-# configuration.
-if(TRX_ENABLE_INSTALL AND TARGET zip)
-    get_target_property(_zip_imported zip IMPORTED)
-    if(NOT _zip_imported)
-        message(STATUS "trx-cpp: skipping install — libzip was built via FetchContent. "
-            "Install libzip separately and reconfigure to enable installation.")
-        set(TRX_ENABLE_INSTALL OFF)
-    endif()
-    unset(_zip_imported)
-endif()
-
 if(TRX_ENABLE_INSTALL)
     set(TRX_INSTALL_CONFIGDIR "${CMAKE_INSTALL_LIBDIR}/cmake/trx-cpp")
 
