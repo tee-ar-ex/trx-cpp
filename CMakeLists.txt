@@ -303,7 +303,7 @@ endif()
 # built via FetchContent (bare "zip" target), installation is not supported —
 # the FetchContent path is a developer/CI convenience, not an installable
 # configuration.
-if(TRX_ENABLE_INSTALL AND TRX_LIBZIP_TARGET STREQUAL "zip")
+if(TRX_ENABLE_INSTALL AND TARGET zip AND NOT TARGET libzip::zip)
     message(STATUS "trx-cpp: skipping install — libzip was built via FetchContent. "
         "Install libzip separately and reconfigure to enable installation.")
     set(TRX_ENABLE_INSTALL OFF)
