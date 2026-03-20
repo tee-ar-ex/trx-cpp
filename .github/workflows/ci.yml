@@ -134,3 +134,90 @@ jobs:
           flags: windows
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  zlib-only-host-build:
+    name: zlib-only host (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache vcpkg (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\vcpkg_cache
+          key: zlib-only-vcpkg-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            g++ \
+            ninja-build \
+            zlib1g-dev
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install ninja zlib
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ninja -y
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\vcpkg_cache" | Out-Null
+          git clone https://github.com/microsoft/vcpkg "$env:GITHUB_WORKSPACE\vcpkg"
+          & "$env:GITHUB_WORKSPACE\vcpkg\bootstrap-vcpkg.bat"
+          $env:VCPKG_BINARY_SOURCES="clear;files,$env:GITHUB_WORKSPACE\vcpkg_cache,readwrite"
+          & "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe" install `
+            zlib `
+            --triplet x64-windows
+
+      - name: Configure (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          cmake -S . -B build-zlib-only \
+            -G Ninja \
+            -DTRX_USE_CONAN=OFF \
+            -DTRX_BUILD_TESTS=ON \
+            -DTRX_BUILD_EXAMPLES=ON \
+            -DTRX_ENABLE_NIFTI=ON \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          BREW_PREFIX="$(brew --prefix)"
+          cmake -S . -B build-zlib-only \
+            -G Ninja \
+            -DTRX_USE_CONAN=OFF \
+            -DTRX_BUILD_TESTS=ON \
+            -DTRX_BUILD_EXAMPLES=ON \
+            -DTRX_ENABLE_NIFTI=ON \
+            -DCMAKE_PREFIX_PATH="${BREW_PREFIX}" \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: >
+          cmake -S . -B build-zlib-only
+          -G Ninja
+          -DTRX_USE_CONAN=OFF
+          -DTRX_BUILD_TESTS=ON
+          -DTRX_ENABLE_NIFTI=ON
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+      - name: Build
+        run: cmake --build build-zlib-only --config Release
+
+      - name: Test
+        run: ctest --test-dir build-zlib-only --output-on-failure -C Release
