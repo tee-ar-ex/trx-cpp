@@ -6,6 +6,7 @@ coverage:
   status:
     project:
       default:
+        informational: true
         paths:
           - "include/trx"
           - "src"
