@@ -301,6 +301,21 @@ if(TRX_BUILD_DOCS)
 endif()
 
 # ── Installation and package config ─────────────────────────────────────────
+# CMake's install(EXPORT) requires that all link dependencies (even PRIVATE)
+# are either IMPORTED targets or in the same export set. When libzip was built
+# via FetchContent the bare "zip" target is neither, so install must be skipped.
+if(TRX_ENABLE_INSTALL AND TARGET zip)
+    get_target_property(_zip_imported zip IMPORTED)
+    get_target_property(_zip_aliased zip ALIASED_TARGET)
+    if(NOT _zip_imported AND NOT _zip_aliased)
+        message(STATUS "trx-cpp: skipping install — libzip was built via FetchContent. "
+            "Install libzip separately and reconfigure to enable installation.")
+        set(TRX_ENABLE_INSTALL OFF)
+    endif()
+    unset(_zip_imported)
+    unset(_zip_aliased)
+endif()
+
 if(TRX_ENABLE_INSTALL)
     set(TRX_INSTALL_CONFIGDIR "${CMAKE_INSTALL_LIBDIR}/cmake/trx-cpp")
 
