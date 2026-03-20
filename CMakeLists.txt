@@ -137,6 +137,8 @@ else()
         set(EIGEN_BUILD_DOC OFF CACHE BOOL "Disable Eigen docs" FORCE)
         set(EIGEN_BUILD_TESTING OFF CACHE BOOL "Disable Eigen tests" FORCE)
         set(EIGEN_BUILD_PKGCONFIG OFF CACHE BOOL "Disable Eigen pkg-config generation" FORCE)
+        set(EIGEN_BUILD_BLAS OFF CACHE BOOL "Disable Eigen BLAS (requires Fortran)" FORCE)
+        set(EIGEN_BUILD_LAPACK OFF CACHE BOOL "Disable Eigen LAPACK (requires Fortran)" FORCE)
         set(BUILD_TESTING OFF CACHE BOOL "Disable Eigen testing" FORCE)
         FetchContent_Declare(
             eigen
