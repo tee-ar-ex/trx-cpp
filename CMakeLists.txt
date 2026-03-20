@@ -297,6 +297,18 @@ if(TRX_BUILD_DOCS)
 endif()
 
 # ── Installation and package config ─────────────────────────────────────────
+# Installation requires that link dependencies are IMPORTED targets (so they
+# don't need to be in the export set). This is the case when libzip and Eigen
+# were found via find_package (libzip::zip, Eigen3::Eigen). When they were
+# built via FetchContent (bare "zip" target), installation is not supported —
+# the FetchContent path is a developer/CI convenience, not an installable
+# configuration.
+if(TRX_ENABLE_INSTALL AND TRX_LIBZIP_TARGET STREQUAL "zip")
+    message(STATUS "trx-cpp: skipping install — libzip was built via FetchContent. "
+        "Install libzip separately and reconfigure to enable installation.")
+    set(TRX_ENABLE_INSTALL OFF)
+endif()
+
 if(TRX_ENABLE_INSTALL)
     set(TRX_INSTALL_CONFIGDIR "${CMAKE_INSTALL_LIBDIR}/cmake/trx-cpp")
 

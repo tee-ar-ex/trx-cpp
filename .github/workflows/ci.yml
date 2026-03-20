@@ -160,13 +160,14 @@ jobs:
             cmake \
             g++ \
             ninja-build \
-            zlib1g-dev
+            zlib1g-dev \
+            libgtest-dev
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install ninja zlib
+          brew install ninja zlib googletest
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -179,7 +180,12 @@ jobs:
           $env:VCPKG_BINARY_SOURCES="clear;files,$env:GITHUB_WORKSPACE\vcpkg_cache,readwrite"
           & "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe" install `
             zlib `
+            gtest `
             --triplet x64-windows
+
+      - name: Setup MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure (Ubuntu)
         if: runner.os == 'Linux'
