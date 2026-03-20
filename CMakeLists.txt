@@ -134,18 +134,21 @@ else()
     endif()
     if(NOT TARGET Eigen3::Eigen AND TRX_FETCH_EIGEN)
         message(STATUS "Eigen3 not found; fetching v3.4.0")
-        set(EIGEN_BUILD_DOC OFF CACHE BOOL "Disable Eigen docs" FORCE)
-        set(EIGEN_BUILD_TESTING OFF CACHE BOOL "Disable Eigen tests" FORCE)
-        set(EIGEN_BUILD_PKGCONFIG OFF CACHE BOOL "Disable Eigen pkg-config generation" FORCE)
-        set(EIGEN_BUILD_BLAS OFF CACHE BOOL "Disable Eigen BLAS (requires Fortran)" FORCE)
-        set(EIGEN_BUILD_LAPACK OFF CACHE BOOL "Disable Eigen LAPACK (requires Fortran)" FORCE)
-        set(BUILD_TESTING OFF CACHE BOOL "Disable Eigen testing" FORCE)
+        # Eigen 3.4.0's CMakeLists.txt unconditionally enters blas/ and lapack/
+        # which call enable_language(Fortran). Use SOURCE_SUBDIR to skip running
+        # Eigen's CMake entirely — Eigen is header-only so we just need the
+        # include path.
         FetchContent_Declare(
             eigen
             URL https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
             DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+            SOURCE_SUBDIR _nonexistent
         )
         FetchContent_MakeAvailable(eigen)
+        add_library(Eigen3::Eigen INTERFACE IMPORTED)
+        set_target_properties(Eigen3::Eigen PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${eigen_SOURCE_DIR}"
+        )
     endif()
     # Create an imported target if the package did not provide one (module mode)
     if(NOT TARGET Eigen3::Eigen AND EXISTS "${EIGEN3_INCLUDE_DIR}")
