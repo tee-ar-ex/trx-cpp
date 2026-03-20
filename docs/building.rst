@@ -7,26 +7,24 @@ Dependencies
 Required:
 
 - C++17 compiler
-- zlib (required by libzip)
+- zlib (``zlib1g-dev`` / ``zlib-devel`` / Homebrew ``zlib``)
+
+libzip and Eigen 3.4+ are fetched automatically by CMake when not found
+locally — no manual installation required.
 
 
 Installing dependencies
 ------------------------
 
 The examples below include GoogleTest, which is only required when building
-the tests. Ninja is optional but recommended. libzip and Eigen are resolved by
-CMake: it uses local installs when present and otherwise fetches them.
+the tests. Ninja is optional but recommended.
 
-On Debian-based systems the zip tools have been split into separate packages
-on recent Ubuntu versions.
+On Debian-based systems:
 
 .. code-block:: bash
 
    sudo apt-get install \
       zlib1g-dev \
-      zipcmp \
-      zipmerge \
-      ziptool \
       ninja-build \
       libgtest-dev
 
@@ -48,6 +46,50 @@ On Windows, you can install the dependencies through vcpkg and chocolatey:
 Building to use in other projects
 ---------------------------------
 
+The recommended way to consume trx-cpp is via ``add_subdirectory`` or
+FetchContent — this always works regardless of how libzip is resolved.
+When using either approach, **zlib is the only dependency you need
+pre-installed**; libzip and Eigen 3.4+ are fetched automatically if not
+already present.  Because Eigen is a public dependency of trx-cpp, your
+code can use ``Eigen3::Eigen`` (and include Eigen headers) without a
+separate ``find_package(Eigen3)`` call.
+
+.. code-block:: cmake
+
+   # CMakeLists.txt of your project
+   add_subdirectory(path/to/trx-cpp)           # vendored copy
+   target_link_libraries(your_target PRIVATE trx-cpp::trx)
+
+   # — or via FetchContent —
+   include(FetchContent)
+   FetchContent_Declare(trx-cpp
+       GIT_REPOSITORY https://github.com/tee-ar-ex/trx-cpp.git
+       GIT_TAG        main)
+   FetchContent_MakeAvailable(trx-cpp)
+   target_link_libraries(your_target PRIVATE trx-cpp::trx)
+
+**Installing trx-cpp** (``cmake --install``) requires libzip to be available
+as a system-installed package with CMake config support.  When libzip is
+auto-fetched by CMake (the default), the install step is automatically skipped
+with a status message.
+
+To enable installation, first install libzip through your package manager:
+
+.. code-block:: bash
+
+   # Debian/Ubuntu
+   sudo apt-get install libzip-dev
+
+   # macOS
+   brew install libzip
+
+.. code-block:: powershell
+
+   # Windows (vcpkg)
+   vcpkg install libzip
+
+Then configure and install trx-cpp normally:
+
 .. code-block:: bash
 
    cmake -S . -B build \
@@ -59,6 +101,13 @@ Building to use in other projects
    cmake --build build --config Release
    cmake --install build
 
+After installation, consume the package with:
+
+.. code-block:: cmake
+
+   find_package(trx-cpp CONFIG REQUIRED)
+   target_link_libraries(your_target PRIVATE trx-cpp::trx)
+
 Key CMake options:
 
 - ``TRX_ENABLE_INSTALL``: Install package config and targets (default ON for top-level builds)
@@ -68,21 +117,6 @@ Key CMake options:
 - ``TRX_ENABLE_CLANG_TIDY``: Run clang-tidy during builds (default OFF)
 - ``TRX_USE_CONAN``: Use Conan setup in ``cmake/ConanSetup.cmake`` (default OFF)
 - ``TRX_FETCH_EIGEN``: Fetch Eigen3 with FetchContent when not found locally (default ON)
-
-To use trx-cpp from another CMake project after installation:
-
-.. code-block:: cmake
-
-   find_package(trx-cpp CONFIG REQUIRED)
-   target_link_libraries(your_target PRIVATE trx-cpp::trx)
-
-If you prefer vendoring trx-cpp, you can add it as a subdirectory and link the
-target directly:
-
-.. code-block:: cmake
-
-   add_subdirectory(path/to/trx-cpp)
-   target_link_libraries(your_target PRIVATE trx-cpp::trx)
 
 
 Building for testing
