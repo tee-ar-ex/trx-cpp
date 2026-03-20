@@ -969,13 +969,7 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
 }
 
 template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::load_from_zip(const std::string &filename) {
-  int errorp = 0;
-  detail::ZipArchive zf(open_zip_for_read(filename, errorp));
-  if (!zf) {
-    throw TrxIOError("Could not open zip file: " + filename);
-  }
-
-  std::string temp_dir = extract_zip_to_directory(zf.get());
+  std::string temp_dir = extract_trx_archive(filename);
 
   auto trx = TrxFile<DT>::load_from_directory(temp_dir);
   trx->_uncompressed_folder_handle = temp_dir;
@@ -1134,9 +1128,9 @@ auto with_trx_reader(const std::string &path, Fn &&fn)
   }
 }
 
-template <typename DT> void TrxFile<DT>::save(const std::string &filename, zip_uint32_t compression_standard) {
+template <typename DT> void TrxFile<DT>::save(const std::string &filename, TrxCompression compression) {
   TrxSaveOptions options;
-  options.compression_standard = compression_standard;
+  options.compression = compression;
   save(filename, options);
 }
 
@@ -1280,13 +1274,9 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, const
       }
     }
 
-    int errorp;
-    detail::ZipArchive zf(zip_open(filename.c_str(), ZIP_CREATE + ZIP_TRUNCATE, &errorp));
-    if (!zf) {
-      throw TrxIOError("Could not open archive " + filename + ": " + strerror(errorp));
-    }
-
     std::unordered_set<std::string> skip;
+    std::string converted_pos_path;
+    std::string converted_pos_entry;
     detail::TempFileGuard tmp_pos_guard;
     if (options.positions_dtype.has_value() && save_trx->streamlines) {
       const TrxScalarType target = *options.positions_dtype;
@@ -1299,24 +1289,14 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, const
           auto src_any = load_any(tmp_dir_name);
           write_positions_as_dtype(src_any, target, tmp_pos_guard.path);
         }
-        const std::string new_pos_name = "positions.3." + new_dtype_str;
-        zip_source_t *pos_src = zip_source_file(zf.get(), tmp_pos_guard.path.c_str(), 0, -1);
-        if (!pos_src)
-          throw TrxIOError("Failed to create zip source for converted positions");
-        const zip_int64_t pos_idx = zip_file_add(
-            zf.get(), new_pos_name.c_str(), pos_src, ZIP_FL_ENC_UTF_8 | ZIP_FL_OVERWRITE);
-        if (pos_idx < 0)
-          throw TrxIOError("Failed to add converted positions to archive");
-        if (zip_set_file_compression(
-                zf.get(), pos_idx,
-                static_cast<zip_int32_t>(options.compression_standard), 0) < 0)
-          throw TrxIOError("Failed to set compression for converted positions");
+        converted_pos_path = tmp_pos_guard.path;
+        converted_pos_entry = "positions.3." + new_dtype_str;
       }
     }
-    zip_from_folder(zf.get(), tmp_dir_name, tmp_dir_name, options.compression_standard,
-                    skip.empty() ? nullptr : &skip);
-    zf.commit(filename);
-    // tmp_pos_guard destructor removes the temp file after commit.
+    write_trx_archive(filename, tmp_dir_name, options.compression,
+                       converted_pos_path, converted_pos_entry,
+                       skip.empty() ? nullptr : &skip);
+    // tmp_pos_guard destructor removes the temp file after archive is written.
   } else {
     std::error_code ec;
     if (!trx::fs::exists(tmp_dir_name, ec) || !trx::fs::is_directory(tmp_dir_name, ec)) {
@@ -2008,7 +1988,7 @@ inline void TrxStream::push_group_from_indices(const std::string &name, const st
   }
 }
 
-template <typename DT> void TrxStream::finalize(const std::string &filename, zip_uint32_t compression_standard) {
+template <typename DT> void TrxStream::finalize(const std::string &filename, TrxCompression compression) {
   if (finalized_) {
     throw TrxArgumentError("TrxStream already finalized");
   }
@@ -2092,7 +2072,7 @@ template <typename DT> void TrxStream::finalize(const std::string &filename, zip
     }
   }
 
-  trx.save(filename, compression_standard);
+  trx.save(filename, compression);
   trx.close();
 
   cleanup_tmp();
@@ -2100,17 +2080,17 @@ template <typename DT> void TrxStream::finalize(const std::string &filename, zip
 
 inline void TrxStream::finalize(const std::string &filename,
                                 TrxScalarType output_dtype,
-                                zip_uint32_t compression_standard) {
+                                TrxCompression compression) {
   switch (output_dtype) {
   case TrxScalarType::Float16:
-    finalize<half>(filename, compression_standard);
+    finalize<half>(filename, compression);
     break;
   case TrxScalarType::Float64:
-    finalize<double>(filename, compression_standard);
+    finalize<double>(filename, compression);
     break;
   case TrxScalarType::Float32:
   default:
-    finalize<float>(filename, compression_standard);
+    finalize<float>(filename, compression);
     break;
   }
 }
@@ -2134,7 +2114,7 @@ inline void TrxStream::finalize(const std::string &filename, const TrxSaveOption
   } else if (positions_dtype_ == "float64") {
     out_type = TrxScalarType::Float64;
   }
-  finalize(filename, out_type, options.compression_standard);
+  finalize(filename, out_type, options.compression);
 }
 
 inline void TrxStream::finalize_directory_impl(const std::string &directory, bool remove_existing) {

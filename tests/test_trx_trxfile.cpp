@@ -196,7 +196,7 @@ fs::path create_connectivity_fixture_trx() {
   stream.push_group_from_indices("B", {1, 3, 4});
   stream.push_group_from_indices("C", {2, 4});
   stream.push_dps_from_vector("weight", "float32", std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f});
-  stream.finalize<float>(out_path.string(), ZIP_CM_STORE);
+  stream.finalize<float>(out_path.string(), trx::TrxCompression::None);
 
   return out_path;
 }
@@ -215,7 +215,7 @@ fs::path create_many_groups_fixture_trx(size_t group_count, size_t streamline_co
     const uint32_t sid = static_cast<uint32_t>(g % streamline_count);
     stream.push_group_from_indices(name, {sid});
   }
-  stream.finalize<float>(out_path.string(), ZIP_CM_STORE);
+  stream.finalize<float>(out_path.string(), trx::TrxCompression::None);
 
   return out_path;
 }
@@ -275,7 +275,7 @@ fs::path create_connectivity_no_groups_fixture_trx(size_t streamline_count = 3) 
   for (size_t i = 0; i < streamline_count; ++i) {
     stream.push_streamline(std::vector<float>{0.0f, 0.0f, 0.0f});
   }
-  stream.finalize<float>(out_path.string(), ZIP_CM_STORE);
+  stream.finalize<float>(out_path.string(), trx::TrxCompression::None);
   return out_path;
 }
 
@@ -635,7 +635,7 @@ TEST(TrxFileTpp, TrxStreamFinalize) {
   proto.push_group_from_indices("GroupA", {0, 1});
   proto.push_dps_from_vector("weight", "float32", std::vector<float>{0.5f, 1.5f});
   proto.push_dpv_from_vector("score", "float32", std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f});
-  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);
+  proto.finalize<float>(out_path.string(), trx::TrxCompression::None);
 
   auto trx = load_any(out_path.string());
   EXPECT_EQ(trx.num_streamlines(), 2u);
@@ -690,7 +690,7 @@ TEST(TrxFileTpp, TrxStreamOnDiskMetadataAllDtypes) {
   proto.push_dpv_from_vector("s_f32", "float32", std::vector<float>{1.0f, 2.0f, 3.0f});
   proto.push_dpv_from_vector("s_f64", "float64", std::vector<double>{1.0, 2.0, 3.0});
 
-  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);
+  proto.finalize<float>(out_path.string(), trx::TrxCompression::None);
 
   auto trx = load_any(out_path.string());
   EXPECT_EQ(trx.num_streamlines(), 2u);
@@ -1059,7 +1059,7 @@ TEST(TrxFileTpp, TrxStreamFloat16Unbuffered) {
   std::vector<float> sl2 = {2.0f, 0.0f, 0.0f};
   proto.push_streamline(sl1);
   proto.push_streamline(sl2);
-  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);
+  proto.finalize<float>(out_path.string(), trx::TrxCompression::None);
 
   auto trx = load_any(out_path.string());
   EXPECT_EQ(trx.num_streamlines(), 2u);
@@ -1086,7 +1086,7 @@ TEST(TrxFileTpp, TrxStreamFloat16Buffered) {
   proto.push_streamline(pt);  // buffer: 3 halves
   proto.push_streamline(pt);  // buffer: 6 halves >= 6 → flush
   proto.push_streamline(pt);  // buffer: 3 halves (after flush)
-  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);  // flush remainder, then early-return
+  proto.finalize<float>(out_path.string(), trx::TrxCompression::None);  // flush remainder, then early-return
 
   auto trx = load_any(out_path.string());
   EXPECT_EQ(trx.num_streamlines(), 3u);
@@ -1104,7 +1104,7 @@ TEST(TrxFileTpp, LoadFloat32PositionsFromFloat16Chunked) {
   TrxStream proto("float16");
   proto.push_streamline(std::vector<float>{0.1f, 1.2f, 2.3f, 3.4f, 4.5f, 5.6f});
   proto.push_streamline(std::vector<float>{6.7f, 7.8f, 8.9f});
-  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);
+  proto.finalize<float>(out_path.string(), trx::TrxCompression::None);
 
   LoadFloat32Options options;
   options.chunk_rows = 1; // force chunked loop execution
@@ -1130,7 +1130,7 @@ TEST(TrxFileTpp, LoadFloat32PositionsPassthroughFromFloat32) {
   TrxStream proto("float32");
   proto.push_streamline(std::vector<float>{0.25f, 1.25f, 2.25f, 3.25f, 4.25f, 5.25f});
   proto.push_streamline(std::vector<float>{6.25f, 7.25f, 8.25f});
-  proto.finalize<float>(out_path.string(), ZIP_CM_STORE);
+  proto.finalize<float>(out_path.string(), trx::TrxCompression::None);
 
   auto via_api = load_float32_positions(out_path.string());
   auto direct = load<float>(out_path.string());
@@ -1286,7 +1286,7 @@ TEST(TrxFileTpp, TrxStreamFloat16InMemoryFloat32DpsRoundtrip) {
   const std::vector<float> dpv_in = {1.5f, 26880.0f, 0.03125f};
   proto.push_dpv_from_vector("score", "float32", dpv_in);
 
-  proto.finalize<half>(out_path.string(), ZIP_CM_STORE);
+  proto.finalize<half>(out_path.string(), trx::TrxCompression::None);
 
   // Load via AnyTrxFile so as_matrix<float>() reads the on-disk dtype directly.
   auto trx = load_any(out_path.string());

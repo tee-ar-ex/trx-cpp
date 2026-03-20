@@ -48,6 +48,49 @@ using std::uniform_int_distribution;
 using std::vector;
 
 namespace trx {
+
+// Forward declarations for functions defined later in this file.
+// These were previously declared in trx.h but are now internal.
+std::string extract_zip_to_directory(zip_t *zfolder);
+void zip_from_folder(zip_t *zf, const std::string &root, const std::string &directory,
+                     zip_uint32_t compression_standard, const std::unordered_set<std::string> *skip);
+json load_header(zip_t *zfolder);
+
+zip_uint32_t to_zip_compression(TrxCompression c) {
+  switch (c) {
+  case TrxCompression::Deflate:
+    return ZIP_CM_DEFLATE;
+  case TrxCompression::None:
+  default:
+    return ZIP_CM_STORE;
+  }
+}
+
+zip_t *open_zip_for_read(const std::string &path, int &errorp) {
+  zip_t *zf = zip_open(path.c_str(), 0, &errorp);
+  if (zf != nullptr) {
+    return zf;
+  }
+
+  const trx::fs::path fs_path(path);
+  const std::string generic = fs_path.generic_string();
+  if (generic != path) {
+    zf = zip_open(generic.c_str(), 0, &errorp);
+    if (zf != nullptr) {
+      return zf;
+    }
+  }
+
+#if defined(_WIN32) || defined(_WIN64)
+  const std::string u8 = to_utf8_string(fs_path);
+  if (!u8.empty() && u8 != path && u8 != generic) {
+    zf = zip_open(u8.c_str(), 0, &errorp);
+  }
+#endif
+
+  return zf;
+}
+
 namespace {
 inline int sys_error() { return errno; }
 
@@ -577,9 +620,9 @@ void write_positions_as_dtype(const AnyTrxFile &source,
     throw TrxIOError("I/O error writing converted positions to: " + out_path);
 }
 
-void AnyTrxFile::save(const std::string &filename, zip_uint32_t compression_standard) {
+void AnyTrxFile::save(const std::string &filename, TrxCompression compression) {
   TrxSaveOptions options;
-  options.compression_standard = compression_standard;
+  options.compression = compression;
   save(filename, options);
 }
 
@@ -649,7 +692,7 @@ void AnyTrxFile::save(const std::string &filename, const TrxSaveOptions &options
     if (header_idx < 0) {
       throw TrxIOError("Failed to add header.json to archive: " + std::string(zip_strerror(zf.get())));
     }
-    const zip_int32_t compression = static_cast<zip_int32_t>(options.compression_standard);
+    const zip_int32_t compression = static_cast<zip_int32_t>(to_zip_compression(options.compression));
     if (zip_set_file_compression(zf.get(), header_idx, compression, 0) < 0) {
       throw TrxIOError("Failed to set compression for header.json: " +
                                std::string(zip_strerror(zf.get())));
@@ -679,7 +722,7 @@ void AnyTrxFile::save(const std::string &filename, const TrxSaveOptions &options
           throw TrxIOError("Failed to set compression for converted positions");
       }
     }
-    zip_from_folder(zf.get(), source_dir, source_dir, options.compression_standard, &skip);
+    zip_from_folder(zf.get(), source_dir, source_dir, to_zip_compression(options.compression), &skip);
     zf.commit(filename);
   } else {
     std::error_code ec;
@@ -1139,6 +1182,44 @@ void zip_from_folder(zip_t *zf,
       throw TrxIOError(std::string("Error setting compression for ") + zip_fname + ": " + zip_strerror(zf));
     }
   }
+}
+
+std::string extract_trx_archive(const std::string &zip_path) {
+  int errorp = 0;
+  detail::ZipArchive zf(open_zip_for_read(zip_path, errorp));
+  if (!zf) {
+    throw TrxIOError("Could not open zip file: " + zip_path);
+  }
+  return extract_zip_to_directory(zf.get());
+}
+
+void write_trx_archive(const std::string &filename,
+                        const std::string &source_dir,
+                        TrxCompression compression,
+                        const std::string &converted_positions_path,
+                        const std::string &converted_positions_entry,
+                        const std::unordered_set<std::string> *skip) {
+  const zip_uint32_t zip_comp = to_zip_compression(compression);
+  int errorp;
+  detail::ZipArchive zf(zip_open(filename.c_str(), ZIP_CREATE + ZIP_TRUNCATE, &errorp));
+  if (!zf) {
+    throw TrxIOError("Could not open archive " + filename + ": " + strerror(errorp));
+  }
+
+  if (!converted_positions_path.empty() && !converted_positions_entry.empty()) {
+    zip_source_t *pos_src = zip_source_file(zf.get(), converted_positions_path.c_str(), 0, -1);
+    if (!pos_src)
+      throw TrxIOError("Failed to create zip source for converted positions");
+    const zip_int64_t pos_idx = zip_file_add(
+        zf.get(), converted_positions_entry.c_str(), pos_src, ZIP_FL_ENC_UTF_8 | ZIP_FL_OVERWRITE);
+    if (pos_idx < 0)
+      throw TrxIOError("Failed to add converted positions to archive");
+    if (zip_set_file_compression(zf.get(), pos_idx, static_cast<zip_int32_t>(zip_comp), 0) < 0)
+      throw TrxIOError("Failed to set compression for converted positions");
+  }
+
+  zip_from_folder(zf.get(), source_dir, source_dir, zip_comp, skip);
+  zf.commit(filename);
 }
 
 std::string rm_root(const std::string &root, const std::string &path) {
@@ -1630,7 +1711,7 @@ void merge_trx_shards(const MergeTrxShardsOptions &options) {
   if (!zf) {
     throw TrxIOError("Could not open archive " + options.output_path + ": " + strerror(errorp));
   }
-  zip_from_folder(zf.get(), output_dir, output_dir, options.compression_standard, nullptr);
+  zip_from_folder(zf.get(), output_dir, output_dir, to_zip_compression(options.compression), nullptr);
   zf.commit(options.output_path);
   rm_dir(output_dir);
 }
@@ -1736,13 +1817,13 @@ void append_raw_entries_to_directory(const std::string &directory, const std::st
 
 void append_groups_to_zip(const std::string &path,
                           const std::map<std::string, std::vector<uint32_t>> &groups,
-                          zip_uint32_t compression, bool overwrite) {
+                          TrxCompression compression, bool overwrite) {
   std::vector<RawEntry> entries;
   entries.reserve(groups.size());
   for (const auto &kv : groups) {
     entries.push_back({kv.first + ".uint32", kv.second.data(), kv.second.size() * sizeof(uint32_t)});
   }
-  append_raw_entries_to_zip(path, "groups", entries, compression, overwrite);
+  append_raw_entries_to_zip(path, "groups", entries, to_zip_compression(compression), overwrite);
 }
 
 void append_groups_to_directory(const std::string &directory,
@@ -1757,14 +1838,14 @@ void append_groups_to_directory(const std::string &directory,
 }
 
 void append_dps_to_zip(const std::string &path, const std::map<std::string, TypedArray> &dps,
-                       zip_uint32_t compression, bool overwrite) {
+                       TrxCompression compression, bool overwrite) {
   std::vector<RawEntry> entries;
   entries.reserve(dps.size());
   for (const auto &kv : dps) {
     const auto bytes = kv.second.to_bytes();
     entries.push_back({typed_array_filename(kv.first, kv.second), bytes.data, bytes.size});
   }
-  append_raw_entries_to_zip(path, "dps", entries, compression, overwrite);
+  append_raw_entries_to_zip(path, "dps", entries, to_zip_compression(compression), overwrite);
 }
 
 void append_dps_to_directory(const std::string &directory,
@@ -1779,14 +1860,14 @@ void append_dps_to_directory(const std::string &directory,
 }
 
 void append_dpv_to_zip(const std::string &path, const std::map<std::string, TypedArray> &dpv,
-                       zip_uint32_t compression, bool overwrite) {
+                       TrxCompression compression, bool overwrite) {
   std::vector<RawEntry> entries;
   entries.reserve(dpv.size());
   for (const auto &kv : dpv) {
     const auto bytes = kv.second.to_bytes();
     entries.push_back({typed_array_filename(kv.first, kv.second), bytes.data, bytes.size});
   }
-  append_raw_entries_to_zip(path, "dpv", entries, compression, overwrite);
+  append_raw_entries_to_zip(path, "dpv", entries, to_zip_compression(compression), overwrite);
 }
 
 void append_dpv_to_directory(const std::string &directory,

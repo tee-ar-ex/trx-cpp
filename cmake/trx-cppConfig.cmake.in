@@ -1,9 +1,9 @@
 @PACKAGE_INIT@
 
 include(CMakeFindDependencyMacro)
-find_dependency(libzip)
 find_dependency(Eigen3)
-# mio is header-only and vendored; no package required
+# mio and json11 are header-only and vendored; no package required
+# libzip is a PRIVATE dependency — consumers do not need it
 
 include("${CMAKE_CURRENT_LIST_DIR}/trx-cppTargets.cmake")
 
