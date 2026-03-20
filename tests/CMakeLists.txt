@@ -73,7 +73,7 @@ target_link_libraries(test_mmap PRIVATE trx ${TRX_LIBZIP_TARGET} GTest::gtest_ma
 target_compile_features(test_mmap PRIVATE cxx_std_17)
 
 add_executable(test_io test_trx_io.cpp)
-target_link_libraries(test_io PRIVATE trx GTest::gtest_main)
+target_link_libraries(test_io PRIVATE trx ${TRX_LIBZIP_TARGET} GTest::gtest_main)
 target_compile_features(test_io PRIVATE cxx_std_17)
 if(TRX_ENABLE_NIFTI)
     target_link_libraries(test_io PRIVATE trx-nifti)
