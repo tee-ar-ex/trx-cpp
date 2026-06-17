@@ -512,12 +512,54 @@ AnyTrxFile::_create_from_pointer(json header,
       if (dim != 1) {
         throw TrxFormatError("Wrong group dimensionality");
       }
-      if (ext != "uint32") {
+      if (ext == "uint32") {
+        auto arr = make_typed_array(elem_filename, static_cast<int>(size), 1, ext);
+        arr.materialize_to_owned();
+        trx.groups.emplace(base, std::move(arr));
+      } else if (ext == "int64" || ext == "uint64" || ext == "int32" || ext == "uint8" || ext == "int8" || ext == "uint16" || ext == "int16") {
+        if (ext == "int32" || ext == "uint8" || ext == "int8" || ext == "uint16" || ext == "int16") {
+          std::cerr << "Warning: Upcasting group from " << ext << " to uint32\n";
+        }
+        if (ext == "int64" || ext == "uint64") {
+          uint64_t num_strs = static_cast<uint64_t>(header["NB_STREAMLINES"].number_value());
+          if (num_strs > 4294967295ULL) {
+            throw TrxFormatError("downcasting is unsafe because the number of streamlines exceeds the 32-bit limit");
+          }
+        }
+        auto tmp_arr = make_typed_array(elem_filename, static_cast<int>(size), 1, ext);
+        tmp_arr.materialize_to_owned();
+        TypedArray arr;
+        arr.dtype = "uint32";
+        arr.rows = static_cast<int>(size);
+        arr.cols = 1;
+        arr.owned.resize(static_cast<size_t>(size) * sizeof(uint32_t));
+        uint32_t* dst = reinterpret_cast<uint32_t*>(arr.owned.data());
+        if (ext == "int64") {
+          const int64_t* src = reinterpret_cast<const int64_t*>(tmp_arr.owned.data());
+          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
+        } else if (ext == "uint64") {
+          const uint64_t* src = reinterpret_cast<const uint64_t*>(tmp_arr.owned.data());
+          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
+        } else if (ext == "uint8") {
+          const uint8_t* src = reinterpret_cast<const uint8_t*>(tmp_arr.owned.data());
+          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
+        } else if (ext == "int8") {
+          const int8_t* src = reinterpret_cast<const int8_t*>(tmp_arr.owned.data());
+          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
+        } else if (ext == "uint16") {
+          const uint16_t* src = reinterpret_cast<const uint16_t*>(tmp_arr.owned.data());
+          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
+        } else if (ext == "int16") {
+          const int16_t* src = reinterpret_cast<const int16_t*>(tmp_arr.owned.data());
+          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
+        } else if (ext == "int32") {
+          const int32_t* src = reinterpret_cast<const int32_t*>(tmp_arr.owned.data());
+          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
+        }
+        trx.groups.emplace(base, std::move(arr));
+      } else {
         throw TrxDTypeError("Unsupported group dtype: " + ext);
       }
-      auto arr = make_typed_array(elem_filename, static_cast<int>(size), 1, ext);
-      arr.materialize_to_owned();
-      trx.groups.emplace(base, std::move(arr));
     } else {
       throw TrxFormatError("Entry is not part of a valid TRX structure: " + elem_filename);
     }
