@@ -174,6 +174,7 @@ endif()
 # ── Core library ────────────────────────────────────────────────────────────
 add_library(trx
     src/trx.cpp
+    src/legacy_io.cpp
     src/detail/dtype_helpers.cpp
     include/trx/trx.h
     include/trx/trx.tpp
