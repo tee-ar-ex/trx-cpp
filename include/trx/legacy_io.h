@@ -49,8 +49,10 @@ bool load_trk(const std::string &filename, Tractogram &tr);
 bool load_tck(const std::string &filename, Tractogram &tr);
 bool load_vtk(const std::string &filename, Tractogram &tr);
 
-bool save_trx(const Tractogram &tr, const std::string &out_path);
-bool save_trk(const Tractogram &tr, const std::string &out_path, const std::string &original_filename = "");
+bool load_nifti_header(const std::string &ref_path, json11::Json &out_header);
+
+bool save_trx(const Tractogram &tr, const std::string &out_path, const std::string &ref_nifti_path = "");
+bool save_trk(const Tractogram &tr, const std::string &out_path, const std::string &original_filename = "", const std::string &ref_nifti_path = "");
 bool save_tck(const Tractogram &tr, const std::string &out_path);
 bool save_vtk(const Tractogram &tr, const std::string &out_path);
 
