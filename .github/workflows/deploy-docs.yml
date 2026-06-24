@@ -28,10 +28,21 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository universe
+          sudo apt-get update
           sudo apt-get install -y \
-            cmake g++ pkg-config \
-            zlib1g-dev libeigen3-dev libzip-dev \
-            ninja-build doxygen
+            cmake \
+            g++ \
+            pkg-config \
+            zlib1g-dev \
+            libeigen3-dev \
+            libzip-dev \
+            zipcmp \
+            zipmerge \
+            ziptool \
+            ninja-build \
+            doxygen
 
       - name: Install Python dependencies
         run: python3 -m pip install -r docs/requirements.txt
