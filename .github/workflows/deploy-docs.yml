@@ -36,9 +36,21 @@ jobs:
       - name: Install Python dependencies
         run: python3 -m pip install -r docs/requirements.txt
 
+      - name: Configure trx-cpp
+        run: |
+          cmake -S . -B build \
+            -G Ninja \
+            -DTRX_BUILD_DOCS=ON \
+            -DTRX_BUILD_TESTS=ON \
+            -DTRX_BUILD_EXAMPLES=ON \
+            -DTRX_ENABLE_NIFTI=ON \
+            -DGTest_DIR=${GITHUB_WORKSPACE}/deps/googletest/install/lib/cmake/GTest \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="--coverage" \
+            -DCMAKE_CXX_FLAGS="--coverage"
+
       - name: Build docs
         run: |
-          cmake -S . -B build -DTRX_BUILD_DOCS=ON
           cmake --build build --target docs
 
       - name: Upload artifact
