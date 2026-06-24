@@ -1,8 +1,8 @@
 # TRX-cpp Documentation
 
-```{image} https://readthedocs.org/projects/trx-cpp/badge/?version=latest
+```{image} https://img.shields.io/badge/docs-github.io-blue?style=flat&logo=github
 :alt: Documentation Status
-:target: https://trx-cpp.readthedocs.io/en/latest/
+:target: https://tee-ar-ex.github.io/trx-cpp/
 ```
 
 ```{image} https://codecov.io/gh/tee-ar-ex/trx-cpp/branch/main/graph/badge.svg

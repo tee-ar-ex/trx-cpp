@@ -1,6 +1,6 @@
 # TRX-cpp
 
-[![Documentation](https://readthedocs.org/projects/trx-cpp/badge/?version=latest)](https://trx-cpp.readthedocs.io/en/latest/)
+[![Docs](https://img.shields.io/badge/docs-github.io-blue?style=flat&logo=github)](https://tee-ar-ex.github.io/trx-cpp/)
 [![codecov](https://codecov.io/gh/tee-ar-ex/trx-cpp/branch/main/graph/badge.svg)](https://codecov.io/gh/tee-ar-ex/trx-cpp)
 
 A C++17 library for reading, writing, and memory-mapping the [TRX tractography format](https://github.com/tee-ar-ex/trx-spec) — efficient storage for large-scale tractography data.
@@ -39,11 +39,11 @@ auto positions = trx.positions.as_matrix<float>(); // (NB_VERTICES, 3)
 trx.close();
 ```
 
-See [Building](https://trx-cpp.readthedocs.io/en/latest/building.html) for platform-specific dependency installation and [Quick Start](https://trx-cpp.readthedocs.io/en/latest/quick_start.html) for a complete first program.
+See [Building](https://tee-ar-ex.github.io/trx-cpp/building.html) for platform-specific dependency installation and [Quick Start](https://tee-ar-ex.github.io/trx-cpp/quick_start.html) for a complete first program.
 
 ## Documentation
 
-Full documentation is at **[trx-cpp.readthedocs.io](https://trx-cpp.readthedocs.io/en/latest/)**.
+Full documentation is at **[tee-ar-ex.github.io/trx-cpp](https://tee-ar-ex.github.io/trx-cpp/)**.
 
 ## Third-party notices
 
