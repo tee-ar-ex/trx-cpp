@@ -82,7 +82,7 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   deploy-preview:
     if: github.event_name == 'pull_request'
@@ -94,7 +94,7 @@ jobs:
     steps:
       - name: Deploy PR preview
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
         with:
           preview: true
           artifact_name: github-pages-preview-${{ github.event.number }}
