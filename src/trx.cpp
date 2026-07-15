@@ -516,46 +516,66 @@ AnyTrxFile::_create_from_pointer(json header,
         auto arr = make_typed_array(elem_filename, static_cast<int>(size), 1, ext);
         arr.materialize_to_owned();
         trx.groups.emplace(base, std::move(arr));
-      } else if (ext == "int64" || ext == "uint64" || ext == "int32" || ext == "uint8" || ext == "int8" || ext == "uint16" || ext == "int16") {
-        if (ext == "int32" || ext == "uint8" || ext == "int8" || ext == "uint16" || ext == "int16") {
-          std::cerr << "Warning: Upcasting group from " << ext << " to uint32\n";
+      } else if (ext == "int8" || ext == "uint8" || ext == "int16" || ext == "uint16" || ext == "int32" ||
+                 ext == "int64" || ext == "uint64") {
+        // Group index arrays should be uint32 per the TRX spec, but other integer
+        // dtypes are accepted for cross-language interoperability and normalized to
+        // uint32. The spec also requires every index to satisfy 0 <= id <
+        // NB_STREAMLINES, so each value is range-checked here: a negative or
+        // out-of-range index is rejected rather than silently wrapped into a
+        // valid-looking one.
+        // Copy into a plain local: capturing the structured binding `base` in the
+        // lambda below is only allowed from C++20 onward.
+        const std::string group_name = base;
+        const uint64_t nb_streamlines_u64 = static_cast<uint64_t>(header["NB_STREAMLINES"].number_value());
+        if (nb_streamlines_u64 > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
+          throw TrxFormatError("Cannot normalize group '" + group_name +
+                               "' to uint32: NB_STREAMLINES exceeds the uint32 limit");
         }
-        if (ext == "int64" || ext == "uint64") {
-          uint64_t num_strs = static_cast<uint64_t>(header["NB_STREAMLINES"].number_value());
-          if (num_strs > 4294967295ULL) {
-            throw TrxFormatError("downcasting is unsafe because the number of streamlines exceeds the 32-bit limit");
-          }
-        }
+
         auto tmp_arr = make_typed_array(elem_filename, static_cast<int>(size), 1, ext);
         tmp_arr.materialize_to_owned();
+
         TypedArray arr;
         arr.dtype = "uint32";
         arr.rows = static_cast<int>(size);
         arr.cols = 1;
         arr.owned.resize(static_cast<size_t>(size) * sizeof(uint32_t));
-        uint32_t* dst = reinterpret_cast<uint32_t*>(arr.owned.data());
-        if (ext == "int64") {
-          const int64_t* src = reinterpret_cast<const int64_t*>(tmp_arr.owned.data());
-          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
-        } else if (ext == "uint64") {
-          const uint64_t* src = reinterpret_cast<const uint64_t*>(tmp_arr.owned.data());
-          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
+        uint32_t *dst = reinterpret_cast<uint32_t *>(arr.owned.data());
+
+        auto normalize = [&](auto src_tag) {
+          using S = decltype(src_tag);
+          const S *src = reinterpret_cast<const S *>(tmp_arr.owned.data());
+          for (long long i = 0; i < size; ++i) {
+            const S value = src[i];
+            if constexpr (std::is_signed_v<S>) {
+              if (value < 0) {
+                throw TrxFormatError("Group '" + group_name + "' contains a negative streamline index");
+              }
+            }
+            if (static_cast<uint64_t>(value) >= nb_streamlines_u64) {
+              throw TrxFormatError("Group '" + group_name + "' contains a streamline index >= NB_STREAMLINES");
+            }
+            dst[i] = static_cast<uint32_t>(value);
+          }
+        };
+
+        if (ext == "int8") {
+          normalize(int8_t{});
         } else if (ext == "uint8") {
-          const uint8_t* src = reinterpret_cast<const uint8_t*>(tmp_arr.owned.data());
-          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
-        } else if (ext == "int8") {
-          const int8_t* src = reinterpret_cast<const int8_t*>(tmp_arr.owned.data());
-          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
-        } else if (ext == "uint16") {
-          const uint16_t* src = reinterpret_cast<const uint16_t*>(tmp_arr.owned.data());
-          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
+          normalize(uint8_t{});
         } else if (ext == "int16") {
-          const int16_t* src = reinterpret_cast<const int16_t*>(tmp_arr.owned.data());
-          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
+          normalize(int16_t{});
+        } else if (ext == "uint16") {
+          normalize(uint16_t{});
         } else if (ext == "int32") {
-          const int32_t* src = reinterpret_cast<const int32_t*>(tmp_arr.owned.data());
-          for (size_t i = 0; i < size; ++i) dst[i] = static_cast<uint32_t>(src[i]);
+          normalize(int32_t{});
+        } else if (ext == "int64") {
+          normalize(int64_t{});
+        } else { // uint64
+          normalize(uint64_t{});
         }
+
         trx.groups.emplace(base, std::move(arr));
       } else {
         throw TrxDTypeError("Unsupported group dtype: " + ext);

@@ -1,54 +1,65 @@
 #include <trx/legacy_io.h>
 #include <trx/trx.h>
 #include <Eigen/Dense>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <malloc.h>
-#include <iostream>
-#include <fstream>
-#include <vector>
 #include <cmath>
-#include <limits>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
-#include <thread>
-#include <chrono>
+#include <fstream>
+#include <iostream>
+#include <limits>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace trx {
 namespace legacy {
 
+// Portable byte-swap helpers. These avoid the GCC/Clang-only __builtin_bswap*
+// intrinsics so the file also compiles under MSVC; every modern compiler folds
+// the shift/mask form back into a single bswap instruction.
+inline uint16_t bswap16(uint16_t v) {
+    return static_cast<uint16_t>((v << 8) | (v >> 8));
+}
+
+inline uint32_t bswap32(uint32_t v) {
+    return ((v & 0x000000FFu) << 24) | ((v & 0x0000FF00u) << 8) |
+           ((v & 0x00FF0000u) >> 8)  | ((v & 0xFF000000u) >> 24);
+}
+
+inline uint64_t bswap64(uint64_t v) {
+    return ((v & 0x00000000000000FFULL) << 56) | ((v & 0x000000000000FF00ULL) << 40) |
+           ((v & 0x0000000000FF0000ULL) << 24) | ((v & 0x00000000FF000000ULL) << 8)  |
+           ((v & 0x000000FF00000000ULL) >> 8)  | ((v & 0x0000FF0000000000ULL) >> 24) |
+           ((v & 0x00FF000000000000ULL) >> 40) | ((v & 0xFF00000000000000ULL) >> 56);
+}
+
 inline float swap_float(float f) {
-    union {
-        float f;
-        uint32_t i;
-    } u;
-    u.f = f;
-    u.i = __builtin_bswap32(u.i);
-    return u.f;
+    uint32_t i;
+    std::memcpy(&i, &f, sizeof(i));
+    i = bswap32(i);
+    std::memcpy(&f, &i, sizeof(f));
+    return f;
 }
 
 inline int32_t swap_int32(int32_t i) {
-    return __builtin_bswap32(i);
+    return static_cast<int32_t>(bswap32(static_cast<uint32_t>(i)));
 }
 
 inline int16_t swap_int16(int16_t val) {
-    uint16_t uval = val;
-    uval = (uval << 8) | (uval >> 8);
-    return static_cast<int16_t>(uval);
+    return static_cast<int16_t>(bswap16(static_cast<uint16_t>(val)));
 }
 
 inline int64_t swap_int64(int64_t val) {
-    return __builtin_bswap64(val);
+    return static_cast<int64_t>(bswap64(static_cast<uint64_t>(val)));
 }
 
 inline double swap_double(double d) {
-    union {
-        double d;
-        uint64_t i;
-    } u;
-    u.d = d;
-    u.i = __builtin_bswap64(u.i);
-    return u.d;
+    uint64_t i;
+    std::memcpy(&i, &d, sizeof(i));
+    i = bswap64(i);
+    std::memcpy(&d, &i, sizeof(d));
+    return d;
 }
 
 
@@ -138,13 +149,25 @@ bool load_trk(const std::string &filename, Tractogram &tr) {
     tr.offsets.push_back(0);
     tr.pts.clear();
     
+    if (n_scalars < 0 || n_properties < 0) return false;
+    const size_t point_stride = (3u + static_cast<size_t>(n_scalars)) * sizeof(float);
+    const size_t prop_bytes = static_cast<size_t>(n_properties) * sizeof(float);
+
     size_t offset = 1000;
     while (offset + sizeof(int32_t) <= buffer.size()) {
         int32_t n_points = *reinterpret_cast<const int32_t*>(buffer.data() + offset);
         offset += sizeof(int32_t);
-        
+        if (n_points < 0) return false;
+
+        // Bounds-check the entire streamline record (points + trailing properties)
+        // before reading it, so a corrupt or oversized count can't drive an
+        // out-of-bounds read. buffer.size() - offset is safe here: the while
+        // condition guarantees offset <= buffer.size().
+        const size_t bytes_needed = static_cast<size_t>(n_points) * point_stride + prop_bytes;
+        if (bytes_needed > buffer.size() - offset) return false;
+
         tr.offsets.push_back(tr.offsets.back() + n_points);
-        
+
         for (int32_t j = 0; j < n_points; ++j) {
             float raw_x = *reinterpret_cast<const float*>(buffer.data() + offset);
             float raw_y = *reinterpret_cast<const float*>(buffer.data() + offset + 4);
@@ -166,11 +189,11 @@ bool load_trk(const std::string &filename, Tractogram &tr) {
             tr.pts.push_back(y);
             tr.pts.push_back(z);
 
-            offset += (3 + n_scalars) * sizeof(float);
+            offset += point_stride;
         }
-        offset += n_properties * sizeof(float);
+        offset += prop_bytes;
     }
-    
+
     return true;
 }
 
@@ -189,9 +212,14 @@ bool load_tck(const std::string &filename, Tractogram &tr) {
     if (file_pos == std::string_view::npos) return false;
     size_t offset_pos = file_pos + 8;
     size_t offset_end = view.find_first_not_of("0123456789", offset_pos);
-    if (offset_end == std::string_view::npos) return false;
-    size_t offset = std::stoull(std::string(view.substr(offset_pos, offset_end - offset_pos)));
-    
+    if (offset_end == std::string_view::npos || offset_end == offset_pos) return false;
+    size_t offset;
+    try {
+        offset = std::stoull(std::string(view.substr(offset_pos, offset_end - offset_pos)));
+    } catch (const std::exception &) {
+        return false; // non-numeric or out-of-range data offset
+    }
+
     if (offset >= buffer.size()) return false;
     
     const float* data = reinterpret_cast<const float*>(buffer.data() + offset);
@@ -249,7 +277,11 @@ bool load_vtk(const std::string &filename, Tractogram &tr) {
     while (std::getline(f, line)) {
         if (line.rfind("POINTS ", 0) == 0) {
             size_t space1 = line.find(" ", 7);
-            num_points = std::stoull(line.substr(7, space1 - 7));
+            try {
+                num_points = std::stoull(line.substr(7, space1 - 7));
+            } catch (const std::exception &) {
+                return false; // malformed POINTS count
+            }
             if (line.find("double", space1) != std::string::npos) {
                 is_double = true;
             }
@@ -257,6 +289,17 @@ bool load_vtk(const std::string &filename, Tractogram &tr) {
         }
     }
     if (num_points == 0) return false;
+
+    const size_t elem_size = is_double ? sizeof(double) : sizeof(float);
+    if (num_points > std::numeric_limits<size_t>::max() / (3 * elem_size)) return false; // overflow guard
+
+    // Reject a point count that can't fit in the remaining file bytes, so a corrupt
+    // header can't trigger a huge allocation (and a truncated file fails cleanly).
+    const std::streampos data_start = f.tellg();
+    f.seekg(0, std::ios::end);
+    const size_t bytes_available = static_cast<size_t>(f.tellg() - data_start);
+    f.seekg(data_start);
+    if (num_points * 3 * elem_size > bytes_available) return false;
 
     tr.pts.resize(num_points * 3);
     if (is_double) {
@@ -283,7 +326,11 @@ bool load_vtk(const std::string &filename, Tractogram &tr) {
     size_t num_streamlines = 0;
     while (std::getline(f, line)) {
         if (line.rfind("LINES ", 0) == 0) {
-            num_streamlines = std::stoull(line.substr(6, line.find(" ", 6) - 6));
+            try {
+                num_streamlines = std::stoull(line.substr(6, line.find(" ", 6) - 6));
+            } catch (const std::exception &) {
+                return false; // malformed LINES count
+            }
             break;
         }
     }
@@ -531,6 +578,7 @@ bool save_trx(const Tractogram &tr, const std::string &out_path, const std::stri
             tr.original_trx->save(out_path, trx::TrxCompression::None);
             return true;
         }
+        if (tr.offsets.empty()) return false; // offsets must hold at least the trailing sentinel
         size_t nb_vertices = tr.pts.size() / 3;
         size_t nb_streamlines = tr.offsets.size() - 1;
         
@@ -597,6 +645,7 @@ bool invert_matrix4x4(const float m[4][4], float invOut[4][4]) {
 bool save_trk(const Tractogram &tr, const std::string &out_path, const std::string &original_filename, const std::string &ref_nifti_path) {
     std::ofstream f(out_path, std::ios::binary);
     if (!f.is_open()) return false;
+    if (tr.offsets.empty()) return false; // offsets must hold at least the trailing sentinel
 
     json11::Json header_to_use = tr.header;
     if (header_to_use.is_null() || !header_to_use["VOXEL_TO_RASMM"].is_array() || header_to_use["VOXEL_TO_RASMM"].array_items().empty()) {
@@ -710,9 +759,10 @@ bool save_trk(const Tractogram &tr, const std::string &out_path, const std::stri
 bool save_tck(const Tractogram &tr, const std::string &out_path) {
     std::ofstream f(out_path, std::ios::binary);
     if (!f.is_open()) return false;
+    if (tr.offsets.empty()) return false; // offsets must hold at least the trailing sentinel
 
     size_t num_streamlines = tr.offsets.size() - 1;
-    
+
     // Build TCK header
     std::string header;
     size_t offset = 80;
@@ -767,6 +817,7 @@ bool save_tck(const Tractogram &tr, const std::string &out_path) {
 bool save_vtk(const Tractogram &tr, const std::string &out_path) {
     std::ofstream f(out_path, std::ios::binary);
     if (!f.is_open()) return false;
+    if (tr.offsets.empty()) return false; // offsets must hold at least the trailing sentinel
 
     size_t num_streamlines = tr.offsets.size() - 1;
     size_t num_points = tr.pts.size() / 3;
