@@ -597,9 +597,16 @@ bool save_trx(const Tractogram &tr, const std::string &out_path, const std::stri
             trx.streamlines->_lengths(i, 0) = tr.offsets[i+1] - tr.offsets[i];
         }
         
-        // Copy header
-        trx.header = header_to_use;
-        
+        // Preserve the vertex/streamline counts derived from the data. Assigning
+        // header_to_use directly would drop NB_VERTICES / NB_STREAMLINES for inputs
+        // whose header only carries DIMENSIONS / VOXEL_TO_RASMM (TRK/TCK/VTK),
+        // producing a TRX that fails to load.
+        auto header_obj =
+            header_to_use.is_object() ? header_to_use.object_items() : std::map<std::string, json11::Json>();
+        header_obj["NB_VERTICES"] = static_cast<double>(nb_vertices);
+        header_obj["NB_STREAMLINES"] = static_cast<double>(nb_streamlines);
+        trx.header = header_obj;
+
         trx.save(out_path, trx::TrxCompression::None);
         trx.close();
         
