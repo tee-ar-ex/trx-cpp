@@ -20,6 +20,7 @@ source_suffix = {
 }
 
 html_theme = "pydata_sphinx_theme"
+html_logo = "_static/trx_logo.png"
 html_theme_options = {
     "icon_links": [
         {
@@ -28,12 +29,27 @@ html_theme_options = {
             "icon": "fa-brands fa-github",
         },
     ],
+    "logo": {
+        "image_light": "_static/trx_logo.png",
+        "image_dark": "_static/trx_logo.png",
+        "alt_text": "TRX",
+    },
     "show_toc_level": 2,
+    "navigation_depth": 4,
+    "navigation_with_keys": True,
+    "show_nav_level": 2,
+    "navbar_align": "left",
+    "header_links_before_dropdown": 5,
+}
+
+html_sidebars = {
+    "**": ["sidebar-nav-bs.html"],
 }
 
 myst_enable_extensions = [
     "colon_fence",
     "deflist",
+    "tasklist",
 ]
 
 breathe_projects = {
