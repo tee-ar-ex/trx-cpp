@@ -33,6 +33,7 @@ html_theme_options = {
         "image_light": "_static/trx_logo.png",
         "image_dark": "_static/trx_logo.png",
         "alt_text": "TRX",
+        "link": "https://tee-ar-ex.github.io",
     },
     "show_toc_level": 2,
     "navigation_depth": 4,
