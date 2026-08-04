@@ -839,3 +839,21 @@ TEST(TrxFileIo, export_dpv_to_tsf_errors) {
   trx::TrxFile<float> empty;
   EXPECT_THROW(empty.export_dpv_to_tsf("signal", output_path.string(), "1"), trx::TrxFormatError);
 }
+
+// get_ext must read the extension from the final path component only. A '.' in
+// a parent directory (e.g. a version-numbered build path like ".../foo-5.4/")
+// must not be treated as the extension. Regression for "Unsupported extension".
+TEST(TrxFileIo, get_ext_uses_final_path_component) {
+  // Dotted parent directory, file has no extension -> empty (the bug case).
+  EXPECT_EQ(trx::get_ext("/a/build-5.4/out/trx_test"), "");
+  EXPECT_EQ(trx::get_ext("/a/build-5.4/out/trx_test.trx"), "trx");
+  // No path separator: whole string is the name.
+  EXPECT_EQ(trx::get_ext("out.trx"), "trx");
+  EXPECT_EQ(trx::get_ext("trx_test"), "");
+  // dtype-style array filenames (name.dims.dtype) resolve to the dtype, even
+  // under a dotted parent directory.
+  EXPECT_EQ(trx::get_ext("/a/shard.1/positions.3.float32"), "float32");
+  EXPECT_EQ(trx::get_ext("offsets.uint64"), "uint64");
+  // Trailing dot -> empty.
+  EXPECT_EQ(trx::get_ext("/a/b.c/name."), "");
+}
