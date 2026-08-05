@@ -343,8 +343,23 @@ bool load_vtk(const std::string &filename, Tractogram &tr) {
     bool is_int64 = (line.find("int64") != std::string::npos);
 
     if (has_offsets) {
-        tr.offsets.resize(num_streamlines + 1);
-        for (size_t i = 0; i <= num_streamlines; ++i) {
+        size_t num_offsets = num_streamlines; 
+        size_t space1 = line.find(" ");
+        if (space1 != std::string::npos) {
+            size_t space2 = line.find(" ", space1 + 1);
+            if (space2 != std::string::npos && space2 + 1 < line.size()) {
+                try {
+                    num_offsets = std::stoull(line.substr(space2 + 1));
+                } catch (const std::exception &) {
+                    
+                }
+            }
+        }
+
+        if (num_offsets == 0) return false;
+
+        tr.offsets.resize(num_offsets);
+        for (size_t i = 0; i < num_offsets; ++i) {
             if (is_int64) {
                 uint64_t val;
                 f.read(reinterpret_cast<char*>(&val), 8);
@@ -646,6 +661,48 @@ bool invert_matrix4x4(const float m[4][4], float invOut[4][4]) {
     return true;
 }
 
+/// Derive the 3-char voxel_order string from a 4×4 affine matrix,
+/// replicating nibabel's io_orientation polar-decomposition approach:
+///   1. Normalize columns of the 3×3 block by L2 norm (removes zoom/scale).
+///   2. Eigen::JacobiSVD → R = U * V^T (closest pure rotation matrix).
+///   3. Per-column argmax(|R|) with axis exclusion to handle oblique affines.
+static std::array<char, 3> axcodes_from_affine(const float aff[4][4]) {
+    static const char POS[3] = {'R', 'A', 'S'};
+    static const char NEG[3] = {'L', 'P', 'I'};
+
+    // Step 1: build column-normalized 3×3 matrix
+    Eigen::Matrix3f rs;
+    for (int col = 0; col < 3; ++col) {
+        float norm = std::sqrt(aff[0][col]*aff[0][col]
+                             + aff[1][col]*aff[1][col]
+                             + aff[2][col]*aff[2][col]);
+        if (norm == 0.f) norm = 1.f;
+        for (int row = 0; row < 3; ++row)
+            rs(row, col) = aff[row][col] / norm;
+    }
+
+    // Step 2: JacobiSVD (recommended for small matrices) → R = U * V^T
+    Eigen::JacobiSVD<Eigen::Matrix3f> svd(rs, Eigen::ComputeFullU | Eigen::ComputeFullV);
+    Eigen::Matrix3f r = svd.matrixU() * svd.matrixV().transpose();
+
+    // Step 3: per-column argmax with axis exclusion (mirrors nibabel exactly)
+    bool used[3] = {false, false, false};
+    std::array<char, 3> codes;
+    for (int col = 0; col < 3; ++col) {
+        int best_row = -1;
+        float best_val = -1.f;
+        for (int row = 0; row < 3; ++row) {
+            if (!used[row] && std::abs(r(row, col)) > best_val) {
+                best_val = std::abs(r(row, col));
+                best_row = row;
+            }
+        }
+        used[best_row] = true;
+        codes[col] = (r(best_row, col) >= 0.f) ? POS[best_row] : NEG[best_row];
+    }
+    return codes;
+}
+
 bool save_trk(const Tractogram &tr, const std::string &out_path, const std::string &original_filename, const std::string &ref_nifti_path) {
     std::ofstream f(out_path, std::ios::binary);
     if (!f.is_open()) return false;
@@ -702,7 +759,9 @@ bool save_trk(const Tractogram &tr, const std::string &out_path, const std::stri
         }
     }
 
-    std::memcpy(header.voxel_order, "RAS", 3);
+    auto axcodes = axcodes_from_affine(header.voxel_to_rasmm);
+    std::memcpy(header.voxel_order, axcodes.data(), 3);
+    // header.voxel_order[3] is already '\0' (zero-initialized struct)
     header.nb_streamlines = static_cast<int32_t>(tr.offsets.size() - 1);
     header.version = 2;
     header.hdr_size = 1000;
