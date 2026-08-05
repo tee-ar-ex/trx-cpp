@@ -152,7 +152,7 @@ void print_trx_info(const trx::AnyTrxFile &trx, const std::string &path, bool is
       }
     }
   } else {
-    std::cout << "  " << colorize(colors, colors.cyan, "Data per group") << ": none\n";
+    std::cout << "  " << trx_cli::colorize(colors, colors.cyan, "Data per group") << ": none\n";
   }
 }
 

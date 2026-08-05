@@ -40,9 +40,8 @@
 
 namespace trx {
 namespace fs = std::filesystem;
-}
-
 using json = json11::Json;
+}
 
 namespace trx {
 enum class TrxSaveMode { Auto, Archive, Directory };
@@ -297,7 +296,7 @@ public:
   std::unique_ptr<TrxFile<DT>> deepcopy();
 
   /**
-   * @brief Remove the ununsed portion of preallocated memmaps
+   * @brief Remove the unused portion of preallocated memmaps
    *
    * @param nb_streamlines The number of streamlines to keep
    * @param nb_vertices The number of vertices to keep

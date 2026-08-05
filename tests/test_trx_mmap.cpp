@@ -21,7 +21,7 @@ json load_header(zip_t *zfolder);
 } // namespace trx
 
 using namespace Eigen;
-using ::json;
+using trx::json;
 using trx::TrxFile;
 using trx::TrxScalarType;
 namespace fs = std::filesystem;

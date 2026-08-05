@@ -1336,7 +1336,7 @@ void allocate_file(const std::string &path, std::size_t size) {
     file.flush();
     file.close();
   } else {
-    std::cerr << "Failed to allocate file : " << sys_error() << '\n';
+    std::cerr << "Failed to allocate file: " << sys_error() << '\n';
   }
 }
 

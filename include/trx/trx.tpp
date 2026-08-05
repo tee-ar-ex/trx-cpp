@@ -144,8 +144,10 @@ void copy_cast_from_dtype_buffer(const void *src, size_t n, const std::string &d
 template <class Matrix> void write_binary(const std::string &filename, const Matrix &matrix) {
   std::ofstream out(filename, std::ios::out | std::ios::binary | std::ios::trunc);
   typename Matrix::Index rows = matrix.rows(), cols = matrix.cols();
-  // out.write((char *)(&rows), sizeof(typename Matrix::Index));
-  // out.write((char *)(&cols), sizeof(typename Matrix::Index));
+  auto *rows_ptr = reinterpret_cast<const char *>(&rows); // check_syntax off
+  auto *cols_ptr = reinterpret_cast<const char *>(&cols); // check_syntax off
+  out.write(rows_ptr, sizeof(typename Matrix::Index));
+  out.write(cols_ptr, sizeof(typename Matrix::Index));
   const auto *data = reinterpret_cast<const char *>(matrix.data()); // check_syntax off
   out.write(data, rows * cols * sizeof(typename Matrix::Scalar));
   out.close();
@@ -244,7 +246,7 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
       throw TrxArgumentError("Can't use init_as without declaring nb_vertices and nb_streamlines");
     }
 
-    // will remove as completely unecessary. using as placeholders
+    // will remove as completely unnecessary. using as placeholders
     this->header = {};
     this->streamlines.reset();
 
@@ -432,7 +434,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
     auto [base, dim, ext] = trx::detail::_split_ext_with_dimensionality(elem_filename);
 
-    long long mem_adress = std::get<0>(x->second);
+    long long mem_address = std::get<0>(x->second);
     long long size = std::get<1>(x->second);
 
     if (base == "positions" && (folder.empty() || folder == ".")) {
@@ -446,7 +448,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
       std::tuple<int, int> shape = std::make_tuple(static_cast<int>(trx->header["NB_VERTICES"].int_value()), 3);
       trx->streamlines->mmap_pos =
-          trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
+          trx::_create_memmap(filename, shape, "r+", ext, mem_address);
 
       trx::detail::remap(trx->streamlines->_data, trx->streamlines->mmap_pos.data(), shape);
     }
@@ -466,7 +468,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       const int offsets_rows = missing_sentinel ? (nb_str + 1) : static_cast<int>(size);
       std::tuple<int, int> shape = std::make_tuple(offsets_rows, 1);
       trx->streamlines->mmap_off = trx::_create_memmap(filename, std::make_tuple(static_cast<int>(size), 1), "r+",
-                                                       ext, mem_adress);
+                                                       ext, mem_address);
 
       if (ext == "uint64") {
         if (missing_sentinel) {
@@ -509,7 +511,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       } else {
         shape = std::make_tuple(static_cast<int>(trx->header["NB_STREAMLINES"].int_value()), nb_scalar);
       }
-      trx->data_per_streamline[base]->mmap = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      trx->data_per_streamline[base]->mmap = trx::_create_memmap(filename, shape, "r+", ext, mem_address);
       const std::string expected_dtype = dtype_from_scalar<DT>();
       if (ext == expected_dtype) {
         trx::detail::remap(trx->data_per_streamline[base]->_matrix, trx->data_per_streamline[base]->mmap.data(), shape);
@@ -534,7 +536,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       } else {
         shape = std::make_tuple(static_cast<int>(trx->header["NB_VERTICES"].int_value()), nb_scalar);
       }
-      trx->data_per_vertex[base]->mmap_pos = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      trx->data_per_vertex[base]->mmap_pos = trx::_create_memmap(filename, shape, "r+", ext, mem_address);
       const std::string expected_dtype = dtype_from_scalar<DT>();
       if (ext == expected_dtype) {
         trx::detail::remap(trx->data_per_vertex[base]->_data, trx->data_per_vertex[base]->mmap_pos.data(), shape);
@@ -564,7 +566,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       std::string sub_folder = path_basename(folder);
 
       trx->data_per_group[sub_folder][data_name] = std::make_unique<MMappedMatrix<DT>>();
-      trx->data_per_group[sub_folder][data_name]->mmap = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
+      trx->data_per_group[sub_folder][data_name]->mmap = trx::_create_memmap(filename, shape, "r+", ext, mem_address);
       const std::string expected_dtype = dtype_from_scalar<DT>();
       if (ext == expected_dtype) {
         trx::detail::remap(trx->data_per_group[sub_folder][data_name]->_matrix,
@@ -593,7 +595,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       info.rows = std::get<0>(shape);
       info.cols = std::get<1>(shape);
       info.dtype = ext;
-      info.mem_offset = mem_adress;
+      info.mem_offset = mem_address;
       trx->group_backing_info_[base] = std::move(info);
     } else {
       throw TrxFormatError("Entry is not part of a valid TRX structure: " + elem_filename);
