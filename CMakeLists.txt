@@ -221,6 +221,16 @@ if(TRX_BUILD_TESTS)
     if(NOT GTest_FOUND)
         find_package(GTest QUIET)
     endif()
+    if(NOT GTest_FOUND)
+        message(STATUS "GTest not found; fetching v1.14.0")
+        FetchContent_Declare(
+            googletest
+            GIT_REPOSITORY https://github.com/google/googletest.git
+            GIT_TAG v1.14.0
+        )
+        FetchContent_MakeAvailable(googletest)
+        set(GTest_FOUND TRUE)
+    endif()
     if(GTest_FOUND)
         enable_testing()
         add_subdirectory(tests)

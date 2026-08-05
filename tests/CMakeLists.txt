@@ -1,8 +1,14 @@
 enable_testing()
 
-find_package(GTest CONFIG QUIET)
-if(NOT GTest_FOUND)
-    find_package(GTest REQUIRED)
+if(NOT TARGET GTest::gtest_main AND NOT TARGET gtest_main)
+    find_package(GTest CONFIG QUIET)
+    if(NOT GTest_FOUND)
+        find_package(GTest QUIET)
+    endif()
+endif()
+if(TARGET gtest_main AND NOT TARGET GTest::gtest_main)
+    add_library(GTest::gtest_main ALIAS gtest_main)
+    add_library(GTest::gtest ALIAS gtest)
 endif()
 
 set(TRX_TEST_DATA_REPO "https://github.com/tee-ar-ex/trx-test-data" CACHE STRING "Git repository URL for test data.")

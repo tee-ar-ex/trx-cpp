@@ -343,8 +343,8 @@ bool load_vtk(const std::string &filename, Tractogram &tr) {
     bool is_int64 = (line.find("int64") != std::string::npos);
 
     if (has_offsets) {
-        tr.offsets.resize(num_streamlines);
-        for (size_t i = 0; i < num_streamlines; ++i) {
+        tr.offsets.resize(num_streamlines + 1);
+        for (size_t i = 0; i <= num_streamlines; ++i) {
             if (is_int64) {
                 uint64_t val;
                 f.read(reinterpret_cast<char*>(&val), 8);
@@ -366,6 +366,7 @@ bool load_vtk(const std::string &filename, Tractogram &tr) {
 
     tr.offsets.clear();
     tr.offsets.push_back(0);
+    std::vector<int32_t> skip_buf;
 
     for (size_t i = 0; i < num_streamlines; ++i) {
         int32_t n_pts;
@@ -375,8 +376,11 @@ bool load_vtk(const std::string &filename, Tractogram &tr) {
         if (n_pts == 0) continue;
         tr.offsets.push_back(tr.offsets.back() + n_pts);
         
-        // Skip cell indices
-        f.seekg(n_pts * sizeof(int32_t), std::ios::cur);
+        // Skip cell indices using read instead of seekg for performance
+        if (skip_buf.size() < static_cast<size_t>(n_pts)) {
+            skip_buf.resize(n_pts);
+        }
+        f.read(reinterpret_cast<char*>(skip_buf.data()), n_pts * sizeof(int32_t));
     }
 
     return true;

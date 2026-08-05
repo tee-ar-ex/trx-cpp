@@ -1218,7 +1218,7 @@ TEST(AnyTrxFile, SaveRejectsPositionsRowMismatch) {
   fs::remove_all(temp_dir, ec);
 }
 
-TEST(AnyTrxFile, SaveRejectsMissingBackingDirectory) {
+TEST(AnyTrxFile, SaveWithoutBackingDirectorySucceeds) {
   const auto gs_dir = require_gold_standard_dir();
   const fs::path gs_trx = gs_dir / "gs_fldr.trx";
   auto trx = load_any(gs_trx.string());
@@ -1228,7 +1228,12 @@ TEST(AnyTrxFile, SaveRejectsMissingBackingDirectory) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_no_backing");
   const fs::path out_path = temp_dir / "no_backing.trx";
-  EXPECT_THROW(trx.save(out_path.string(), trx::TrxCompression::None), trx::TrxIOError);
+  EXPECT_NO_THROW(trx.save(out_path.string(), trx::TrxCompression::None));
+
+  auto loaded = load_any(out_path.string());
+  EXPECT_EQ(loaded.num_streamlines(), trx.num_streamlines());
+  EXPECT_EQ(loaded.num_vertices(), trx.num_vertices());
+  loaded.close();
   trx.close();
 
   std::error_code ec;
