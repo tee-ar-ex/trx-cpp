@@ -1289,6 +1289,9 @@ std::string get_base(const std::string &delimiter, const std::string &str) {
 }
 
 std::string get_ext(const std::string &str) {
+  // Extract the extension from the final path component only. Scanning the
+  // whole path for '.' mistakes a dot in a parent directory (e.g. a
+  // version-numbered build path like ".../foo-5.4/out") for the extension.
   const std::size_t sep = str.find_last_of("/\\");
   const std::string name = (sep == std::string::npos) ? str : str.substr(sep + 1);
 
