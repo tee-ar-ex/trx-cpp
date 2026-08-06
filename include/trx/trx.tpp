@@ -144,10 +144,8 @@ void copy_cast_from_dtype_buffer(const void *src, size_t n, const std::string &d
 template <class Matrix> void write_binary(const std::string &filename, const Matrix &matrix) {
   std::ofstream out(filename, std::ios::out | std::ios::binary | std::ios::trunc);
   typename Matrix::Index rows = matrix.rows(), cols = matrix.cols();
-  auto *rows_ptr = reinterpret_cast<const char *>(&rows); // check_syntax off
-  auto *cols_ptr = reinterpret_cast<const char *>(&cols); // check_syntax off
-  out.write(rows_ptr, sizeof(typename Matrix::Index));
-  out.write(cols_ptr, sizeof(typename Matrix::Index));
+  // out.write((char *)(&rows), sizeof(typename Matrix::Index));
+  // out.write((char *)(&cols), sizeof(typename Matrix::Index));
   const auto *data = reinterpret_cast<const char *>(matrix.data()); // check_syntax off
   out.write(data, rows * cols * sizeof(typename Matrix::Scalar));
   out.close();
@@ -155,13 +153,11 @@ template <class Matrix> void write_binary(const std::string &filename, const Mat
 template <class Matrix> void read_binary(const std::string &filename, Matrix &matrix) {
   std::ifstream in(filename, std::ios::in | std::ios::binary);
   typename Matrix::Index rows = 0, cols = 0;
-  auto *rows_ptr = reinterpret_cast<char *>(&rows); // check_syntax off
-  auto *cols_ptr = reinterpret_cast<char *>(&cols); // check_syntax off
-  in.read(rows_ptr, sizeof(typename Matrix::Index));
-  in.read(cols_ptr, sizeof(typename Matrix::Index));
+  // in.read((char *)(&rows), sizeof(typename Matrix::Index));
+  // in.read((char *)(&cols), sizeof(typename Matrix::Index));
   matrix.resize(rows, cols);
-  auto *matrix_ptr = reinterpret_cast<char *>(matrix.data()); // check_syntax off
-  in.read(matrix_ptr, rows * cols * sizeof(typename Matrix::Scalar));
+  auto *data = reinterpret_cast<char *>(matrix.data()); // check_syntax off
+  in.read(data, rows * cols * sizeof(typename Matrix::Scalar));
   in.close();
 }
 

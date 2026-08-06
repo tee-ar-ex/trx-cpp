@@ -38,6 +38,8 @@
 #include <trx/detail/exceptions.h>
 
 
+using json = json11::Json;
+
 namespace trx {
 namespace fs = std::filesystem;
 using json = json11::Json;

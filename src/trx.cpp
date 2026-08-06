@@ -1289,12 +1289,14 @@ std::string get_base(const std::string &delimiter, const std::string &str) {
 }
 
 std::string get_ext(const std::string &str) {
+  const std::size_t sep = str.find_last_of("/\\");
+  const std::string name = (sep == std::string::npos) ? str : str.substr(sep + 1);
+
   std::string ext;
   constexpr char kDelimiter = '.';
-
-  const std::size_t pos = str.rfind(kDelimiter);
-  if (pos != std::string::npos && pos + 1 < str.length()) {
-    ext = str.substr(pos + 1);
+  const std::size_t pos = name.rfind(kDelimiter);
+  if (pos != std::string::npos && pos + 1 < name.length()) {
+    ext = name.substr(pos + 1);
   }
   return ext;
 }
