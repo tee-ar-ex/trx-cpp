@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <memory>
 #include <trx/trx.h>
 
 namespace trx {

@@ -1317,3 +1317,24 @@ TEST(TrxFileTpp, TrxStreamFloat16InMemoryFloat32DpsRoundtrip) {
   std::error_code ec;
   fs::remove_all(tmp_dir, ec);
 }
+
+TEST(TrxFile, ReadWriteBinaryRoundTrip) {
+  const fs::path tmp_file = fs::temp_directory_path() / "test_rw_binary.bin";
+  Eigen::MatrixXf mat_out(5, 3);
+  mat_out.setRandom();
+
+  trx::write_binary(tmp_file.string(), mat_out);
+
+  // Test 1: pre-sized matrix
+  Eigen::MatrixXf mat_in1(5, 3);
+  trx::read_binary(tmp_file.string(), mat_in1);
+  EXPECT_TRUE(mat_out.isApprox(mat_in1));
+
+  // Test 2: empty matrix (infer size)
+  Eigen::MatrixXf mat_in2;
+  trx::read_binary(tmp_file.string(), mat_in2);
+  EXPECT_EQ(mat_in2.size(), mat_out.size());
+
+  std::error_code ec;
+  fs::remove(tmp_file, ec);
+}

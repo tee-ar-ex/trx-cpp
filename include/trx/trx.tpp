@@ -152,12 +152,32 @@ template <class Matrix> void write_binary(const std::string &filename, const Mat
 }
 template <class Matrix> void read_binary(const std::string &filename, Matrix &matrix) {
   std::ifstream in(filename, std::ios::in | std::ios::binary);
-  typename Matrix::Index rows = 0, cols = 0;
-  // in.read((char *)(&rows), sizeof(typename Matrix::Index));
-  // in.read((char *)(&cols), sizeof(typename Matrix::Index));
-  matrix.resize(rows, cols);
-  auto *data = reinterpret_cast<char *>(matrix.data()); // check_syntax off
-  in.read(data, rows * cols * sizeof(typename Matrix::Scalar));
+  if (!in.is_open()) {
+    throw TrxIOError("Failed to open binary file for reading: " + filename);
+  }
+  typename Matrix::Index rows = matrix.rows(), cols = matrix.cols();
+  if (rows == 0 && cols == 0) {
+    in.seekg(0, std::ios::end);
+    std::streamsize file_size = in.tellg();
+    in.seekg(0, std::ios::beg);
+    if (file_size > 0 && sizeof(typename Matrix::Scalar) > 0) {
+      rows = file_size / sizeof(typename Matrix::Scalar);
+      cols = 1;
+      matrix.resize(rows, cols);
+    }
+  } else if (rows == 0 && cols > 0) {
+    in.seekg(0, std::ios::end);
+    std::streamsize file_size = in.tellg();
+    in.seekg(0, std::ios::beg);
+    if (file_size > 0 && sizeof(typename Matrix::Scalar) > 0) {
+      rows = file_size / (cols * sizeof(typename Matrix::Scalar));
+      matrix.resize(rows, cols);
+    }
+  }
+  if (rows > 0 && cols > 0) {
+    auto *data = reinterpret_cast<char *>(matrix.data()); // check_syntax off
+    in.read(data, rows * cols * sizeof(typename Matrix::Scalar));
+  }
   in.close();
 }
 

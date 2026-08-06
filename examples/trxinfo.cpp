@@ -17,6 +17,8 @@
 #include "cli_colors.h"
 
 namespace {
+using json = trx::json;
+
 std::string format_json_array(const json &value) {
   if (!value.is_array()) {
     return "n/a";

@@ -226,16 +226,53 @@ ZipOffsetMap build_zip_offset_map(const std::string &zip_path) {
                              (static_cast<uint32_t>(data[curr + 24]) << 16) |
                              (static_cast<uint32_t>(data[curr + 25]) << 24);
 
+      uint64_t real_comp_size = comp_size;
+      uint64_t real_uncomp_size = uncomp_size;
+
+      if ((comp_size == 0xFFFFFFFF || uncomp_size == 0xFFFFFFFF) && extra_len >= 4) {
+        size_t extra_pos = curr + 30 + name_len;
+        size_t extra_end = extra_pos + extra_len;
+        if (extra_end <= file_size) {
+          while (extra_pos + 4 <= extra_end) {
+            uint16_t header_id = static_cast<uint16_t>(data[extra_pos]) | (static_cast<uint16_t>(data[extra_pos + 1]) << 8);
+            uint16_t block_size = static_cast<uint16_t>(data[extra_pos + 2]) | (static_cast<uint16_t>(data[extra_pos + 3]) << 8);
+            if (header_id == 0x0001) { // ZIP64 extra field
+              size_t field_ptr = extra_pos + 4;
+              if (uncomp_size == 0xFFFFFFFF && field_ptr + 8 <= extra_end) {
+                real_uncomp_size = 0;
+                for (int i = 0; i < 8; ++i) {
+                  real_uncomp_size |= (static_cast<uint64_t>(data[field_ptr + i]) << (8 * i));
+                }
+                field_ptr += 8;
+              }
+              if (comp_size == 0xFFFFFFFF && field_ptr + 8 <= extra_end) {
+                real_comp_size = 0;
+                for (int i = 0; i < 8; ++i) {
+                  real_comp_size |= (static_cast<uint64_t>(data[field_ptr + i]) << (8 * i));
+                }
+                field_ptr += 8;
+              }
+              break;
+            }
+            extra_pos += 4 + block_size;
+          }
+        }
+      }
+
       if (curr + 30 + name_len <= file_size) {
         std::string cur_name(reinterpret_cast<const char *>(data + curr + 30), name_len);
         size_t payload_offset = curr + 30 + name_len + extra_len;
-        size_t payload_size   = uncomp_size > 0 ? uncomp_size : comp_size;
+        size_t payload_size   = static_cast<size_t>(real_uncomp_size > 0 ? real_uncomp_size : real_comp_size);
         if (payload_offset + payload_size <= file_size) {
           result.emplace(normalize_slashes(cur_name),
                          std::make_pair(payload_offset, payload_size));
         }
       }
-      curr += 30 + name_len + extra_len + comp_size;
+      size_t next_curr = curr + 30 + name_len + extra_len + static_cast<size_t>(real_comp_size);
+      if (next_curr <= curr) {
+        break;
+      }
+      curr = next_curr;
     } else {
       curr++;
     }
@@ -905,21 +942,24 @@ std::vector<uint8_t> convert_positions_to_vector(const AnyTrxFile &source, TrxSc
         auto write_as = [&](auto typed_src) {
           switch (target_dtype) {
           case TrxScalarType::Float16: {
-            auto *dst = reinterpret_cast<Eigen::half *>(dst_chunk);
-            for (size_t i = 0; i < n; ++i)
-              dst[i] = static_cast<Eigen::half>(static_cast<float>(typed_src[i]));
+            for (size_t i = 0; i < n; ++i) {
+              Eigen::half val = static_cast<Eigen::half>(static_cast<float>(typed_src[i]));
+              std::memcpy(dst_chunk + i * sizeof(Eigen::half), &val, sizeof(Eigen::half));
+            }
             break;
           }
           case TrxScalarType::Float64: {
-            auto *dst = reinterpret_cast<double *>(dst_chunk);
-            for (size_t i = 0; i < n; ++i)
-              dst[i] = static_cast<double>(typed_src[i]);
+            for (size_t i = 0; i < n; ++i) {
+              double val = static_cast<double>(typed_src[i]);
+              std::memcpy(dst_chunk + i * sizeof(double), &val, sizeof(double));
+            }
             break;
           }
           default: {
-            auto *dst = reinterpret_cast<float *>(dst_chunk);
-            for (size_t i = 0; i < n; ++i)
-              dst[i] = static_cast<float>(typed_src[i]);
+            for (size_t i = 0; i < n; ++i) {
+              float val = static_cast<float>(typed_src[i]);
+              std::memcpy(dst_chunk + i * sizeof(float), &val, sizeof(float));
+            }
             break;
           }
           }
@@ -1042,18 +1082,12 @@ void AnyTrxFile::save(const std::string &filename, const TrxSaveOptions &options
     }
 
     const zip_int32_t compression = static_cast<zip_int32_t>(to_zip_compression(options.compression));
+    std::vector<std::vector<uint8_t>> backing_buffers;
+    std::vector<std::string> string_buffers;
 
     auto add_zip_buffer_entry = [&](const std::string &entry_name, const void *data, size_t size) {
-      void *buf = std::malloc(size > 0 ? size : 1);
-      if (!buf) {
-        throw TrxIOError("Failed to allocate buffer for zip entry: " + entry_name);
-      }
-      if (size > 0 && data != nullptr) {
-        std::memcpy(buf, data, size);
-      }
-      zip_source_t *src = zip_source_buffer(zf.get(), buf, size, 1 /* freep=1 */);
+      zip_source_t *src = zip_source_buffer(zf.get(), data != nullptr ? data : "", size, 0 /* freep=0 */);
       if (!src) {
-        std::free(buf);
         throw TrxIOError("zip_source_buffer failed for: " + entry_name);
       }
       const zip_int64_t idx = zip_file_add(zf.get(), entry_name.c_str(), src, ZIP_FL_ENC_UTF_8 | ZIP_FL_OVERWRITE);
@@ -1066,13 +1100,15 @@ void AnyTrxFile::save(const std::string &filename, const TrxSaveOptions &options
     };
 
     // 1. Header
-    const std::string header_payload = header.dump() + "\n";
+    string_buffers.push_back(header.dump() + "\n");
+    const std::string &header_payload = string_buffers.back();
     add_zip_buffer_entry("header.json", header_payload.data(), header_payload.size());
 
     // 2. Positions
     if (options.positions_dtype.has_value() && !positions.empty()) {
       const TrxScalarType target = *options.positions_dtype;
-      std::vector<uint8_t> converted_pos = convert_positions_to_vector(*this, target);
+      backing_buffers.push_back(convert_positions_to_vector(*this, target));
+      const auto &converted_pos = backing_buffers.back();
       const std::string pos_name = "positions.3." + scalar_type_name(target);
       add_zip_buffer_entry(pos_name, converted_pos.data(), converted_pos.size());
     } else if (!positions.empty()) {

@@ -49,10 +49,10 @@ TEST(GsConsistency, HeaderDataMetadataWithinEpsilon) {
 
   // 1. Compare streamline count and vertex counts
   const size_t num_streamlines = tr_trx.offsets.size() > 0 ? tr_trx.offsets.size() - 1 : 0;
-  EXPECT_GT(num_streamlines, 0u);
-  EXPECT_EQ(tr_trk.offsets.size() - 1, num_streamlines);
-  EXPECT_EQ(tr_tck.offsets.size() - 1, num_streamlines);
-  EXPECT_EQ(tr_vtk.offsets.size() - 1, num_streamlines);
+  ASSERT_GT(num_streamlines, 0u);
+  ASSERT_EQ(tr_trk.offsets.size() - 1, num_streamlines);
+  ASSERT_EQ(tr_tck.offsets.size() - 1, num_streamlines);
+  ASSERT_EQ(tr_vtk.offsets.size() - 1, num_streamlines);
 
   for (size_t i = 0; i < tr_trx.offsets.size(); ++i) {
     EXPECT_EQ(tr_trk.offsets[i], tr_trx.offsets[i]);
@@ -62,9 +62,9 @@ TEST(GsConsistency, HeaderDataMetadataWithinEpsilon) {
 
   // 2. Compare vertex positions within small epsilon (1e-3)
   const size_t num_pts_values = tr_trx.pts.size();
-  EXPECT_EQ(tr_trk.pts.size(), num_pts_values);
-  EXPECT_EQ(tr_tck.pts.size(), num_pts_values);
-  EXPECT_EQ(tr_vtk.pts.size(), num_pts_values);
+  ASSERT_EQ(tr_trk.pts.size(), num_pts_values);
+  ASSERT_EQ(tr_tck.pts.size(), num_pts_values);
+  ASSERT_EQ(tr_vtk.pts.size(), num_pts_values);
 
   constexpr float kEpsilon = 1e-3f;
 
