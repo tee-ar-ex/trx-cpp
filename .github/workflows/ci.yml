@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - main
-      - fixes_for_benchmark
 jobs:
   build:
     name: ${{ matrix.os }}
