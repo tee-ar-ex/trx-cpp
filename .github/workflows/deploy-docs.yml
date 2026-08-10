@@ -1,0 +1,85 @@
+name: Deploy docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{
+    github.event_name == 'pull_request'
+    && format('pr-{0}', github.event.number)
+    || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository universe
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            g++ \
+            pkg-config \
+            zlib1g-dev \
+            libeigen3-dev \
+            libzip-dev \
+            zipcmp \
+            zipmerge \
+            ziptool \
+            ninja-build \
+            doxygen
+
+      - name: Install Python dependencies
+        run: python3 -m pip install -r docs/requirements.txt
+
+      - name: Configure trx-cpp
+        run: |
+          cmake -S . -B build \
+            -G Ninja \
+            -DTRX_BUILD_DOCS=ON \
+            -DTRX_BUILD_TESTS=ON \
+            -DTRX_BUILD_EXAMPLES=ON \
+            -DTRX_ENABLE_NIFTI=ON \
+            -DGTest_DIR=${GITHUB_WORKSPACE}/deps/googletest/install/lib/cmake/GTest \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="--coverage" \
+            -DCMAKE_CXX_FLAGS="--coverage"
+
+      - name: Build docs
+        run: |
+          cmake --build build --target docs
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: ${{ github.event_name == 'pull_request'
+            && format('github-pages-preview-{0}', github.event.number)
+            || 'github-pages' }}
+          path: docs/_build/html
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

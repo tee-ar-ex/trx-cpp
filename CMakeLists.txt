@@ -308,6 +308,10 @@ if(TRX_BUILD_DOCS)
             COMMENT "Building Doxygen XML and Sphinx HTML docs"
             VERBATIM
         )
+        add_custom_target(docs_clean
+            COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_CURRENT_SOURCE_DIR}/docs/_build
+            COMMENT "Cleaning docs build directory"
+        )
     else()
         message(STATUS "Docs disabled: Doxygen or sphinx-build not found.")
     endif()
