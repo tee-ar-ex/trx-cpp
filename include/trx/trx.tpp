@@ -211,7 +211,7 @@ std::unique_ptr<TrxFile<DT>> TrxFile<DT>::make_empty_like() const {
 }
 
 template <typename DT>
-TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *init_as, std::string reference) {
+TrxFile<DT>::TrxFile(int64_t nb_vertices, int64_t nb_streamlines, const TrxFile<DT> *init_as, std::string reference) {
   std::vector<std::vector<float>> affine(4);
   std::vector<uint16_t> dimensions(3);
 
@@ -275,15 +275,16 @@ TrxFile<DT>::TrxFile(int nb_vertices, int nb_streamlines, const TrxFile<DT> *ini
   json::object header_obj;
   header_obj["VOXEL_TO_RASMM"] = affine;
   header_obj["DIMENSIONS"] = dimensions;
-  header_obj["NB_VERTICES"] = nb_vertices;
-  header_obj["NB_STREAMLINES"] = nb_streamlines;
+  // json11 has no 64-bit integer constructor; store counts as double
+  header_obj["NB_VERTICES"] = static_cast<double>(nb_vertices);
+  header_obj["NB_STREAMLINES"] = static_cast<double>(nb_streamlines);
   this->header = json(header_obj);
 
   this->_copy_safe = true;
 }
 
 template <typename DT>
-std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_vertices, const TrxFile<DT> *init_as) {
+std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int64_t nb_streamlines, int64_t nb_vertices, const TrxFile<DT> *init_as) {
   auto trx = std::make_unique<TrxFile<DT>>();
 
   std::string tmp_dir = make_temp_dir("trx");
@@ -292,8 +293,8 @@ std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_ve
   if (init_as != nullptr) {
     header = init_as->header;
   }
-  header = _json_set(header, "NB_VERTICES", nb_vertices);
-  header = _json_set(header, "NB_STREAMLINES", nb_streamlines);
+  header = _json_set(header, "NB_VERTICES", static_cast<double>(nb_vertices));
+  header = _json_set(header, "NB_STREAMLINES", static_cast<double>(nb_streamlines));
 
   std::string positions_dtype;
   std::string offsets_dtype;
@@ -313,7 +314,7 @@ std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_ve
   std::string positions_filename(tmp_dir);
   positions_filename += "/positions.3." + positions_dtype;
 
-  std::tuple<int, int> shape = std::make_tuple(nb_vertices, 3);
+  std::tuple<int64_t, int64_t> shape = std::make_tuple(nb_vertices, static_cast<int64_t>(3));
 
   trx->streamlines = std::make_unique<ArraySequence<DT>>();
   trx->streamlines->mmap_pos = trx::_create_memmap(positions_filename, shape, "w+", positions_dtype);
@@ -323,7 +324,7 @@ std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_ve
   std::string offsets_filename(tmp_dir);
   offsets_filename += "/offsets." + offsets_dtype;
 
-  std::tuple<int, int> shape_off = std::make_tuple(nb_streamlines + 1, 1);
+  std::tuple<int64_t, int64_t> shape_off = std::make_tuple(nb_streamlines + 1, static_cast<int64_t>(1));
 
   trx->streamlines->mmap_off = trx::_create_memmap(offsets_filename, shape_off, "w+", offsets_dtype);
   trx::detail::remap(trx->streamlines->_offsets, trx->streamlines->mmap_off.data(), shape_off);
@@ -344,7 +345,7 @@ std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_ve
     }
 
     for (auto const &x : init_as->data_per_vertex) {
-      int rows, cols;
+      int64_t rows, cols;
       std::string dpv_dtype = dtype_from_scalar<DT>();
       Map<Matrix<DT, Dynamic, Dynamic, RowMajor>> tmp_as = init_as->data_per_vertex.find(x.first)->second->_data;
 
@@ -360,20 +361,20 @@ std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_ve
         dpv_filename = dpv_dirname + x.first + "." + std::to_string(cols) + "." + dpv_dtype;
       }
 
-      std::tuple<int, int> dpv_shape = std::make_tuple(rows, cols);
+      std::tuple<int64_t, int64_t> dpv_shape = std::make_tuple(rows, cols);
       trx->data_per_vertex[x.first] = std::make_unique<ArraySequence<DT>>();
       trx->data_per_vertex[x.first]->mmap_pos = trx::_create_memmap(dpv_filename, dpv_shape, "w+", dpv_dtype);
       trx::detail::remap(trx->data_per_vertex[x.first]->_data, trx->data_per_vertex[x.first]->mmap_pos.data(), rows,
                          cols);
 
       trx::detail::remap(trx->data_per_vertex[x.first]->_offsets, trx->streamlines->_offsets.data(),
-                         int(trx->streamlines->_offsets.rows()), int(trx->streamlines->_offsets.cols()));
+                         trx->streamlines->_offsets.rows(), trx->streamlines->_offsets.cols());
       trx->data_per_vertex[x.first]->_lengths = trx->streamlines->_lengths;
     }
 
     for (auto const &x : init_as->data_per_streamline) {
       std::string dps_dtype = dtype_from_scalar<DT>();
-      int rows, cols;
+      int64_t rows, cols;
       Map<Matrix<DT, Dynamic, Dynamic>> tmp_as = init_as->data_per_streamline.find(x.first)->second->_matrix;
 
       std::string dps_filename;
@@ -388,7 +389,7 @@ std::unique_ptr<TrxFile<DT>> _initialize_empty_trx(int nb_streamlines, int nb_ve
         dps_filename = dps_dirname + x.first + "." + std::to_string(cols) + "." + dps_dtype;
       }
 
-      std::tuple<int, int> dps_shape = std::make_tuple(rows, cols);
+      std::tuple<int64_t, int64_t> dps_shape = std::make_tuple(rows, cols);
       trx->data_per_streamline[x.first] = std::make_unique<trx::MMappedMatrix<DT>>();
       trx->data_per_streamline[x.first]->mmap =
           trx::_create_memmap(dps_filename, dps_shape, std::string("w+"), dps_dtype);
@@ -436,7 +437,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
     long long size = std::get<1>(x->second);
 
     if (base == "positions" && (folder.empty() || folder == ".")) {
-      const auto nb_vertices = static_cast<int64_t>(trx->header["NB_VERTICES"].int_value());
+      const auto nb_vertices = _json_int64(trx->header["NB_VERTICES"]);
       const auto expected = nb_vertices * 3;
       if (size != expected || dim != 3) {
         throw TrxFormatError("Wrong data size/dimensionality: size=" + std::to_string(size) +
@@ -444,7 +445,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
                                     " filename=" + elem_filename);
       }
 
-      std::tuple<int, int> shape = std::make_tuple(static_cast<int>(trx->header["NB_VERTICES"].int_value()), 3);
+      std::tuple<int64_t, int64_t> shape = std::make_tuple(nb_vertices, static_cast<int64_t>(3));
       trx->streamlines->mmap_pos =
           trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
 
@@ -452,8 +453,8 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
     }
 
     else if (base == "offsets" && (folder.empty() || folder == ".")) {
-      const auto nb_streamlines = static_cast<int64_t>(trx->header["NB_STREAMLINES"].int_value());
-      const auto nb_vertices = static_cast<uint64_t>(trx->header["NB_VERTICES"].int_value());
+      const auto nb_streamlines = _json_int64(trx->header["NB_STREAMLINES"]);
+      const auto nb_vertices = static_cast<uint64_t>(_json_int64(trx->header["NB_VERTICES"]));
       const auto expected = nb_streamlines + 1;
       const bool missing_sentinel = (size == nb_streamlines && dim == 1);
       if ((size != expected && !missing_sentinel) || dim != 1) {
@@ -462,17 +463,17 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
                                     " filename=" + elem_filename);
       }
 
-      const int nb_str = static_cast<int>(trx->header["NB_STREAMLINES"].int_value());
-      const int offsets_rows = missing_sentinel ? (nb_str + 1) : static_cast<int>(size);
-      std::tuple<int, int> shape = std::make_tuple(offsets_rows, 1);
-      trx->streamlines->mmap_off = trx::_create_memmap(filename, std::make_tuple(static_cast<int>(size), 1), "r+",
-                                                       ext, mem_adress);
+      const int64_t nb_str = nb_streamlines;
+      const int64_t offsets_rows = missing_sentinel ? (nb_str + 1) : static_cast<int64_t>(size);
+      std::tuple<int64_t, int64_t> shape = std::make_tuple(offsets_rows, static_cast<int64_t>(1));
+      trx->streamlines->mmap_off = trx::_create_memmap(filename, std::make_tuple(static_cast<int64_t>(size), static_cast<int64_t>(1)),
+                                                       "r+", ext, mem_adress);
 
       if (ext == "uint64") {
         if (missing_sentinel) {
           trx->streamlines->_offsets_owned.resize(static_cast<size_t>(offsets_rows));
           auto *src = reinterpret_cast<const uint64_t *>(trx->streamlines->mmap_off.data()); // NOLINT
-          for (int i = 0; i < static_cast<int>(size); ++i) {
+          for (long long i = 0; i < size; ++i) {
             trx->streamlines->_offsets_owned[static_cast<size_t>(i)] = src[i];
           }
           trx->streamlines->_offsets_owned.back() = nb_vertices;
@@ -483,7 +484,7 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
       } else if (ext == "uint32") {
         trx->streamlines->_offsets_owned.resize(static_cast<size_t>(offsets_rows));
         auto *src = reinterpret_cast<const uint32_t *>(trx->streamlines->mmap_off.data()); // NOLINT
-        for (int i = 0; i < static_cast<int>(size); ++i) {
+        for (long long i = 0; i < size; ++i) {
           trx->streamlines->_offsets_owned[static_cast<size_t>(i)] = static_cast<uint64_t>(src[i]);
         }
         if (missing_sentinel) {
@@ -496,18 +497,19 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
 
       Matrix<uint64_t, Dynamic, 1> offsets = trx->streamlines->_offsets;
       trx->streamlines->_lengths =
-          trx::detail::_compute_lengths(offsets, static_cast<int>(trx->header["NB_VERTICES"].int_value()));
+          trx::detail::_compute_lengths(offsets, _json_int64(trx->header["NB_VERTICES"]));
     }
 
     else if (folder == "dps") {
-      std::tuple<int, int> shape;
+      std::tuple<int64_t, int64_t> shape;
       trx->data_per_streamline[base] = std::make_unique<MMappedMatrix<DT>>();
-      int nb_scalar = size / static_cast<int>(trx->header["NB_STREAMLINES"].int_value());
+      const int64_t nb_streamlines = _json_int64(trx->header["NB_STREAMLINES"]);
+      const int64_t nb_scalar = nb_streamlines > 0 ? size / nb_streamlines : 0;
 
-      if (size % static_cast<int>(trx->header["NB_STREAMLINES"].int_value()) != 0 || nb_scalar != dim) {
+      if (nb_streamlines == 0 || size % nb_streamlines != 0 || nb_scalar != dim) {
         throw TrxFormatError("Wrong dps size/dimensionality");
       } else {
-        shape = std::make_tuple(static_cast<int>(trx->header["NB_STREAMLINES"].int_value()), nb_scalar);
+        shape = std::make_tuple(nb_streamlines, nb_scalar);
       }
       trx->data_per_streamline[base]->mmap = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
       const std::string expected_dtype = dtype_from_scalar<DT>();
@@ -525,14 +527,15 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
     }
 
     else if (folder == "dpv") {
-      std::tuple<int, int> shape;
+      std::tuple<int64_t, int64_t> shape;
       trx->data_per_vertex[base] = std::make_unique<ArraySequence<DT>>();
-      int nb_scalar = size / static_cast<int>(trx->header["NB_VERTICES"].int_value());
+      const int64_t nb_vertices = _json_int64(trx->header["NB_VERTICES"]);
+      const int64_t nb_scalar = nb_vertices > 0 ? size / nb_vertices : 0;
 
-      if (size % static_cast<int>(trx->header["NB_VERTICES"].int_value()) != 0 || nb_scalar != dim) {
+      if (nb_vertices == 0 || size % nb_vertices != 0 || nb_scalar != dim) {
         throw TrxFormatError("Wrong dpv size/dimensionality");
       } else {
-        shape = std::make_tuple(static_cast<int>(trx->header["NB_VERTICES"].int_value()), nb_scalar);
+        shape = std::make_tuple(nb_vertices, nb_scalar);
       }
       trx->data_per_vertex[base]->mmap_pos = trx::_create_memmap(filename, shape, "r+", ext, mem_adress);
       const std::string expected_dtype = dtype_from_scalar<DT>();
@@ -546,18 +549,18 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
         trx->data_per_vertex[base]->mmap_pos.unmap();
       }
       trx::detail::remap(trx->data_per_vertex[base]->_offsets, trx->streamlines->_offsets.data(),
-                         int(trx->streamlines->_offsets.rows()), int(trx->streamlines->_offsets.cols()));
+                         trx->streamlines->_offsets.rows(), trx->streamlines->_offsets.cols());
       trx->data_per_vertex[base]->_lengths = trx->streamlines->_lengths;
     }
 
     else if (folder.rfind("dpg", 0) == 0) {
-      std::tuple<int, int> shape;
+      std::tuple<int64_t, int64_t> shape;
 
       if (size != dim) {
 
         throw TrxFormatError("Wrong dpg size/dimensionality");
       } else {
-        shape = std::make_tuple(1, static_cast<int>(size));
+        shape = std::make_tuple(static_cast<int64_t>(1), static_cast<int64_t>(size));
       }
 
       std::string data_name = path_basename(base);
@@ -581,11 +584,11 @@ TrxFile<DT>::_create_trx_from_pointer(json header,
     }
 
     else if (folder == "groups") {
-      std::tuple<int, int> shape;
+      std::tuple<int64_t, int64_t> shape;
       if (dim != 1) {
         throw TrxFormatError("Wrong group dimensionality");
       } else {
-        shape = std::make_tuple(static_cast<int>(size), 1);
+        shape = std::make_tuple(static_cast<int64_t>(size), static_cast<int64_t>(1));
       }
       trx->groups[base] = nullptr;
       typename TrxFile<DT>::GroupBackingInfo info;
@@ -616,15 +619,16 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::deepcopy() {
 
   // Determine effective counts (handle sliced/non-copy-safe data)
   json tmp_header = this->header;
-  int nb_streamlines, nb_vertices;
+  int64_t nb_streamlines = 0;
+  int64_t nb_vertices = 0;
   if (!this->_copy_safe) {
-    nb_streamlines = static_cast<int>(this->num_streamlines());
-    nb_vertices = static_cast<int>(this->streamlines->_data.size() / 3);
-    tmp_header = _json_set(tmp_header, "NB_STREAMLINES", nb_streamlines);
-    tmp_header = _json_set(tmp_header, "NB_VERTICES", nb_vertices);
+    nb_streamlines = static_cast<int64_t>(this->num_streamlines());
+    nb_vertices = static_cast<int64_t>(this->streamlines->_data.size() / 3);
+    tmp_header = _json_set(tmp_header, "NB_STREAMLINES", static_cast<double>(nb_streamlines));
+    tmp_header = _json_set(tmp_header, "NB_VERTICES", static_cast<double>(nb_vertices));
   } else {
-    nb_streamlines = tmp_header["NB_STREAMLINES"].int_value();
-    nb_vertices = tmp_header["NB_VERTICES"].int_value();
+    nb_streamlines = _json_int64(tmp_header["NB_STREAMLINES"]);
+    nb_vertices = _json_int64(tmp_header["NB_VERTICES"]);
   }
 
   // Allocate a fresh TrxFile with memory-mapped storage
@@ -675,12 +679,12 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::deepcopy() {
     }
     for (auto const &kv : this->groups) {
       std::string group_dtype = dtype_from_scalar<uint32_t>();
-      int rows = static_cast<int>(kv.second->_matrix.rows());
-      int cols = static_cast<int>(kv.second->_matrix.cols());
+      const int64_t rows = static_cast<int64_t>(kv.second->_matrix.rows());
+      const int64_t cols = static_cast<int64_t>(kv.second->_matrix.cols());
       std::string group_filename = groups_dirname + kv.first;
       group_filename = _generate_filename_from_data(kv.second->_matrix, group_filename);
 
-      std::tuple<int, int> group_shape = std::make_tuple(rows, cols);
+      std::tuple<int64_t, int64_t> group_shape = std::make_tuple(rows, cols);
       copy->groups[kv.first] = std::make_unique<MMappedMatrix<uint32_t>>();
       copy->groups[kv.first]->mmap = _create_memmap(group_filename, group_shape, "w+", group_dtype);
       trx::detail::remap(copy->groups[kv.first]->_matrix, copy->groups[kv.first]->mmap.data(), rows, cols);
@@ -698,12 +702,12 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::deepcopy() {
     }
     for (auto const &field : group_kv.second) {
       std::string dpg_dtype = dtype_from_scalar<DT>();
-      int rows = static_cast<int>(field.second->_matrix.rows());
-      int cols = static_cast<int>(field.second->_matrix.cols());
+      const int64_t rows = static_cast<int64_t>(field.second->_matrix.rows());
+      const int64_t cols = static_cast<int64_t>(field.second->_matrix.cols());
       std::string dpg_filename = dpg_subdirname + SEPARATOR + field.first;
       dpg_filename = _generate_filename_from_data(field.second->_matrix, dpg_filename);
 
-      std::tuple<int, int> dpg_shape = std::make_tuple(rows, cols);
+      std::tuple<int64_t, int64_t> dpg_shape = std::make_tuple(rows, cols);
       copy->data_per_group[group_kv.first][field.first] = std::make_unique<MMappedMatrix<DT>>();
       copy->data_per_group[group_kv.first][field.first]->mmap =
           _create_memmap(dpg_filename, dpg_shape, "w+", dpg_dtype);
@@ -718,34 +722,36 @@ template <typename DT> std::unique_ptr<TrxFile<DT>> TrxFile<DT>::deepcopy() {
 
 /// Compute the used range in a preallocated TrxFile by finding the last non-zero length.
 /// Returns (nb_streamlines_used, nb_vertices_used).
-template <typename DT> std::tuple<int, int> TrxFile<DT>::_get_real_len() {
+template <typename DT> std::tuple<int64_t, int64_t> TrxFile<DT>::_get_real_len() {
   if (this->streamlines->_lengths.size() == 0)
-    return std::make_tuple(0, 0);
+    return std::make_tuple(static_cast<int64_t>(0), static_cast<int64_t>(0));
 
-  int last_elem_pos = trx::detail::_dichotomic_search(this->streamlines->_lengths);
+  int64_t last_elem_pos = trx::detail::_dichotomic_search(this->streamlines->_lengths);
 
   if (last_elem_pos != -1) {
-    int strs_end = last_elem_pos + 1;
-    int pts_end = this->streamlines->_lengths(Eigen::seq(0, last_elem_pos), 0).sum();
+    const int64_t strs_end = last_elem_pos + 1;
+    const int64_t pts_end =
+        this->streamlines->_lengths(Eigen::seq(0, last_elem_pos), 0).template cast<int64_t>().sum();
 
     return std::make_tuple(strs_end, pts_end);
   }
 
-  return std::make_tuple(0, 0);
+  return std::make_tuple(static_cast<int64_t>(0), static_cast<int64_t>(0));
 }
 
 template <typename DT>
-std::tuple<int, int>
-TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int strs_start, int pts_start, int nb_strs_to_copy) {
-  int curr_strs_len, curr_pts_len;
+std::tuple<int64_t, int64_t>
+TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int64_t strs_start, int64_t pts_start, int64_t nb_strs_to_copy) {
+  int64_t curr_strs_len = 0;
+  int64_t curr_pts_len = 0;
 
   if (nb_strs_to_copy == -1) {
-    std::tuple<int, int> curr = this->_get_real_len();
+    std::tuple<int64_t, int64_t> curr = this->_get_real_len();
     curr_strs_len = std::get<0>(curr);
     curr_pts_len = std::get<1>(curr);
   } else {
     curr_strs_len = nb_strs_to_copy;
-    curr_pts_len = trx->streamlines->_lengths(Eigen::seq(0, curr_strs_len - 1)).sum();
+    curr_pts_len = trx->streamlines->_lengths(Eigen::seq(0, curr_strs_len - 1)).template cast<int64_t>().sum();
   }
 
   if (pts_start == -1) {
@@ -755,8 +761,8 @@ TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int strs_start, int pts_s
     strs_start = 0;
   }
 
-  int strs_end = strs_start + curr_strs_len;
-  int pts_end = pts_start + curr_pts_len;
+  const int64_t strs_end = strs_start + curr_strs_len;
+  const int64_t pts_end = pts_start + curr_pts_len;
 
   if (curr_pts_len == 0)
     return std::make_tuple(strs_start, pts_start);
@@ -775,8 +781,8 @@ TrxFile<DT>::_copy_fixed_arrays_from(TrxFile<DT> *trx, int strs_start, int pts_s
         pts_start, 0, curr_pts_len, this->data_per_vertex[x.first]->_data.cols()) =
         trx->data_per_vertex[x.first]->_data.block(0, 0, curr_pts_len, trx->data_per_vertex[x.first]->_data.cols());
     trx::detail::remap(this->data_per_vertex[x.first]->_offsets, trx->data_per_vertex[x.first]->_offsets.data(),
-                       static_cast<int>(trx->data_per_vertex[x.first]->_offsets.rows()),
-                       static_cast<int>(trx->data_per_vertex[x.first]->_offsets.cols()));
+                       trx->data_per_vertex[x.first]->_offsets.rows(),
+                       trx->data_per_vertex[x.first]->_offsets.cols());
     this->data_per_vertex[x.first]->_lengths = trx->data_per_vertex[x.first]->_lengths;
   }
 
@@ -841,21 +847,21 @@ void TrxFile<DT>::_cleanup_temporary_directory() {
 template <typename DT>
 // Caveats: downsizing vertices is not supported; reducing streamlines truncates data; same-size
 // resize is a no-op.
-void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
+void TrxFile<DT>::resize(int64_t nb_streamlines, int64_t nb_vertices, bool delete_dpg) {
   if (!this->_copy_safe) {
     throw TrxArgumentError("Cannot resize a sliced dataset.");
   }
 
-  std::tuple<int, int> sp_end = this->_get_real_len();
-  int strs_end = std::get<0>(sp_end);
-  int ptrs_end = std::get<1>(sp_end);
+  std::tuple<int64_t, int64_t> sp_end = this->_get_real_len();
+  int64_t strs_end = std::get<0>(sp_end);
+  int64_t ptrs_end = std::get<1>(sp_end);
 
   if (nb_streamlines != -1 && nb_streamlines < strs_end) {
     strs_end = nb_streamlines;
   }
 
   if (nb_vertices == -1) {
-    ptrs_end = this->streamlines->_lengths.sum();
+    ptrs_end = this->streamlines->_lengths.template cast<int64_t>().sum();
     nb_vertices = ptrs_end;
   } else if (nb_vertices < ptrs_end) {
     return;
@@ -865,14 +871,14 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
     nb_streamlines = strs_end;
   }
 
-  if (nb_streamlines == this->header["NB_STREAMLINES"].int_value() &&
-      nb_vertices == this->header["NB_VERTICES"].int_value()) {
+  if (nb_streamlines == _json_int64(this->header["NB_STREAMLINES"]) &&
+      nb_vertices == _json_int64(this->header["NB_VERTICES"])) {
     return;
   }
 
   auto trx = _initialize_empty_trx(nb_streamlines, nb_vertices, this);
 
-  if (nb_streamlines < this->header["NB_STREAMLINES"].int_value())
+  if (nb_streamlines < _json_int64(this->header["NB_STREAMLINES"]))
     trx->_copy_fixed_arrays_from(this, -1, -1, nb_streamlines);
   else {
     trx->_copy_fixed_arrays_from(this);
@@ -889,15 +895,16 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
       std::string group_dtype = dtype_from_scalar<uint32_t>();
       std::string group_name = group_dir + x.first + "." + group_dtype;
 
-      int ori_length = this->groups[x.first]->_matrix.size();
+      const Eigen::Index ori_length = this->groups[x.first]->_matrix.size();
+      static_cast<void>(ori_length);
 
-      std::vector<int> keep_rows;
-      std::vector<int> keep_cols = {0};
+      std::vector<Eigen::Index> keep_rows;
+      std::vector<Eigen::Index> keep_cols = {0};
 
       // Slicing
-      for (int i = 0; i < x.second->_matrix.rows(); ++i) {
-        for (int j = 0; j < x.second->_matrix.cols(); ++j) {
-          if (static_cast<int>(x.second->_matrix(i, j)) < strs_end) {
+      for (Eigen::Index i = 0; i < x.second->_matrix.rows(); ++i) {
+        for (Eigen::Index j = 0; j < x.second->_matrix.cols(); ++j) {
+          if (static_cast<int64_t>(x.second->_matrix(i, j)) < strs_end) {
             keep_rows.push_back(i);
           }
         }
@@ -905,15 +912,15 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
       // std::cout << "Cols " << keep_rows.at(1) << std::endl;
 
       Matrix<uint32_t, Dynamic, Dynamic> tmp = this->groups[x.first]->_matrix(keep_rows, keep_cols);
-      std::tuple<int, int> group_shape = std::make_tuple(tmp.size(), 1);
+      std::tuple<int64_t, int64_t> group_shape = std::make_tuple(static_cast<int64_t>(tmp.size()), static_cast<int64_t>(1));
 
       trx->groups[x.first] = std::make_unique<MMappedMatrix<uint32_t>>();
       trx->groups[x.first]->mmap = trx::_create_memmap(group_name, group_shape, "w+", group_dtype);
       trx::detail::remap(trx->groups[x.first]->_matrix, trx->groups[x.first]->mmap.data(), group_shape);
 
       // update values
-      for (int i = 0; i < trx->groups[x.first]->_matrix.rows(); ++i) {
-        for (int j = 0; j < trx->groups[x.first]->_matrix.cols(); ++j) {
+      for (Eigen::Index i = 0; i < trx->groups[x.first]->_matrix.rows(); ++i) {
+        for (Eigen::Index j = 0; j < trx->groups[x.first]->_matrix.cols(); ++j) {
           trx->groups[x.first]->_matrix(i, j) = tmp(i, j);
         }
       }
@@ -944,8 +951,9 @@ void TrxFile<DT>::resize(int nb_streamlines, int nb_vertices, bool delete_dpg) {
         std::string dpg_filename = dpg_subdir + SEPARATOR + y.first;
         dpg_filename = _generate_filename_from_data(this->data_per_group[x.first][y.first]->_matrix, dpg_filename);
 
-        std::tuple<int, int> dpg_shape = std::make_tuple(this->data_per_group[x.first][y.first]->_matrix.rows(),
-                                                         this->data_per_group[x.first][y.first]->_matrix.cols());
+        std::tuple<int64_t, int64_t> dpg_shape =
+            std::make_tuple(static_cast<int64_t>(this->data_per_group[x.first][y.first]->_matrix.rows()),
+                            static_cast<int64_t>(this->data_per_group[x.first][y.first]->_matrix.cols()));
 
         if (trx->data_per_group[x.first].find(y.first) == trx->data_per_group[x.first].end()) {
           trx->data_per_group[x.first][y.first] = std::make_unique<MMappedMatrix<DT>>();
@@ -1164,13 +1172,8 @@ template <typename DT> void TrxFile<DT>::normalize_for_save() {
   if (used_vertices > data_rows) {
     throw TrxFormatError("TRX offsets exceed positions row count");
   }
-  if (used_vertices > static_cast<uint64_t>(std::numeric_limits<int>::max()) ||
-      used_streamlines > static_cast<size_t>(std::numeric_limits<int>::max())) {
-    throw TrxFormatError("TRX normalize_for_save exceeds supported int range");
-  }
-
   if (used_streamlines < total_streamlines || used_vertices < data_rows) {
-    this->resize(static_cast<int>(used_streamlines), static_cast<int>(used_vertices));
+    this->resize(static_cast<int64_t>(used_streamlines), static_cast<int64_t>(used_vertices));
   }
 
   const size_t normalized_streamlines = this->num_streamlines();
@@ -1187,8 +1190,8 @@ template <typename DT> void TrxFile<DT>::normalize_for_save() {
     this->streamlines->_lengths(static_cast<Eigen::Index>(i)) = static_cast<uint32_t>(diff);
   }
 
-  this->header = _json_set(this->header, "NB_STREAMLINES", static_cast<int>(normalized_streamlines));
-  this->header = _json_set(this->header, "NB_VERTICES", static_cast<int>(this->num_vertices()));
+  this->header = _json_set(this->header, "NB_STREAMLINES", static_cast<double>(normalized_streamlines));
+  this->header = _json_set(this->header, "NB_VERTICES", static_cast<double>(this->num_vertices()));
 }
 
 template <typename DT> void TrxFile<DT>::save(const std::string &filename, const TrxSaveOptions &options) {
@@ -1204,13 +1207,13 @@ template <typename DT> void TrxFile<DT>::save(const std::string &filename, const
     throw TrxFormatError("Cannot save TRX without offsets data");
   }
   if (save_trx->header["NB_STREAMLINES"].is_number()) {
-    const auto nb_streamlines = static_cast<size_t>(save_trx->header["NB_STREAMLINES"].int_value());
+    const auto nb_streamlines = static_cast<size_t>(_json_int64(save_trx->header["NB_STREAMLINES"]));
     if (save_trx->streamlines->_offsets.size() != static_cast<Eigen::Index>(nb_streamlines + 1)) {
       throw TrxFormatError("TRX offsets size does not match NB_STREAMLINES");
     }
   }
   if (save_trx->header["NB_VERTICES"].is_number()) {
-    const auto nb_vertices = static_cast<uint64_t>(save_trx->header["NB_VERTICES"].int_value());
+    const auto nb_vertices = static_cast<uint64_t>(_json_int64(save_trx->header["NB_VERTICES"]));
     const auto last = static_cast<uint64_t>(save_trx->num_vertices());
     if (last != nb_vertices) {
       throw TrxFormatError("TRX offsets sentinel does not match NB_VERTICES");
@@ -1389,7 +1392,7 @@ void TrxFile<DT>::add_dps_from_vector(const std::string &name, const std::string
   if (this->streamlines) {
     nb_streamlines = static_cast<size_t>(this->streamlines->_lengths.size());
   } else if (this->header["NB_STREAMLINES"].is_number()) {
-    nb_streamlines = static_cast<size_t>(this->header["NB_STREAMLINES"].int_value());
+    nb_streamlines = static_cast<size_t>(_json_int64(this->header["NB_STREAMLINES"]));
   }
 
   if (values.size() != nb_streamlines) {
@@ -1413,10 +1416,10 @@ void TrxFile<DT>::add_dps_from_vector(const std::string &name, const std::string
     this->data_per_streamline.erase(existing);
   }
 
-  const int rows = static_cast<int>(nb_streamlines);
-  const int cols = 1;
-  std::tuple<int, int> shape = std::make_tuple(rows, cols);
-  const size_t n = static_cast<size_t>(rows * cols);
+  const int64_t rows = static_cast<int64_t>(nb_streamlines);
+  const int64_t cols = 1;
+  std::tuple<int64_t, int64_t> shape = std::make_tuple(rows, cols);
+  const size_t n = static_cast<size_t>(rows) * static_cast<size_t>(cols);
 
   auto matrix = std::make_unique<trx::MMappedMatrix<DT>>();
   matrix->mmap = trx::_create_memmap(dps_filename, shape, "w+", dtype_norm);
@@ -1477,7 +1480,7 @@ void TrxFile<DT>::add_dpv_from_vector(const std::string &name, const std::string
   if (this->streamlines) {
     nb_vertices = static_cast<size_t>(this->streamlines->_data.rows());
   } else if (this->header["NB_VERTICES"].is_number()) {
-    nb_vertices = static_cast<size_t>(this->header["NB_VERTICES"].int_value());
+    nb_vertices = static_cast<size_t>(_json_int64(this->header["NB_VERTICES"]));
   }
 
   if (values.size() != nb_vertices) {
@@ -1501,10 +1504,10 @@ void TrxFile<DT>::add_dpv_from_vector(const std::string &name, const std::string
     this->data_per_vertex.erase(existing);
   }
 
-  const int rows = static_cast<int>(nb_vertices);
-  const int cols = 1;
-  std::tuple<int, int> shape = std::make_tuple(rows, cols);
-  const size_t n = static_cast<size_t>(rows * cols);
+  const int64_t rows = static_cast<int64_t>(nb_vertices);
+  const int64_t cols = 1;
+  std::tuple<int64_t, int64_t> shape = std::make_tuple(rows, cols);
+  const size_t n = static_cast<size_t>(rows) * static_cast<size_t>(cols);
 
   auto seq = std::make_unique<trx::ArraySequence<DT>>();
   seq->mmap_pos = trx::_create_memmap(dpv_filename, shape, "w+", dtype_norm);
@@ -1557,7 +1560,7 @@ void TrxFile<DT>::add_group_from_indices(const std::string &name, const std::vec
   if (this->streamlines) {
     nb_streamlines = static_cast<size_t>(this->streamlines->_lengths.size());
   } else if (this->header["NB_STREAMLINES"].is_number()) {
-    nb_streamlines = static_cast<size_t>(this->header["NB_STREAMLINES"].int_value());
+    nb_streamlines = static_cast<size_t>(_json_int64(this->header["NB_STREAMLINES"]));
   }
 
   for (const auto idx : indices) {
@@ -1586,14 +1589,14 @@ void TrxFile<DT>::add_group_from_indices(const std::string &name, const std::vec
     this->group_backing_info_.erase(backing);
   }
 
-  const int rows = static_cast<int>(indices.size());
-  const int cols = 1;
-  std::tuple<int, int> shape = std::make_tuple(rows, cols);
+  const int64_t rows = static_cast<int64_t>(indices.size());
+  const int64_t cols = 1;
+  std::tuple<int64_t, int64_t> shape = std::make_tuple(rows, cols);
 
   auto group = std::make_unique<trx::MMappedMatrix<uint32_t>>();
   group->mmap = trx::_create_memmap(group_filename, shape, "w+", "uint32");
   trx::detail::remap(group->_matrix, group->mmap.data(), shape);
-  for (int i = 0; i < rows; ++i) {
+  for (int64_t i = 0; i < rows; ++i) {
     group->_matrix(i, 0) = indices[static_cast<size_t>(i)];
   }
   this->groups[name] = std::move(group);
@@ -2003,11 +2006,11 @@ template <typename DT> void TrxStream::finalize(const std::string &filename, Trx
   const size_t nb_streamlines = lengths_.size();
   const size_t nb_vertices = total_vertices_;
 
-  TrxFile<DT> trx(static_cast<int>(nb_vertices), static_cast<int>(nb_streamlines));
+  TrxFile<DT> trx(static_cast<int64_t>(nb_vertices), static_cast<int64_t>(nb_streamlines));
 
   json header_out = header;
-  header_out = _json_set(header_out, "NB_VERTICES", static_cast<int>(nb_vertices));
-  header_out = _json_set(header_out, "NB_STREAMLINES", static_cast<int>(nb_streamlines));
+  header_out = _json_set(header_out, "NB_VERTICES", static_cast<double>(nb_vertices));
+  header_out = _json_set(header_out, "NB_STREAMLINES", static_cast<double>(nb_streamlines));
   trx.header = header_out;
 
   auto &positions = trx.streamlines->_data;
@@ -2145,8 +2148,8 @@ inline void TrxStream::finalize_directory_impl(const std::string &directory, boo
   ec.clear();
 
   json header_out = header;
-  header_out = _json_set(header_out, "NB_VERTICES", static_cast<int>(nb_vertices));
-  header_out = _json_set(header_out, "NB_STREAMLINES", static_cast<int>(nb_streamlines));
+  header_out = _json_set(header_out, "NB_VERTICES", static_cast<double>(nb_vertices));
+  header_out = _json_set(header_out, "NB_STREAMLINES", static_cast<double>(nb_streamlines));
   const std::string header_path = directory + SEPARATOR + "header.json";
   std::ofstream out_header(header_path, std::ios::out | std::ios::trunc);
   if (!out_header.is_open()) {
@@ -2523,21 +2526,21 @@ void TrxFile<DT>::add_dpv_from_tsf(const std::string &name, const std::string &d
     this->data_per_vertex.erase(existing);
   }
 
-  const int rows = static_cast<int>(nb_vertices);
-  const int cols = 1;
-  std::tuple<int, int> shape = std::make_tuple(rows, cols);
+  const int64_t rows = static_cast<int64_t>(nb_vertices);
+  const int64_t cols = 1;
+  std::tuple<int64_t, int64_t> shape = std::make_tuple(rows, cols);
 
   auto seq = std::make_unique<trx::ArraySequence<DT>>();
   seq->mmap_pos = trx::_create_memmap(dpv_filename, shape, "w+", dtype_norm);
 
   trx::detail::remap(seq->_data, seq->mmap_pos.data(), rows, cols);
-  for (int i = 0; i < rows; ++i) {
+  for (int64_t i = 0; i < rows; ++i) {
     seq->_data(i, 0) = static_cast<DT>(values[static_cast<size_t>(i)]);
   }
 
   trx::detail::remap(seq->_offsets, this->streamlines->_offsets.data(),
-                     static_cast<int>(this->streamlines->_offsets.rows()),
-                     static_cast<int>(this->streamlines->_offsets.cols()));
+                     this->streamlines->_offsets.rows(),
+                     this->streamlines->_offsets.cols());
   seq->_lengths = this->streamlines->_lengths;
 
   this->data_per_vertex[name] = std::move(seq);
@@ -2863,11 +2866,11 @@ const MMappedMatrix<uint32_t> *TrxFile<DT>::get_group_members(const std::string 
     if (b == this->group_backing_info_.end()) {
       return nullptr;
     }
-    const int rows = b->second.rows;
-    const int cols = b->second.cols;
-    std::tuple<int, int> shape = std::make_tuple(rows, cols);
+    const int64_t rows = b->second.rows;
+    const int64_t cols = b->second.cols;
+    std::tuple<int64_t, int64_t> shape = std::make_tuple(rows, cols);
     it->second = std::make_unique<MMappedMatrix<uint32_t>>();
-    const size_t n = static_cast<size_t>(std::max(0, rows)) * static_cast<size_t>(std::max(0, cols));
+    const size_t n = static_cast<size_t>(std::max<int64_t>(0, rows)) * static_cast<size_t>(std::max<int64_t>(0, cols));
     it->second->_matrix_owned.resize(n);
 
     if (n > 0) {
@@ -3009,7 +3012,7 @@ void TrxFile<DT>::add_dpg_from_vector(const std::string &group,
   auto &group_map = this->data_per_group[group];
   group_map.erase(name);
 
-  std::tuple<int, int> shape = std::make_tuple(rows, cols);
+  std::tuple<int64_t, int64_t> shape = std::make_tuple(static_cast<int64_t>(rows), static_cast<int64_t>(cols));
   group_map[name] = std::make_unique<MMappedMatrix<DT>>();
   group_map[name]->mmap = _create_memmap(dpg_filename, shape, "w+", dtype_norm);
 
@@ -3139,21 +3142,21 @@ std::unique_ptr<TrxFile<DT>> TrxFile<DT>::subset_streamlines(const std::vector<u
     return this->make_empty_like();
   }
 
-  std::vector<int> old_to_new(nb_streamlines, -1);
+  std::vector<int64_t> old_to_new(nb_streamlines, -1);
   size_t total_vertices = 0;
   for (size_t i = 0; i < selected.size(); ++i) {
     const uint32_t idx = selected[i];
-    old_to_new[idx] = static_cast<int>(i);
+    old_to_new[idx] = static_cast<int64_t>(i);
     const uint64_t start = offsets[idx];
     const uint64_t end = offsets[idx + 1];
     total_vertices += static_cast<size_t>(end - start);
   }
 
-  auto out = std::make_unique<TrxFile<DT>>(static_cast<int>(total_vertices),
-                                           static_cast<int>(selected.size()),
+  auto out = std::make_unique<TrxFile<DT>>(static_cast<int64_t>(total_vertices),
+                                           static_cast<int64_t>(selected.size()),
                                            this);
-  out->header = _json_set(this->header, "NB_VERTICES", static_cast<int>(total_vertices));
-  out->header = _json_set(out->header, "NB_STREAMLINES", static_cast<int>(selected.size()));
+  out->header = _json_set(this->header, "NB_VERTICES", static_cast<double>(total_vertices));
+  out->header = _json_set(out->header, "NB_STREAMLINES", static_cast<double>(selected.size()));
 
   auto &out_positions = out->streamlines->_data;
   auto &out_offsets = out->streamlines->_offsets;
@@ -3258,8 +3261,8 @@ std::unique_ptr<TrxFile<DT>> TrxFile<DT>::subset_streamlines(const std::vector<u
         std::string dpg_filename = dpg_subdir + SEPARATOR + field_name;
         dpg_filename = _generate_filename_from_data(field_kv.second->_matrix, dpg_filename);
 
-        std::tuple<int, int> dpg_shape = std::make_tuple(field_kv.second->_matrix.rows(),
-                                                         field_kv.second->_matrix.cols());
+        std::tuple<int64_t, int64_t> dpg_shape = std::make_tuple(static_cast<int64_t>(field_kv.second->_matrix.rows()),
+                                                                 static_cast<int64_t>(field_kv.second->_matrix.cols()));
 
         out->data_per_group[group_name][field_name] = std::make_unique<MMappedMatrix<DT>>();
         out->data_per_group[group_name][field_name]->mmap =
