@@ -21,6 +21,7 @@ source_suffix = {
 
 html_theme = "pydata_sphinx_theme"
 html_logo = "_static/trx_logo.png"
+
 html_theme_options = {
     "icon_links": [
         {
@@ -44,7 +45,7 @@ html_theme_options = {
 }
 
 html_sidebars = {
-    "**": ["sidebar-nav-bs.html"],
+    "**": ["sidebar-nav-bs.html", "implementation-links.html"],
 }
 
 myst_enable_extensions = [
