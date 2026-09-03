@@ -227,3 +227,94 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build-zlib-only --output-on-failure -C Release
+
+  consumer:
+    name: consumer ${{ matrix.os }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache vcpkg (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\vcpkg_cache
+          key: consumer-vcpkg-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install libzip eigen googletest ninja zlib
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ninja -y
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\vcpkg_cache" | Out-Null
+          git clone https://github.com/microsoft/vcpkg "$env:GITHUB_WORKSPACE\vcpkg"
+          & "$env:GITHUB_WORKSPACE\vcpkg\bootstrap-vcpkg.bat"
+          $env:VCPKG_BINARY_SOURCES="clear;files,$env:GITHUB_WORKSPACE\vcpkg_cache,readwrite"
+          & "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe" install `
+            libzip `
+            eigen3 `
+            gtest `
+            zlib `
+            --triplet x64-windows
+
+      - name: Setup MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure trx-cpp
+        run: |
+          cmake -S . -B build \
+            -G Ninja \
+            -DTRX_USE_CONAN=OFF \
+            -DTRX_BUILD_TESTS=ON \
+            -DTRX_BUILD_EXAMPLES=ON \
+            -DTRX_ENABLE_NIFTI=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            ${{ runner.os == 'Windows' && format('-DCMAKE_TOOLCHAIN_FILE={0}/vcpkg/scripts/buildsystems/vcpkg.cmake', github.workspace) || '' }}
+
+      - name: Build and install trx-cpp
+        run: cmake --build build --config Release --target install
+
+      - name: Configure downstream consumer
+        shell: bash
+        run: |
+          consumer="${GITHUB_WORKSPACE}/ci-consumer"
+          mkdir -p "$consumer"
+
+          cat > "$consumer/CMakeLists.txt" <<'EOF'
+          cmake_minimum_required(VERSION 3.16)
+          project(trx_consumer LANGUAGES CXX)
+
+          find_package(trx-cpp CONFIG REQUIRED)
+
+          add_executable(trx_consumer main.cpp)
+          target_link_libraries(trx_consumer PRIVATE trx-cpp::trx)
+          target_compile_features(trx_consumer PRIVATE cxx_std_17)
+          EOF
+
+          cat > "$consumer/main.cpp" <<'EOF'
+          #include <trx/trx.h>
+          int main() {
+              return 0;
+          }
+          EOF
+
+          cmake -S "$consumer" -B "$consumer/build" \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/build"
+
+      - name: Build downstream consumer
+        run: cmake --build ci-consumer/build --config Release

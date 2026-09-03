@@ -10,23 +10,22 @@
 :target: https://codecov.io/gh/tee-ar-ex/trx-cpp
 ```
 
-A C++17 library for reading, writing, and memory-mapping the TRX tractography
-format.
+A C++17 library for reading, writing, and memory-mapping the [TRX tractography
+format](https://tee-ar-ex.github.io).
 
+::::{grid} 2
+:::{grid-item-card} Getting Started
 ```{toctree}
-:caption: Getting Started
-:maxdepth: 2
-
+:maxdepth: 1
 introduction
 quick_start
 building
 ```
+:::
 
+:::{grid-item-card} User Guide
 ```{toctree}
-:caption: User Guide
-:maxdepth: 2
-
-concepts
+:maxdepth: 1
 api_layers
 reading
 writing
@@ -34,38 +33,37 @@ streaming
 spatial_queries
 nifti
 ```
+:::
+::::
 
+::::{grid} 2
+:::{grid-item-card} Integration Guide
 ```{toctree}
-:caption: Integration Guide
 :maxdepth: 2
-
 integration
 ```
+:::
 
+:::{grid-item-card} Performance
 ```{toctree}
-:caption: Performance
 :maxdepth: 2
-
 benchmarks
 ```
+:::
+::::
 
+::::{grid}
+:::{grid-item-card} Contributing
 ```{toctree}
-:caption: TRX Format
 :maxdepth: 2
-
-spec
-```
-
-```{toctree}
-:caption: Contributing
-:maxdepth: 2
-
 linting
 ```
+:::
 
+:::{grid-item-card} API Reference
 ```{toctree}
-:caption: API Reference
 :maxdepth: 2
-
 api/library_root
 ```
+:::
+::::
