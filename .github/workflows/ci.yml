@@ -273,21 +273,37 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Configure trx-cpp
+      - name: Configure trx-cpp (macOS)
+        if: runner.os == 'macOS'
         run: |
+          BREW_PREFIX="$(brew --prefix)"
           cmake -S . -B build \
             -G Ninja \
             -DTRX_USE_CONAN=OFF \
-            -DTRX_BUILD_TESTS=ON \
-            -DTRX_BUILD_EXAMPLES=ON \
+            -DTRX_BUILD_TESTS=OFF \
+            -DTRX_BUILD_EXAMPLES=OFF \
             -DTRX_ENABLE_NIFTI=ON \
             -DCMAKE_BUILD_TYPE=Release \
-            ${{ runner.os == 'Windows' && format('-DCMAKE_TOOLCHAIN_FILE={0}/vcpkg/scripts/buildsystems/vcpkg.cmake', github.workspace) || '' }}
+            -DCMAKE_PREFIX_PATH="${BREW_PREFIX}" \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/install"
+
+      - name: Configure trx-cpp (Windows)
+        if: runner.os == 'Windows'
+        run: >
+          cmake -S . -B build
+          -G Ninja
+          -DTRX_USE_CONAN=OFF
+          -DTRX_BUILD_TESTS=OFF
+          -DTRX_BUILD_EXAMPLES=OFF
+          -DTRX_ENABLE_NIFTI=ON
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install
 
       - name: Build and install trx-cpp
         run: cmake --build build --config Release --target install
 
-      - name: Configure downstream consumer
+      - name: Generate downstream consumer project
         shell: bash
         run: |
           consumer="${GITHUB_WORKSPACE}/ci-consumer"
@@ -311,10 +327,23 @@ jobs:
           }
           EOF
 
-          cmake -S "$consumer" -B "$consumer/build" \
+      - name: Configure downstream consumer (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          BREW_PREFIX="$(brew --prefix)"
+          cmake -S ci-consumer -B ci-consumer/build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/build"
+            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/install;${BREW_PREFIX}"
+
+      - name: Configure downstream consumer (Windows)
+        if: runner.os == 'Windows'
+        run: >
+          cmake -S ci-consumer -B ci-consumer/build
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH=${{ github.workspace }}/install
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
 
       - name: Build downstream consumer
         run: cmake --build ci-consumer/build --config Release
