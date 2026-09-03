@@ -3,6 +3,8 @@
 
 #include <Eigen/Core>
 
+#include <cstdint>
+
 #include <new>
 #include <string>
 #include <tuple>
@@ -16,25 +18,25 @@ namespace detail {
 //
 // MapType must be an Eigen::Map<Matrix<...>> type.
 template <typename MapType>
-inline void remap(MapType &map, void *data, int rows, int cols) {
+inline void remap(MapType &map, void *data, std::int64_t rows, std::int64_t cols) {
   using Scalar = typename MapType::Scalar;
   new (&map) MapType(reinterpret_cast<Scalar *>(data), rows, cols); // NOLINT
 }
 
 // Overload for const data pointers (read-only maps).
 template <typename MapType>
-inline void remap(MapType &map, const void *data, int rows, int cols) {
+inline void remap(MapType &map, const void *data, std::int64_t rows, std::int64_t cols) {
   using Scalar = typename MapType::Scalar;
   new (&map) MapType(const_cast<Scalar *>(reinterpret_cast<const Scalar *>(data)), rows, cols); // NOLINT
 }
 
 // Convenience overloads that unpack a (rows, cols) shape tuple.
 template <typename MapType>
-inline void remap(MapType &map, void *data, const std::tuple<int, int> &shape) {
+inline void remap(MapType &map, void *data, const std::tuple<std::int64_t, std::int64_t> &shape) {
   remap(map, data, std::get<0>(shape), std::get<1>(shape));
 }
 template <typename MapType>
-inline void remap(MapType &map, const void *data, const std::tuple<int, int> &shape) {
+inline void remap(MapType &map, const void *data, const std::tuple<std::int64_t, std::int64_t> &shape) {
   remap(map, data, std::get<0>(shape), std::get<1>(shape));
 }
 
@@ -45,7 +47,7 @@ std::tuple<std::string, int, std::string> _split_ext_with_dimensionality(const s
 
 template <typename DT>
 inline Eigen::Matrix<uint32_t, Eigen::Dynamic, 1> _compute_lengths(const Eigen::MatrixBase<DT> &offsets,
-                                                                   int nb_vertices) {
+                                                                   std::int64_t nb_vertices) {
   static_cast<void>(nb_vertices);
   if (offsets.size() > 1) {
     const auto casted = offsets.template cast<uint64_t>();
