@@ -285,7 +285,7 @@ jobs:
             ${{ runner.os == 'Windows' && format('-DCMAKE_TOOLCHAIN_FILE={0}/vcpkg/scripts/buildsystems/vcpkg.cmake', github.workspace) || '' }}
 
       - name: Build and install trx-cpp
-        run: cmake --build build --config Release --target install
+        run: cmake --install build --config Release --prefix "${{ github.workspace }}/build/install"
 
       - name: Configure downstream consumer
         shell: bash
@@ -314,7 +314,7 @@ jobs:
           cmake -S "$consumer" -B "$consumer/build" \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/build"
+            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/build/install"
 
       - name: Build downstream consumer
         run: cmake --build ci-consumer/build --config Release
