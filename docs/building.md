@@ -128,9 +128,16 @@ Tests require GTest to be discoverable by CMake (e.g., via a system package or
 `GTest_DIR`). If GTest is not found, tests will be skipped.
 zlib must be discoverable by CMake (`ZLIB::ZLIB`), including for NIfTI I/O.
 
-## Building documentation:
+## Building documentation
 
-Building the docs requires both Doxygen and `sphinx-build` on your PATH.
+Building the docs requires both Doxygen and `sphinx-build` on your PATH, as
+well as some other python dependencies. To install those, run:
+
+```bash
+python -m pip install -r docs/requirements.txt
+```
+
+Then, to build the docs, run:
 
 ```bash
 cmake -S . -B build \

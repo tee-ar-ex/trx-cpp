@@ -8,6 +8,7 @@ extensions = [
     "breathe",
     "exhale",
     "sphinx.ext.autosectionlabel",
+    "sphinx_design",
 ]
 
 root_doc = "index"
@@ -49,8 +50,10 @@ html_sidebars = {
 }
 
 myst_enable_extensions = [
-    "colon_fence",
+ "colon_fence",
     "deflist",
+    "fieldlist",
+    "html_image",
     "tasklist",
 ]
 

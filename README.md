@@ -3,7 +3,7 @@
 [![Docs](https://img.shields.io/badge/docs-github.io-blue?style=flat&logo=github)](https://tee-ar-ex.github.io/trx-cpp/)
 [![codecov](https://codecov.io/gh/tee-ar-ex/trx-cpp/branch/main/graph/badge.svg)](https://codecov.io/gh/tee-ar-ex/trx-cpp)
 
-A C++17 library for reading, writing, and memory-mapping the [TRX tractography format](https://github.com/tee-ar-ex/trx-spec) — efficient storage for large-scale tractography data.
+A C++17 library for reading, writing, and memory-mapping the [TRX tractography format](tee-ar-ex.github.io) — efficient storage for large-scale tractography data.
 
 ## Features
 
