@@ -281,6 +281,7 @@ jobs:
             -DTRX_BUILD_TESTS=ON \
             -DTRX_BUILD_EXAMPLES=ON \
             -DTRX_ENABLE_NIFTI=ON \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/install" \
             -DCMAKE_BUILD_TYPE=Release \
             ${{ runner.os == 'Windows' && format('-DCMAKE_TOOLCHAIN_FILE={0}/vcpkg/scripts/buildsystems/vcpkg.cmake', github.workspace) || '' }}
 
@@ -314,7 +315,7 @@ jobs:
           cmake -S "$consumer" -B "$consumer/build" \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/build"
+            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/install"
 
       - name: Build downstream consumer
         run: cmake --build ci-consumer/build --config Release
