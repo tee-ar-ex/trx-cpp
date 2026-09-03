@@ -541,7 +541,7 @@ bool load_nifti_header(const std::string &ref_path, json11::Json &out_header) {
         float b2 = b*b;
         float c2 = c*c;
         float d2 = d*d;
-        float a = std::sqrt(std::max(0.0f, 1.0f - b2 - c2 - d2));
+        float a = std::sqrt((std::max)(0.0f, 1.0f - b2 - c2 - d2));
         
         float R[3][3];
         R[0][0] = a*a + b*b - c*c - d*d;

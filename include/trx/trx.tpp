@@ -1831,7 +1831,7 @@ TrxStream::push_dps_from_vector(const std::string &name, const std::string &dtyp
       tmp.reserve(chunk_elems);
       size_t offset = 0;
       while (offset < values.size()) {
-        const size_t count = std::min(chunk_elems, values.size() - offset);
+        const size_t count = (std::min)(chunk_elems, values.size() - offset);
         tmp.clear();
         for (size_t i = 0; i < count; ++i) {
           tmp.push_back(static_cast<half>(values[offset + i]));
@@ -1845,7 +1845,7 @@ TrxStream::push_dps_from_vector(const std::string &name, const std::string &dtyp
       tmp.reserve(chunk_elems);
       size_t offset = 0;
       while (offset < values.size()) {
-        const size_t count = std::min(chunk_elems, values.size() - offset);
+        const size_t count = (std::min)(chunk_elems, values.size() - offset);
         tmp.clear();
         for (size_t i = 0; i < count; ++i) {
           tmp.push_back(static_cast<float>(values[offset + i]));
@@ -1859,7 +1859,7 @@ TrxStream::push_dps_from_vector(const std::string &name, const std::string &dtyp
       tmp.reserve(chunk_elems);
       size_t offset = 0;
       while (offset < values.size()) {
-        const size_t count = std::min(chunk_elems, values.size() - offset);
+        const size_t count = (std::min)(chunk_elems, values.size() - offset);
         tmp.clear();
         for (size_t i = 0; i < count; ++i) {
           tmp.push_back(static_cast<double>(values[offset + i]));
@@ -1910,7 +1910,7 @@ TrxStream::push_dpv_from_vector(const std::string &name, const std::string &dtyp
       tmp.reserve(chunk_elems);
       size_t offset = 0;
       while (offset < values.size()) {
-        const size_t count = std::min(chunk_elems, values.size() - offset);
+        const size_t count = (std::min)(chunk_elems, values.size() - offset);
         tmp.clear();
         for (size_t i = 0; i < count; ++i) {
           tmp.push_back(static_cast<half>(values[offset + i]));
@@ -1924,7 +1924,7 @@ TrxStream::push_dpv_from_vector(const std::string &name, const std::string &dtyp
       tmp.reserve(chunk_elems);
       size_t offset = 0;
       while (offset < values.size()) {
-        const size_t count = std::min(chunk_elems, values.size() - offset);
+        const size_t count = (std::min)(chunk_elems, values.size() - offset);
         tmp.clear();
         for (size_t i = 0; i < count; ++i) {
           tmp.push_back(static_cast<float>(values[offset + i]));
@@ -1938,7 +1938,7 @@ TrxStream::push_dpv_from_vector(const std::string &name, const std::string &dtyp
       tmp.reserve(chunk_elems);
       size_t offset = 0;
       while (offset < values.size()) {
-        const size_t count = std::min(chunk_elems, values.size() - offset);
+        const size_t count = (std::min)(chunk_elems, values.size() - offset);
         tmp.clear();
         for (size_t i = 0; i < count; ++i) {
           tmp.push_back(static_cast<double>(values[offset + i]));
@@ -1994,7 +1994,7 @@ inline void TrxStream::push_group_from_indices(const std::string &name, const st
     const size_t chunk_elems = std::max<std::size_t>(1, metadata_buffer_max_bytes_ / sizeof(uint32_t));
     size_t offset = 0;
     while (offset < indices.size()) {
-      const size_t count = std::min(chunk_elems, indices.size() - offset);
+      const size_t count = (std::min)(chunk_elems, indices.size() - offset);
       out.write(reinterpret_cast<const char *>(indices.data() + offset),
                 static_cast<std::streamsize>(count * sizeof(uint32_t)));
       offset += count;
@@ -2210,7 +2210,7 @@ inline void TrxStream::finalize_directory_impl(const std::string &directory, boo
       tmp.reserve(chunk);
       size_t idx = 0;
       while (idx < count) {
-        const size_t n = std::min(chunk, count - idx);
+        const size_t n = (std::min)(chunk, count - idx);
         tmp.clear();
         for (size_t i = 0; i < n; ++i) {
           tmp.push_back(static_cast<half>(values.values[idx + i]));
@@ -2224,7 +2224,7 @@ inline void TrxStream::finalize_directory_impl(const std::string &directory, boo
       tmp.reserve(chunk);
       size_t idx = 0;
       while (idx < count) {
-        const size_t n = std::min(chunk, count - idx);
+        const size_t n = (std::min)(chunk, count - idx);
         tmp.clear();
         for (size_t i = 0; i < n; ++i) {
           tmp.push_back(static_cast<float>(values.values[idx + i]));
@@ -2238,7 +2238,7 @@ inline void TrxStream::finalize_directory_impl(const std::string &directory, boo
       tmp.reserve(chunk);
       size_t idx = 0;
       while (idx < count) {
-        const size_t n = std::min(chunk, count - idx);
+        const size_t n = (std::min)(chunk, count - idx);
         tmp.clear();
         for (size_t i = 0; i < n; ++i) {
           tmp.push_back(values.values[idx + i]);
@@ -2761,12 +2761,12 @@ std::vector<std::array<Eigen::half, 6>> TrxFile<DT>::build_streamline_aabbs() co
       const float x = static_cast<float>(this->streamlines->_data(static_cast<Eigen::Index>(p), 0));
       const float y = static_cast<float>(this->streamlines->_data(static_cast<Eigen::Index>(p), 1));
       const float z = static_cast<float>(this->streamlines->_data(static_cast<Eigen::Index>(p), 2));
-      min_x = std::min(min_x, x);
-      min_y = std::min(min_y, y);
-      min_z = std::min(min_z, z);
-      max_x = std::max(max_x, x);
-      max_y = std::max(max_y, y);
-      max_z = std::max(max_z, z);
+      min_x = (std::min)(min_x, x);
+      min_y = (std::min)(min_y, y);
+      min_z = (std::min)(min_z, z);
+      max_x = (std::max)(max_x, x);
+      max_y = (std::max)(max_y, y);
+      max_z = (std::max)(max_z, z);
     }
 
     aabbs[i] = {static_cast<Eigen::half>(min_x), static_cast<Eigen::half>(min_y), static_cast<Eigen::half>(min_z),
@@ -2885,7 +2885,7 @@ const MMappedMatrix<uint32_t> *TrxFile<DT>::get_group_members(const std::string 
     const int cols = b->second.cols;
     std::tuple<int, int> shape = std::make_tuple(rows, cols);
     it->second = std::make_unique<MMappedMatrix<uint32_t>>();
-    const size_t n = static_cast<size_t>(std::max(0, rows)) * static_cast<size_t>(std::max(0, cols));
+    const size_t n = static_cast<size_t>((std::max)(0, rows)) * static_cast<size_t>((std::max)(0, cols));
     it->second->_matrix_owned.resize(n);
 
     if (n > 0) {

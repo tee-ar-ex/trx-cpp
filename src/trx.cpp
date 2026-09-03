@@ -1752,7 +1752,7 @@ void AnyTrxFile::for_each_positions_chunk(size_t chunk_bytes, const PositionsChu
   const auto *base = bytes.data;
   const auto dtype = scalar_type_from_dtype(positions.dtype);
   for (size_t offset = 0; offset < total_points; offset += points_per_chunk) {
-    const size_t count = std::min(points_per_chunk, total_points - offset);
+    const size_t count = (std::min)(points_per_chunk, total_points - offset);
     const void *ptr = base + offset * bytes_per_point;
     fn(dtype, ptr, offset, count);
   }
@@ -1781,7 +1781,7 @@ void AnyTrxFile::for_each_positions_chunk_mutable(size_t chunk_bytes, const Posi
   auto *base = bytes.data;
   const auto dtype = scalar_type_from_dtype(positions.dtype);
   for (size_t offset = 0; offset < total_points; offset += points_per_chunk) {
-    const size_t count = std::min(points_per_chunk, total_points - offset);
+    const size_t count = (std::min)(points_per_chunk, total_points - offset);
     void *ptr = base + offset * bytes_per_point;
     fn(dtype, ptr, offset, count);
   }

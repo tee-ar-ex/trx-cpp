@@ -650,7 +650,7 @@ static void write_synthetic_dpv_to_dir(const std::string &temp_dir, size_t n_ver
   std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
   size_t remaining = n_vertices;
   while (remaining > 0) {
-    const size_t to_write = std::min(kChunkSize, remaining);
+    const size_t to_write = (std::min)(kChunkSize, remaining);
     for (size_t i = 0; i < to_write; ++i) {
       chunk[i] = dist(rng);
     }
@@ -839,8 +839,8 @@ void build_slabs(std::vector<std::array<float, 3>> &mins, std::vector<std::array
   for (size_t i = 0; i < kSlabCount; ++i) {
     const float t = (kSlabCount == 1) ? 0.5f : static_cast<float>(i) / static_cast<float>(kSlabCount - 1);
     const float center_z = kFov.min_z + t * z_range;
-    const float min_z = std::max(kFov.min_z, center_z - kSlabThicknessMm * 0.5f);
-    const float max_z = std::min(kFov.max_z, center_z + kSlabThicknessMm * 0.5f);
+    const float min_z = (std::max)(kFov.min_z, center_z - kSlabThicknessMm * 0.5f);
+    const float max_z = (std::min)(kFov.max_z, center_z + kSlabThicknessMm * 0.5f);
     mins.push_back({kFov.min_x, kFov.min_y, min_z});
     maxs.push_back({kFov.max_x, kFov.max_y, max_z});
   }
@@ -950,7 +950,7 @@ static void BM_TrxFileSize_Float16(benchmark::State &state) {
     const auto on_disk =
         build_trx_file_on_disk(streamlines, scenario, add_dps, add_dpv, compression);
     const auto end = std::chrono::steady_clock::now();
-    max_rss_delta_kb = std::max(max_rss_delta_kb, get_current_rss_kb() - rss_iter_start);
+    max_rss_delta_kb = (std::max)(max_rss_delta_kb, get_current_rss_kb() - rss_iter_start);
     const std::chrono::duration<double, std::milli> elapsed = end - start;
     total_build_ms += elapsed.count();
     total_merge_ms += on_disk.shard_merge_ms;
@@ -1181,7 +1181,7 @@ static void BM_TrxStream_TranslateWrite(benchmark::State &state) {
     rss_sampling.store(false, std::memory_order_relaxed);
     rss_sampler.join();
     const double delta = static_cast<double>(peak_rss_kb.load(std::memory_order_relaxed)) - rss_iter_start;
-    max_rss_delta_kb = std::max(max_rss_delta_kb, delta);
+    max_rss_delta_kb = (std::max)(max_rss_delta_kb, delta);
   }
 
   state.counters["streamlines"] = static_cast<double>(streamlines);
@@ -1261,11 +1261,11 @@ static void BM_TrxQueryAabb_Slabs(benchmark::State &state) {
     std::sort(sorted.begin(), sorted.end());
     const auto p50 = sorted[sorted.size() / 2];
     const auto p95_idx = static_cast<size_t>(std::ceil(0.95 * sorted.size())) - 1;
-    const auto p95 = sorted[std::min(p95_idx, sorted.size() - 1)];
+    const auto p95 = sorted[(std::min)(p95_idx, sorted.size() - 1)];
     state.counters["query_p50_ms"] = p50;
     state.counters["query_p95_ms"] = p95;
 
-    max_rss_delta_kb = std::max(max_rss_delta_kb, get_current_rss_kb() - rss_iter_start);
+    max_rss_delta_kb = (std::max)(max_rss_delta_kb, get_current_rss_kb() - rss_iter_start);
 
     ScenarioParams params;
     params.streamlines = streamlines;

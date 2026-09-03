@@ -203,6 +203,12 @@ target_include_directories(trx
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
+if(WIN32)
+    target_compile_definitions(trx PUBLIC NOMINMAX)
+    if(MSVC)
+        target_compile_definitions(trx PUBLIC _CRT_SECURE_NO_WARNINGS)
+    endif()
+endif()
 # Fallback for system libzip packages that don't expose include dirs via
 # their CMake targets. Only needed for distro packages with broken configs.
 get_target_property(_trx_libzip_includes ${TRX_LIBZIP_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
@@ -283,6 +289,12 @@ if(TRX_ENABLE_NIFTI)
             ${TRX_EIGEN3_TARGET}
             ${TRX_ZLIB_TARGET}
     )
+    if(WIN32)
+        target_compile_definitions(trx-nifti PUBLIC NOMINMAX)
+        if(MSVC)
+            target_compile_definitions(trx-nifti PUBLIC _CRT_SECURE_NO_WARNINGS)
+        endif()
+    endif()
 endif()
 
 # ── Examples ────────────────────────────────────────────────────────────────

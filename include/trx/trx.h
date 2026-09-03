@@ -1,6 +1,12 @@
 #ifndef TRX_H // include guard
 #define TRX_H
 
+#ifdef _WIN32
+# ifndef NOMINMAX
+#  define NOMINMAX
+# endif
+#endif
+
 #include <Eigen/Core>
 #include <algorithm>
 #include <array>
@@ -1182,7 +1188,7 @@ TrxFile<DT>::compute_group_connectivity(ConnectivityMeasure measure, const std::
       if (b == this->group_backing_info_.end()) {
         continue;
       }
-      const size_t expected_ids = static_cast<size_t>(std::max(0, b->second.rows)) * static_cast<size_t>(std::max(0, b->second.cols));
+      const size_t expected_ids = static_cast<size_t>((std::max)(0, b->second.rows)) * static_cast<size_t>((std::max)(0, b->second.cols));
       tmp_ids.resize(expected_ids);
       if (expected_ids > 0) {
         std::ifstream in(b->second.filename, std::ios::binary);
