@@ -312,10 +312,15 @@ jobs:
           }
           EOF
 
+          prefix_path="${GITHUB_WORKSPACE}/install"
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            prefix_path="$(brew --prefix);${prefix_path}"
+          fi
           cmake -S "$consumer" -B "$consumer/build" \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/install"
+            -DCMAKE_PREFIX_PATH="$prefix_path" \
+            ${{ runner.os == 'Windows' && format('-DCMAKE_TOOLCHAIN_FILE={0}/vcpkg/scripts/buildsystems/vcpkg.cmake', github.workspace) || '' }}
 
       - name: Build downstream consumer
         run: cmake --build ci-consumer/build --config Release
