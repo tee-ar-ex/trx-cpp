@@ -17,6 +17,8 @@
 #include "cli_colors.h"
 
 namespace {
+using json = trx::json;
+
 std::string format_json_array(const json &value) {
   if (!value.is_array()) {
     return "n/a";
@@ -152,7 +154,7 @@ void print_trx_info(const trx::AnyTrxFile &trx, const std::string &path, bool is
       }
     }
   } else {
-    std::cout << "  " << colorize(colors, colors.cyan, "Data per group") << ": none\n";
+    std::cout << "  " << trx_cli::colorize(colors, colors.cyan, "Data per group") << ": none\n";
   }
 }
 

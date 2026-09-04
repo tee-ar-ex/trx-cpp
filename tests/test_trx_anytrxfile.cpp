@@ -2,7 +2,9 @@
 #include <gtest/gtest.h>
 #include <trx/trx.h>
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -193,6 +195,21 @@ void write_zero_filled_file(const fs::path &file_path, const std::string &dtype,
   }
   if (!bytes.empty()) {
     out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+  }
+  out.close();
+}
+
+// Write a group index file containing the exact `values`, laid out as the raw
+// little-endian bytes of type T (the on-disk representation for a `.<dtype>`
+// group entry). Used to exercise the group dtype-normalization paths.
+template <typename T> void write_group_values(const fs::path &file_path, const std::vector<T> &values) {
+  std::ofstream out(file_path.string(), std::ios::binary | std::ios::trunc);
+  if (!out.is_open()) {
+    throw std::runtime_error("Failed to write group file: " + file_path.string());
+  }
+  if (!values.empty()) {
+    out.write(reinterpret_cast<const char *>(values.data()),
+              static_cast<std::streamsize>(values.size() * sizeof(T)));
   }
   out.close();
 }
@@ -938,9 +955,81 @@ TEST(AnyTrxFile, UnsupportedGroupDtypeThrows) {
     write_zero_filled_file(group_file, "uint32", nb_streamlines);
   }
   const fs::path group_file = find_first_file_recursive(groups_dir);
-  rename_with_new_ext(group_file, "int32");
+  // float32 is a valid TRX dtype but not a valid *group* dtype (groups must be an
+  // integer type), so loading must still reject it.
+  rename_with_new_ext(group_file, "float32");
 
   EXPECT_THROW(load_any(corrupt_dir.string()), trx::TrxDTypeError);
+
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+// Groups stored in a non-uint32 integer dtype are accepted and normalized to
+// uint32, preserving the index values (cross-language interoperability).
+TEST(AnyTrxFile, GroupIntegerDtypeUpcastLoads) {
+  const auto gs_dir = require_gold_standard_dir();
+  fs::path temp_root;
+  const fs::path dir = copy_gold_standard_dir(gs_dir, "trx_group_upcast", temp_root);
+
+  const auto header = read_header_file(dir);
+  const auto nb_streamlines = static_cast<uint32_t>(header["NB_STREAMLINES"].int_value());
+  ASSERT_GE(nb_streamlines, 1u);
+
+  // A handful of in-range indices, written as int32 (a non-uint32 integer dtype).
+  std::vector<int32_t> indices;
+  const uint32_t count = std::min<uint32_t>(nb_streamlines, 4u);
+  for (uint32_t i = 0; i < count; ++i) {
+    indices.push_back(static_cast<int32_t>(i));
+  }
+
+  const fs::path groups_dir = dir / "groups";
+  ensure_directory_exists(groups_dir);
+  write_group_values(groups_dir / "Upcast.int32", indices);
+
+  auto loaded = load_any(dir.string());
+  auto it = loaded.groups.find("Upcast");
+  ASSERT_NE(it, loaded.groups.end());
+  auto mat = it->second.as_matrix<uint32_t>();
+  ASSERT_EQ(static_cast<size_t>(mat.size()), indices.size());
+  for (size_t i = 0; i < indices.size(); ++i) {
+    EXPECT_EQ(mat(static_cast<int>(i), 0), static_cast<uint32_t>(indices[i]));
+  }
+
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+// A negative index in a signed group array must be rejected, not wrapped into a
+// large positive uint32.
+TEST(AnyTrxFile, GroupNegativeIndexThrows) {
+  const auto gs_dir = require_gold_standard_dir();
+  fs::path temp_root;
+  const fs::path dir = copy_gold_standard_dir(gs_dir, "trx_group_negative", temp_root);
+
+  const fs::path groups_dir = dir / "groups";
+  ensure_directory_exists(groups_dir);
+  write_group_values(groups_dir / "Bad.int32", std::vector<int32_t>{0, -1});
+
+  EXPECT_THROW(load_any(dir.string()), trx::TrxFormatError);
+
+  std::error_code ec;
+  fs::remove_all(temp_root, ec);
+}
+
+// A 64-bit index above the uint32 range would silently wrap to a valid-looking
+// index; it must be rejected instead.
+TEST(AnyTrxFile, GroupIndexBeyondStreamlinesThrows) {
+  const auto gs_dir = require_gold_standard_dir();
+  fs::path temp_root;
+  const fs::path dir = copy_gold_standard_dir(gs_dir, "trx_group_oob", temp_root);
+
+  const fs::path groups_dir = dir / "groups";
+  ensure_directory_exists(groups_dir);
+  // 5e9 > UINT32_MAX: static_cast<uint32_t> would wrap it to ~705M.
+  write_group_values(groups_dir / "Bad.uint64", std::vector<uint64_t>{0, 5000000000ULL});
+
+  EXPECT_THROW(load_any(dir.string()), trx::TrxFormatError);
 
   std::error_code ec;
   fs::remove_all(temp_root, ec);
@@ -1129,7 +1218,7 @@ TEST(AnyTrxFile, SaveRejectsPositionsRowMismatch) {
   fs::remove_all(temp_dir, ec);
 }
 
-TEST(AnyTrxFile, SaveRejectsMissingBackingDirectory) {
+TEST(AnyTrxFile, SaveWithoutBackingDirectorySucceeds) {
   const auto gs_dir = require_gold_standard_dir();
   const fs::path gs_trx = gs_dir / "gs_fldr.trx";
   auto trx = load_any(gs_trx.string());
@@ -1139,7 +1228,12 @@ TEST(AnyTrxFile, SaveRejectsMissingBackingDirectory) {
 
   const auto temp_dir = make_temp_test_dir("trx_any_save_no_backing");
   const fs::path out_path = temp_dir / "no_backing.trx";
-  EXPECT_THROW(trx.save(out_path.string(), trx::TrxCompression::None), trx::TrxIOError);
+  EXPECT_NO_THROW(trx.save(out_path.string(), trx::TrxCompression::None));
+
+  auto loaded = load_any(out_path.string());
+  EXPECT_EQ(loaded.num_streamlines(), trx.num_streamlines());
+  EXPECT_EQ(loaded.num_vertices(), trx.num_vertices());
+  loaded.close();
   trx.close();
 
   std::error_code ec;

@@ -177,6 +177,7 @@ endif()
 # ── Core library ────────────────────────────────────────────────────────────
 add_library(trx
     src/trx.cpp
+    src/legacy_io.cpp
     src/detail/dtype_helpers.cpp
     include/trx/trx.h
     include/trx/trx.tpp
@@ -202,6 +203,12 @@ target_include_directories(trx
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
+if(WIN32)
+    target_compile_definitions(trx PUBLIC NOMINMAX)
+    if(MSVC)
+        target_compile_definitions(trx PUBLIC _CRT_SECURE_NO_WARNINGS)
+    endif()
+endif()
 # Fallback for system libzip packages that don't expose include dirs via
 # their CMake targets. Only needed for distro packages with broken configs.
 get_target_property(_trx_libzip_includes ${TRX_LIBZIP_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
@@ -222,6 +229,16 @@ if(TRX_BUILD_TESTS)
     find_package(GTest CONFIG QUIET)
     if(NOT GTest_FOUND)
         find_package(GTest QUIET)
+    endif()
+    if(NOT GTest_FOUND)
+        message(STATUS "GTest not found; fetching v1.14.0")
+        FetchContent_Declare(
+            googletest
+            GIT_REPOSITORY https://github.com/google/googletest.git
+            GIT_TAG v1.14.0
+        )
+        FetchContent_MakeAvailable(googletest)
+        set(GTest_FOUND TRUE)
     endif()
     if(GTest_FOUND)
         enable_testing()
@@ -272,6 +289,12 @@ if(TRX_ENABLE_NIFTI)
             ${TRX_EIGEN3_TARGET}
             ${TRX_ZLIB_TARGET}
     )
+    if(WIN32)
+        target_compile_definitions(trx-nifti PUBLIC NOMINMAX)
+        if(MSVC)
+            target_compile_definitions(trx-nifti PUBLIC _CRT_SECURE_NO_WARNINGS)
+        endif()
+    endif()
 endif()
 
 # ── Examples ────────────────────────────────────────────────────────────────

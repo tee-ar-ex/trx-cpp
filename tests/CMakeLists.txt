@@ -1,8 +1,14 @@
 enable_testing()
 
-find_package(GTest CONFIG QUIET)
-if(NOT GTest_FOUND)
-    find_package(GTest REQUIRED)
+if(NOT TARGET GTest::gtest_main AND NOT TARGET gtest_main)
+    find_package(GTest CONFIG QUIET)
+    if(NOT GTest_FOUND)
+        find_package(GTest QUIET)
+    endif()
+endif()
+if(TARGET gtest_main AND NOT TARGET GTest::gtest_main)
+    add_library(GTest::gtest_main ALIAS gtest_main)
+    add_library(GTest::gtest ALIAS gtest)
 endif()
 
 set(TRX_TEST_DATA_REPO "https://github.com/tee-ar-ex/trx-test-data" CACHE STRING "Git repository URL for test data.")
@@ -102,6 +108,16 @@ add_executable(test_groups_summary test_trx_groups_summary.cpp)
 target_link_libraries(test_groups_summary PRIVATE trx GTest::gtest_main)
 target_compile_features(test_groups_summary PRIVATE cxx_std_17)
 
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/test_data/gs" DESTINATION "${TRX_TEST_DATA_DIR}")
+
+add_executable(test_gs_consistency test_trx_gs_consistency.cpp)
+target_link_libraries(test_gs_consistency PRIVATE trx ${TRX_LIBZIP_TARGET} GTest::gtest_main)
+target_compile_features(test_gs_consistency PRIVATE cxx_std_17)
+
+add_executable(test_legacy_io test_trx_legacy_io.cpp)
+target_link_libraries(test_legacy_io PRIVATE trx GTest::gtest_main)
+target_compile_features(test_legacy_io PRIVATE cxx_std_17)
+
 include(GoogleTest)
 gtest_discover_tests(test_mmap PROPERTIES
     ENVIRONMENT "TRX_TEST_DATA_DIR=${TRX_TEST_DATA_DIR}"
@@ -124,3 +140,11 @@ gtest_discover_tests(test_anytrxfile PROPERTIES
 )
 
 gtest_discover_tests(test_groups_summary)
+
+gtest_discover_tests(test_gs_consistency PROPERTIES
+    ENVIRONMENT "TRX_TEST_DATA_DIR=${TRX_TEST_DATA_DIR}"
+)
+
+gtest_discover_tests(test_legacy_io PROPERTIES
+    ENVIRONMENT "TRX_TEST_DATA_DIR=${TRX_TEST_DATA_DIR}"
+)
