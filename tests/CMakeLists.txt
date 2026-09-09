@@ -118,6 +118,10 @@ add_executable(test_legacy_io test_trx_legacy_io.cpp)
 target_link_libraries(test_legacy_io PRIVATE trx GTest::gtest_main)
 target_compile_features(test_legacy_io PRIVATE cxx_std_17)
 
+add_executable(test_large test_trx_large.cpp)
+target_link_libraries(test_large PRIVATE trx GTest::gtest_main)
+target_compile_features(test_large PRIVATE cxx_std_17)
+
 include(GoogleTest)
 gtest_discover_tests(test_mmap PROPERTIES
     ENVIRONMENT "TRX_TEST_DATA_DIR=${TRX_TEST_DATA_DIR}"
@@ -148,3 +152,5 @@ gtest_discover_tests(test_gs_consistency PROPERTIES
 gtest_discover_tests(test_legacy_io PROPERTIES
     ENVIRONMENT "TRX_TEST_DATA_DIR=${TRX_TEST_DATA_DIR}"
 )
+
+gtest_discover_tests(test_large)

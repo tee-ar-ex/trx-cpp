@@ -84,6 +84,16 @@ inline json::object _json_object(const json &value) {
   return json::object();
 }
 
+// This is a workaround for JSON files
+// json11 stores every number as a double
+// Json::int_value() truncates to a 32-bit int
+// NB_VERTICES can exceed INT32_MAX
+// so counts must be read through number_value().
+// Doubles represent integers exactly up to 2^53
+inline long long _json_int64(const json &value) {
+  return static_cast<long long>(value.number_value());
+}
+
 inline json _json_set(const json &value, const std::string &key, const json &field) {
   auto obj = _json_object(value);
   obj[key] = field;
@@ -247,8 +257,8 @@ template <typename DT> class TrxFile {
 public:
   struct GroupBackingInfo {
     std::string filename;
-    int rows = 0;
-    int cols = 0;
+    long long rows = 0;
+    long long cols = 0;
     std::string dtype;
     long long mem_offset = 0;
   };
@@ -269,8 +279,8 @@ public:
 
   // Member Functions()
   // TrxFile(int nb_vertices = 0, int nb_streamlines = 0);
-  TrxFile(int nb_vertices = 0,
-          int nb_streamlines = 0,
+  TrxFile(long long nb_vertices = 0,
+          long long nb_streamlines = 0,
           const TrxFile<DT> *init_as = nullptr,
           std::string reference = "");
   ~TrxFile();
@@ -308,7 +318,7 @@ public:
    * @param nb_vertices The number of vertices to keep
    * @param delete_dpg Remove data_per_group when resizing
    */
-  void resize(int nb_streamlines = -1, int nb_vertices = -1, bool delete_dpg = false);
+  void resize(long long nb_streamlines = -1, long long nb_vertices = -1, bool delete_dpg = false);
 
   /**
    * @brief Save a TrxFile
@@ -373,7 +383,7 @@ public:
       return static_cast<size_t>(streamlines->_data.rows());
     }
     if (header["NB_VERTICES"].is_number()) {
-      return static_cast<size_t>(header["NB_VERTICES"].int_value());
+      return static_cast<size_t>(_json_int64(header["NB_VERTICES"]));
     }
     return 0;
   }
@@ -386,7 +396,7 @@ public:
       return static_cast<size_t>(streamlines->_lengths.size());
     }
     if (header["NB_STREAMLINES"].is_number()) {
-      return static_cast<size_t>(header["NB_STREAMLINES"].int_value());
+      return static_cast<size_t>(_json_int64(header["NB_STREAMLINES"]));
     }
     return 0;
   }
@@ -521,11 +531,11 @@ public:
    * @param strs_start The start index of the streamline
    * @param pts_start The start index of the point
    * @param nb_strs_to_copy The number of streamlines to copy. If not set will copy all
-   * @return std::tuple<int, int> A tuple representing the end of the copied streamlines and end
+   * @return std::tuple<long long, long long> A tuple representing the end of the copied streamlines and end
    * of copied points
    */
-  std::tuple<int, int>
-  _copy_fixed_arrays_from(TrxFile<DT> *trx, int strs_start = 0, int pts_start = 0, int nb_strs_to_copy = -1);
+  std::tuple<long long, long long>
+  _copy_fixed_arrays_from(TrxFile<DT> *trx, long long strs_start = 0, long long pts_start = 0, long long nb_strs_to_copy = -1);
   int len();
 
 private:
@@ -535,10 +545,10 @@ private:
   /**
    * @brief Get the real size of data (ignoring zeros of preallocation)
    *
-   * @return std::tuple<int, int> A tuple representing the index of the last streamline and the
+   * @return std::tuple<long long, long long> A tuple representing the index of the last streamline and the
    * total length of all the streamlines
    */
-  std::tuple<int, int> _get_real_len();
+  std::tuple<long long, long long> _get_real_len();
 };
 
 namespace detail {
@@ -573,8 +583,8 @@ inline std::string make_unique_temp_path(const std::string &prefix) {
 
 struct TypedArray {
   std::string dtype;
-  int rows = 0;
-  int cols = 0;
+  long long rows = 0;
+  long long cols = 0;
   mio::shared_mmap_sink mmap;
   std::vector<std::uint8_t> owned;
 
@@ -1188,7 +1198,8 @@ TrxFile<DT>::compute_group_connectivity(ConnectivityMeasure measure, const std::
       if (b == this->group_backing_info_.end()) {
         continue;
       }
-      const size_t expected_ids = static_cast<size_t>((std::max)(0, b->second.rows)) * static_cast<size_t>((std::max)(0, b->second.cols));
+      const size_t expected_ids = static_cast<size_t>((std::max<long long>)(0, b->second.rows)) *
+                                  static_cast<size_t>((std::max<long long>)(0, b->second.cols));
       tmp_ids.resize(expected_ids);
       if (expected_ids > 0) {
         std::ifstream in(b->second.filename, std::ios::binary);
@@ -1269,7 +1280,7 @@ void allocate_file(const std::string &path, std::size_t size);
 // Known limitations: only row-major order supported; shape uses tuple (sufficient for 2D);
 // dtype parameter is used only for byte-size computation.
 mio::shared_mmap_sink _create_memmap(std::string filename,
-                                     const std::tuple<int, int> &shape,
+                                     const std::tuple<long long, long long> &shape,
                                      const std::string &mode = "r",
                                      const std::string &dtype = "float32",
                                      long long offset = 0);
@@ -1287,7 +1298,7 @@ std::string _generate_filename_from_data(const Eigen::MatrixBase<DT> &arr, const
  */
 template <typename DT>
 std::unique_ptr<TrxFile<DT>>
-_initialize_empty_trx(int nb_streamlines, int nb_vertices, const TrxFile<DT> *init_as = nullptr);
+_initialize_empty_trx(long long nb_streamlines, long long nb_vertices, const TrxFile<DT> *init_as = nullptr);
 
 template <typename DT>
 void ediff1d(Eigen::Matrix<DT, Eigen::Dynamic, 1> &lengths,
