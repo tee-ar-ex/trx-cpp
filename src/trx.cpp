@@ -180,7 +180,7 @@ std::array<double, 3> read_xyz_as_double(const TypedArray &positions, size_t row
   throw TrxDTypeError("Unsupported positions dtype for streamline extraction: " + positions.dtype);
 }
 
-TypedArray make_typed_array(const std::string &filename, int rows, int cols, const std::string &dtype) {
+TypedArray make_typed_array(const std::string &filename, long long rows, long long cols, const std::string &dtype) {
   TypedArray array;
   array.dtype = dtype;
   array.rows = rows;
@@ -369,7 +369,7 @@ size_t AnyTrxFile::num_vertices() const {
     return static_cast<size_t>(positions.rows);
   }
   if (header["NB_VERTICES"].is_number()) {
-    return static_cast<size_t>(header["NB_VERTICES"].int_value());
+    return static_cast<size_t>(_json_int64(header["NB_VERTICES"]));
   }
   return 0;
 }
@@ -379,7 +379,7 @@ size_t AnyTrxFile::num_streamlines() const {
     return lengths.size();
   }
   if (header["NB_STREAMLINES"].is_number()) {
-    return static_cast<size_t>(header["NB_STREAMLINES"].int_value());
+    return static_cast<size_t>(_json_int64(header["NB_STREAMLINES"]));
   }
   return 0;
 }
@@ -469,8 +469,8 @@ AnyTrxFile AnyTrxFile::load_from_zip(const std::string &filename) {
     throw TrxFormatError("Missing NB_VERTICES or NB_STREAMLINES in header.json");
   }
 
-  const int nb_vertices = trx.header["NB_VERTICES"].int_value();
-  const int nb_streamlines = trx.header["NB_STREAMLINES"].int_value();
+  const long long nb_vertices = _json_int64(trx.header["NB_VERTICES"]);
+  const long long nb_streamlines = _json_int64(trx.header["NB_STREAMLINES"]);
 
   // Build the offset map ONCE in a single pass over the archive, then reuse
   // it for every entry. The previous approach called find_uncompressed_zip_entry_offset
@@ -504,7 +504,7 @@ AnyTrxFile AnyTrxFile::load_from_zip(const std::string &filename) {
     const int dtype_size = trx::detail::_sizeof_dtype(ext);
     long long count_elems = (dtype_size > 0) ? (raw_size_bytes / dtype_size) : 0;
 
-    auto read_entry_to_typed_array = [&](int rows, int cols) -> TypedArray {
+    auto read_entry_to_typed_array = [&](long long rows, long long cols) -> TypedArray {
       TypedArray arr;
       arr.dtype = ext;
       arr.rows = rows;
@@ -560,13 +560,13 @@ AnyTrxFile AnyTrxFile::load_from_zip(const std::string &filename) {
       }
       trx.offsets = read_entry_to_typed_array(nb_streamlines + 1, 1);
     } else if (folder == "dps") {
-      const int nb_scalar = nb_streamlines > 0 ? static_cast<int>(count_elems / nb_streamlines) : 0;
+      const long long nb_scalar = nb_streamlines > 0 ? count_elems / nb_streamlines : 0;
       if (nb_streamlines == 0 || count_elems % nb_streamlines != 0 || nb_scalar != dim) {
         throw TrxFormatError("Wrong dps size/dimensionality");
       }
       trx.data_per_streamline.emplace(base, read_entry_to_typed_array(nb_streamlines, nb_scalar));
     } else if (folder == "dpv") {
-      const int nb_scalar = nb_vertices > 0 ? static_cast<int>(count_elems / nb_vertices) : 0;
+      const long long nb_scalar = nb_vertices > 0 ? count_elems / nb_vertices : 0;
       if (nb_vertices == 0 || count_elems % nb_vertices != 0 || nb_scalar != dim) {
         throw TrxFormatError("Wrong dpv size/dimensionality");
       }
@@ -577,13 +577,13 @@ AnyTrxFile AnyTrxFile::load_from_zip(const std::string &filename) {
       }
       std::string data_name = path_basename(base);
       std::string sub_folder = path_basename(folder);
-      trx.data_per_group[sub_folder].emplace(data_name, read_entry_to_typed_array(1, static_cast<int>(count_elems)));
+      trx.data_per_group[sub_folder].emplace(data_name, read_entry_to_typed_array(1, static_cast<long long>(count_elems)));
     } else if (folder == "groups") {
       if (dim != 1) {
         throw TrxFormatError("Wrong group dimensionality");
       }
       if (ext == "uint32") {
-        auto arr = read_entry_to_typed_array(static_cast<int>(count_elems), 1);
+        auto arr = read_entry_to_typed_array(static_cast<long long>(count_elems), 1);
         arr.materialize_to_owned();
         const uint64_t nb_streamlines_u64 = static_cast<uint64_t>(trx.header["NB_STREAMLINES"].number_value());
         const auto *vals = reinterpret_cast<const uint32_t *>(arr.owned.data());
@@ -601,12 +601,12 @@ AnyTrxFile AnyTrxFile::load_from_zip(const std::string &filename) {
           throw TrxFormatError("Cannot normalize group '" + group_name +
                                "' to uint32: NB_STREAMLINES exceeds uint32 limit");
         }
-        auto tmp_arr = read_entry_to_typed_array(static_cast<int>(count_elems), 1);
+        auto tmp_arr = read_entry_to_typed_array(static_cast<long long>(count_elems), 1);
         tmp_arr.materialize_to_owned();
 
         TypedArray arr;
         arr.dtype = "uint32";
-        arr.rows = static_cast<int>(count_elems);
+        arr.rows = static_cast<long long>(count_elems);
         arr.cols = 1;
         arr.owned.resize(static_cast<size_t>(count_elems) * sizeof(uint32_t));
         uint32_t *dst = reinterpret_cast<uint32_t *>(arr.owned.data());
@@ -766,8 +766,8 @@ AnyTrxFile::_create_from_pointer(json header,
     throw TrxFormatError("Missing NB_VERTICES or NB_STREAMLINES in header.json");
   }
 
-  const int nb_vertices = header["NB_VERTICES"].int_value();
-  const int nb_streamlines = header["NB_STREAMLINES"].int_value();
+  const long long nb_vertices = _json_int64(header["NB_VERTICES"]);
+  const long long nb_streamlines = _json_int64(header["NB_STREAMLINES"]);
 
   for (auto x = dict_pointer_size.rbegin(); x != dict_pointer_size.rend(); ++x) {
     const std::string elem_filename = x->first;
@@ -797,7 +797,7 @@ AnyTrxFile::_create_from_pointer(json header,
       }
       trx.offsets = make_typed_array(elem_filename, nb_streamlines + 1, 1, ext);
     } else if (folder == "dps") {
-      const int nb_scalar = nb_streamlines > 0 ? static_cast<int>(size / nb_streamlines) : 0;
+      const long long nb_scalar = nb_streamlines > 0 ? size / nb_streamlines : 0;
       if (nb_streamlines == 0 || size % nb_streamlines != 0 || nb_scalar != dim) {
         throw TrxFormatError("Wrong dps size/dimensionality");
       }
@@ -805,7 +805,7 @@ AnyTrxFile::_create_from_pointer(json header,
       arr.materialize_to_owned();
       trx.data_per_streamline.emplace(base, std::move(arr));
     } else if (folder == "dpv") {
-      const int nb_scalar = nb_vertices > 0 ? static_cast<int>(size / nb_vertices) : 0;
+      const long long nb_scalar = nb_vertices > 0 ? size / nb_vertices : 0;
       if (nb_vertices == 0 || size % nb_vertices != 0 || nb_scalar != dim) {
         throw TrxFormatError("Wrong dpv size/dimensionality");
       }
@@ -818,7 +818,7 @@ AnyTrxFile::_create_from_pointer(json header,
       }
       std::string data_name = path_basename(base);
       std::string sub_folder = path_basename(folder);
-      auto arr = make_typed_array(elem_filename, 1, static_cast<int>(size), ext);
+      auto arr = make_typed_array(elem_filename, 1, static_cast<long long>(size), ext);
       arr.materialize_to_owned();
       trx.data_per_group[sub_folder].emplace(data_name, std::move(arr));
     } else if (folder == "groups") {
@@ -826,7 +826,7 @@ AnyTrxFile::_create_from_pointer(json header,
         throw TrxFormatError("Wrong group dimensionality");
       }
       if (ext == "uint32") {
-        auto arr = make_typed_array(elem_filename, static_cast<int>(size), 1, ext);
+        auto arr = make_typed_array(elem_filename, static_cast<long long>(size), 1, ext);
         arr.materialize_to_owned();
         const uint64_t nb_streamlines_u64 = static_cast<uint64_t>(header["NB_STREAMLINES"].number_value());
         const auto *vals = reinterpret_cast<const uint32_t *>(arr.owned.data());
@@ -853,12 +853,12 @@ AnyTrxFile::_create_from_pointer(json header,
                                "' to uint32: NB_STREAMLINES exceeds the uint32 limit");
         }
 
-        auto tmp_arr = make_typed_array(elem_filename, static_cast<int>(size), 1, ext);
+        auto tmp_arr = make_typed_array(elem_filename, static_cast<long long>(size), 1, ext);
         tmp_arr.materialize_to_owned();
 
         TypedArray arr;
         arr.dtype = "uint32";
-        arr.rows = static_cast<int>(size);
+        arr.rows = static_cast<long long>(size);
         arr.cols = 1;
         arr.owned.resize(static_cast<size_t>(size) * sizeof(uint32_t));
         uint32_t *dst = reinterpret_cast<uint32_t *>(arr.owned.data());
@@ -1080,7 +1080,7 @@ void AnyTrxFile::save(const std::string &filename, const TrxSaveOptions &options
   }
 
   const bool is_empty_tractogram = header["NB_VERTICES"].is_number() && header["NB_STREAMLINES"].is_number() &&
-                                   header["NB_VERTICES"].int_value() == 0 && header["NB_STREAMLINES"].int_value() == 0;
+                                   _json_int64(header["NB_VERTICES"]) == 0 && _json_int64(header["NB_STREAMLINES"]) == 0;
 
   if (!is_empty_tractogram) {
     if (offsets.empty()) {
@@ -1090,13 +1090,13 @@ void AnyTrxFile::save(const std::string &filename, const TrxSaveOptions &options
       throw TrxFormatError("Cannot save TRX without decoded offsets");
     }
     if (header["NB_STREAMLINES"].is_number()) {
-      const auto nb_streamlines = static_cast<size_t>(header["NB_STREAMLINES"].int_value());
+      const auto nb_streamlines = static_cast<size_t>(_json_int64(header["NB_STREAMLINES"]));
       if (offsets_u64.size() != nb_streamlines + 1) {
         throw TrxFormatError("TRX offsets size does not match NB_STREAMLINES");
       }
     }
     if (header["NB_VERTICES"].is_number()) {
-      const auto nb_vertices = static_cast<uint64_t>(header["NB_VERTICES"].int_value());
+      const auto nb_vertices = static_cast<uint64_t>(_json_int64(header["NB_VERTICES"]));
       const auto last = offsets_u64.back();
       if (last != nb_vertices) {
         throw TrxFormatError("TRX offsets sentinel does not match NB_VERTICES");
@@ -1433,7 +1433,7 @@ void allocate_file(const std::string &path, std::size_t size) {
 }
 
 mio::shared_mmap_sink _create_memmap(std::string filename,
-                                     const std::tuple<int, int> &shape,
+                                     const std::tuple<long long, long long> &shape,
                                      const std::string &mode,
                                      const std::string &dtype,
                                      long long offset) {
@@ -2162,8 +2162,8 @@ void merge_trx_shards(const MergeTrxShardsOptions &options) {
     ensure_schema_match("groups", groups_schema, shard_dir);
 
     const json shard_header = read_header(shard_dir);
-    const uint64_t shard_vertices = static_cast<uint64_t>(shard_header["NB_VERTICES"].int_value());
-    const uint64_t shard_streamlines = static_cast<uint64_t>(shard_header["NB_STREAMLINES"].int_value());
+    const uint64_t shard_vertices = static_cast<uint64_t>(_json_int64(shard_header["NB_VERTICES"]));
+    const uint64_t shard_streamlines = static_cast<uint64_t>(_json_int64(shard_header["NB_STREAMLINES"]));
 
     const std::string shard_positions = find_file_with_prefix(shard_dir, "positions.");
     const std::string shard_offsets = find_file_with_prefix(shard_dir, "offsets.");
@@ -2201,8 +2201,8 @@ void merge_trx_shards(const MergeTrxShardsOptions &options) {
     total_streamlines += shard_streamlines;
   }
 
-  merged_header = _json_set(merged_header, "NB_VERTICES", static_cast<int>(total_vertices));
-  merged_header = _json_set(merged_header, "NB_STREAMLINES", static_cast<int>(total_streamlines));
+  merged_header = _json_set(merged_header, "NB_VERTICES", static_cast<double>(total_vertices));
+  merged_header = _json_set(merged_header, "NB_STREAMLINES", static_cast<double>(total_streamlines));
   {
     const std::string merged_header_path = output_dir + SEPARATOR + "header.json";
     std::ofstream out(merged_header_path, std::ios::out | std::ios::trunc);
