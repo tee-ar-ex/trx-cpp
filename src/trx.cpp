@@ -2201,6 +2201,11 @@ void merge_trx_shards(const MergeTrxShardsOptions &options) {
     total_streamlines += shard_streamlines;
   }
 
+  constexpr uint64_t kMaxExactInDouble = (1ULL << 53);
+  if (total_vertices > kMaxExactInDouble || total_streamlines > kMaxExactInDouble) {
+    throw TrxFormatError("Merged TRX exceeds the 2^53 range representable in the JSON header");
+  }
+
   merged_header = _json_set(merged_header, "NB_VERTICES", static_cast<double>(total_vertices));
   merged_header = _json_set(merged_header, "NB_STREAMLINES", static_cast<double>(total_streamlines));
   {
