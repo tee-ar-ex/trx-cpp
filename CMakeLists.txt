@@ -97,6 +97,10 @@ else()
         set(ENABLE_LZMA OFF)
         set(ENABLE_ZSTD OFF)
         set(ENABLE_OPENSSL ${TRX_LIBZIP_ENABLE_OPENSSL})
+        # libzip also enables its GnuTLS and MbedTLS crypto backends when it finds them,
+        # which puts GnuTLS::GnuTLS or MbedTLS targets in the exported zip target.
+        set(ENABLE_GNUTLS OFF)
+        set(ENABLE_MBEDTLS OFF)
         set(_saved_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
         set(BUILD_SHARED_LIBS OFF)
         FetchContent_Declare(
